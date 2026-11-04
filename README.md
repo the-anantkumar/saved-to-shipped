@@ -1,135 +1,120 @@
 # Saved → Shipped
 
-**Your LinkedIn saves should become experiments, useful knowledge, real-life experiences, and GitHub commits—not another graveyard of bookmarks.**
+Turn LinkedIn saves into small projects and a backlog you can actually finish.
 
-This is a local-first, multi-platform project for Anant. It imports the *official* LinkedIn `Saved_Items.csv` or the ZIP archive containing it, accepts a user-provided Reddit saved-listing JSON, and supports Instagram/other platforms through a normalized CSV/JSON manifest. It maintains a deduplicated backlog, asks ChatGPT to classify only items with actual context, and generates a weekly sprint plus draft GitHub issues.
+A personal, local-first workbench with a saved inbox, project groups, a Ready / In progress / Shipped board, a weekly time budget, and downloadable sprint and GitHub issue drafts. Python standard library, plain HTML/CSS/JavaScript, no install step, no database service, no account system.
 
-No dependencies beyond Python 3.10+. No scraping, site credentials, cookies, or posting permissions.
+## Run it
 
-## The first run
+Requires Python 3.10+ and a modern browser. From this repository:
 
-1. On LinkedIn desktop, open **Settings & Privacy → Data Privacy → Download your data**, request an archive with **Saved Items**, and download the ZIP when LinkedIn emails you. [Official instructions](https://www.linkedin.com/help/linkedin/answer/a1341346).
-2. Run the importer from this folder:
-
-   ```bash
-   python3 saved_to_shipped.py ingest /path/to/LinkedInDataExport.zip
-   python3 saved_to_shipped.py list
-   ```
-
-   LinkedIn is the default adapter. To import data from other sources, see **More platforms** below.
-
-3. LinkedIn's export supplies **dates and URLs, not the bodies of other people's posts**. Open a promising saved link yourself and save relevant text to a local `.txt` file. Then attach it to the corresponding item ID:
-
-   ```bash
-   python3 saved_to_shipped.py attach 012345abcdef --title "Agent memory pattern" --content-file /path/to/post.txt --note "Could help TRLR evaluation"
-   ```
-
-   Replace the illustrative ID with the real ID from `list`. Instead of full post text, a substantive note describing the idea works. You can also share screenshots/post text with ChatGPT directly and have it help you prepare annotations.
-
-4. Generate a prompt for ChatGPT:
-
-   ```bash
-   python3 saved_to_shipped.py prompt
-   ```
-
-   Paste the contents of `output/triage_prompt.md` into ChatGPT. Ask for a downloadable `triage.json` containing **only the JSON response**. The prompt includes only posts with real supplied context, and lists unknown posts separately.
-
-5. Apply that response, then make your sprint and GitHub issue drafts:
-
-   ```bash
-   python3 saved_to_shipped.py apply /path/to/triage.json
-   python3 saved_to_shipped.py plan --hours 6
-   python3 saved_to_shipped.py issues
-   ```
-
-   Read `output/weekly_sprint.md` and the files under `output/issues/`. Issues are **draft files**, not published to GitHub.
-
-6. Once you've shipped the task, update the item:
-
-   ```bash
-   python3 saved_to_shipped.py status 012345abcdef done
-   ```
-
-Re-import the latest archive any time. Previously triaged items and annotations remain intact. The new imports will be deduplicated.
-
-## More platforms
-
-Every import adapter converts its source into the same `ImportedSave` shape: `platform`, `url`, `saved_at`, `external_id`, `title`, `content`, `author`, and `metadata`. The triage, scoring and sprint stages do not know or care which platform produced an item.
-
-| Source | Input | Command |
-| --- | --- | --- |
-| LinkedIn | Official `Saved_Items.csv` or data ZIP | `python3 saved_to_shipped.py ingest export.zip` |
-| Reddit | User-provided authenticated saved-listing JSON | `python3 saved_to_shipped.py ingest reddit.json --adapter reddit` |
-| Instagram | Normalized CSV/JSON manifest prepared by the user | `python3 saved_to_shipped.py ingest instagram.csv --adapter instagram` |
-| Any source | Normalized CSV/JSON with a `platform` column | `python3 saved_to_shipped.py ingest saves.json --adapter manifest` |
-
-### Normalized manifest format
-
-```csv
-platform,url,saved_at,title,content,author
-instagram,https://www.instagram.com/p/EXAMPLE/,2026-11-01,Design idea,A short personal description,creator
-reddit,https://www.reddit.com/r/example/comments/EXAMPLE/,2026-11-02,Useful thread,My notes about it,contributor
+```bash
+python3 server.py
 ```
 
-Use actual links and text when working with your own saves; the rows above are illustrative placeholders.
+Open **http://127.0.0.1:8010/** for your personal workspace, or **http://127.0.0.1:8010/?workspace=demo** for the isolated demo. Stop the server with `Ctrl+C`.
 
-JSON can be either an array or `{ "items": [ ... ] }` with the same field names. An optional `external_id` can hold the original provider's item identifier. Missing content is okay: the workflow marks it as needing context.
+```bash
+python3 server.py --port 8011
+python3 server.py --state /path/to/private/items.json
+```
 
-### Reddit input detail
+The demo starts with 12 **synthetic** saves, three project groups, and example tasks at different stages. Its URLs are placeholders, not real posts. Demo changes go to `data/demo/items.json`; personal saves go to `data/items.json`. Both survive a restart and are ignored by Git.
 
-The Reddit adapter accepts a JSON `Listing` with `data.children` from the documented `/user/{username}/saved` endpoint, supplied by you through an authorized process. It supports saved posts and comments. The Reddit `created_utc` field is the *publication date*, **not the date you saved it**; this distinction is preserved.
+## While your LinkedIn archive is pending
 
-This version does not perform OAuth. Reddit Data API access is subject to developer approval, restrictions and rate limits, and Reddit's Devvit platform does not expose a user's private saved list. A local JSON import keeps the core functionality separate from those permissions.
+- Explore the demo, review a task, change its status, and download the sprint.
+- Use **Add a save** to capture a real LinkedIn URL with pasted post text or your own note.
+- Open **Import archive** and download the synthetic test ZIP to exercise the importer. Import it into the demo to keep your personal workspace clean.
 
-### Instagram input detail
+Nothing needs a LinkedIn login, browser extension, API key, or paid service to try.
 
-`--adapter instagram` accepts the normalized manifest above; it **does not yet parse arbitrary Instagram account archives or access saved collections automatically**. A future `sources/instagram.py` can implement an officially supported export format once tested against a real, permitted sample.
+## With your real archive
 
-### Add another adapter
+1. Request **Saved Items** from LinkedIn desktop: **Settings & Privacy → Data Privacy → Download your data**. [Official LinkedIn instructions](https://www.linkedin.com/help/linkedin/answer/a1341346).
+2. Choose **Import archive** and upload the ZIP or its `Saved_Items.csv`. Nested folders, UTF-8 BOMs, and common filename/header variations are supported. Only the Saved Items CSV is read; unrelated archive files are ignored.
+3. Open a saved idea. Paste relevant post text or describe why you saved it in **Your note**. Save the changes.
+4. Choose **Classify inbox**, then use local suggestions, optional OpenAI classification, or the ChatGPT copy/paste route.
+5. Review each draft. Edit its project, destination, first action, done condition, and estimate. Change **Status** to **Ready** to put it on the backlog.
+6. Move work to **In progress**, then **Shipped**. Attach the real commit, PR, or result URL when you have one.
+7. Set your hours in **This week** and export the plan.
 
-1. Create `sources/newplatform.py` with a function `parse_newplatform(path: Path) -> list[ImportedSave]`.
-2. Register it in `sources/registry.py`.
-3. Add fixtures and tests for empty exports, duplicate URLs, deleted content, and malformed files.
-4. Document where the user gets their data and any platform-specific permissions.
+**The key limitation:** [LinkedIn documents Saved Items as saved dates and URLs](https://www.linkedin.com/help/linkedin/answer/a1341346), not the bodies of other people's posts. Importing a ZIP cannot supply that missing content. URL-only saves remain unclassified, regardless of their titles or URL slugs. This version reads exports and user-supplied context; it does not crawl LinkedIn or automatically retrieve saved post bodies.
 
-No changes to the triage, scoring or GitHub draft code should be needed.
+Re-importing is safe: duplicate links are skipped, while notes, classifications, project assignments, and task statuses stay intact. Invalid archives or malformed CSV rows produce an error without partially importing the batch. Uploads are limited to 128 MiB; the uncompressed Saved Items CSV to 8 MiB. For larger archives, import that CSV directly.
 
-## The ChatGPT-only route (no terminal required)
+## Three classification options
 
-Create a ChatGPT Project called **Saved → Shipped** and paste [CHATGPT_PROJECT_INSTRUCTIONS.md](CHATGPT_PROJECT_INSTRUCTIONS.md) into its instructions. Upload your LinkedIn archive ZIP. ChatGPT can analyze the URL/date manifest, identify which posts need more content, organize manually supplied text/screenshots, and make a weekly sprint. The Python tool is optional; it is for durable, reproducible local bookkeeping and issue generation.
-
-## The queues
-
-| Queue | Example | Concrete output |
+| Option | Setup | Behavior |
 | --- | --- | --- |
-| Build | A useful MCP pattern | A 1–2 hour feature, test, README example, commit |
-| Learn | A retrieval evaluation guide | Five-line summary + a tiny reproducible experiment |
-| Experience | Interesting hackathon | Entry/registration research and a personal decision |
-| Reference | Useful article, not urgent | A tagged link with a one-line explanation |
-| Skip | Unsubstantiated hype | Archived with no guilt |
+| Local suggestions | None | Transparent keyword rules, three broad project themes, and generic starter actions. Runs offline. Every suggestion is labeled low confidence. |
+| OpenAI | Your API key | Context-specific drafts and project grouping for up to 20 unclassified inbox saves per click. |
+| ChatGPT copy/paste | Your existing ChatGPT access | Download the prompt, paste it into ChatGPT, then paste the returned JSON into the workbench. |
 
-We favor *small completed tasks* instead of inflated commit counts. The `effort_hours` field measures the **first atomic next action**, not the entire project.
+All web classifications remain in the inbox for review. Neither local rules nor an LLM automatically starts a task. Title-only and URL-only saves are excluded. To classify a previously reviewed item again, set its destination to **Not classified** and status to **Inbox / review** first.
 
-## Boundaries
+Optional OpenAI setup:
 
-- A saved URL does not reveal what the post says. Don't classify it on the basis of a suggestive slug alone.
-- Some posts are private, removed, paywalled, or inaccessible to ChatGPT's browsing tools. Copy or describe only the material you're comfortable analyzing.
-- LinkedIn [prohibits third-party scraping and automating its site](https://www.linkedin.com/help/linkedin/answer/a1341387/prohibited-software-and-extensions). This project does not access LinkedIn automatically. Other source adapters likewise read local files only.
-- Your `data/` and `output/` folders are gitignored. They can contain personal data or post excerpts. Review issue drafts before publishing; avoid publishing proprietary or copyrighted post text.
-- The utility scores are suggestions, not measurements of your potential. You choose what gets built.
+```bash
+export OPENAI_API_KEY='your-key'
+export OPENAI_MODEL='gpt-4.1-mini'  # optional override
+python3 server.py
+```
 
-## Roadmap
+The app does **not** load `.env` automatically. [.env.example](.env.example) documents the variables. Keep your real key out of Git.
 
-- **v0.2 (this package):** platform adapters, LinkedIn archive, Reddit saved-listing JSON, Instagram/generic manifests, dedupe, ChatGPT triage, sprint, local issue drafts.
-- **v0.3:** batch context capture from user-provided PDFs/screenshots; source links and evidence status; better duplicate-topic clustering.
-- **v0.4:** approve-to-create GitHub issues in a chosen repo; link actual commits/PRs to saved ideas.
-- **v1:** weekly review, feedback from finished work, and optional reminders after you choose a schedule.
+The **Send batch to OpenAI** button explicitly sends the eligible batch's IDs, titles, supplied post text, notes, and existing project names to OpenAI. It never sends the ZIP, unrelated archive records, or browser credentials. API usage is billed to your key. The client uses the [Responses API with strict structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs) and `store: false`; provider policies still apply. There are no automatic calls, retries, or silent fallbacks. Provider errors, missing IDs, duplicate IDs, invalid fields, and unsupported classifications leave saved state unchanged.
 
-## Development
+## Exports and storage
+
+**Export backlog** downloads one ZIP containing:
+
+- `backlog.json`: full workspace data for backup.
+- `backlog.csv`: portable task table with project names, estimates, source links, and result links.
+- `weekly_sprint.md`: up to two reviewed build tasks fitting your time budget, plus optional learning and experience suggestions.
+- `issues/*.md`: local GitHub issue drafts for ready or in-progress build tasks. Nothing is published to GitHub.
+
+State is stored as atomically replaced JSON. Project assignments use stable project IDs. The existing CLI and the browser share the same personal state format. Stop the server before changing that file with the CLI or restoring `backlog.json` to `data/items.json`; separate processes do not share a write lock. Keep private backups outside the repository.
+
+The HTTP server listens only on `127.0.0.1`, validates its Host header, and requires a per-run token for writes. This is a single-user development app, not a production server or a public deployment.
+
+## CLI
+
+The original CLI remains available:
+
+```bash
+python3 saved_to_shipped.py ingest /path/to/LinkedInDataExport.zip
+python3 saved_to_shipped.py list
+python3 saved_to_shipped.py attach ITEM_ID --title 'An idea' --content-file post.txt --note 'Why this helps'
+python3 saved_to_shipped.py prompt
+python3 saved_to_shipped.py apply triage.json
+python3 saved_to_shipped.py plan --hours 6
+python3 saved_to_shipped.py issues
+python3 saved_to_shipped.py status ITEM_ID done
+```
+
+Use a real ID from `list`. Unlike the web review flow, explicitly applying CLI triage marks actionable inbox items Ready. `data/`, `output/`, ZIPs, and `.env` files are ignored by Git.
+
+The inherited source adapters remain tested for future extension: `--adapter reddit` reads a user-provided saved-listing JSON, `--adapter instagram` reads a normalized manifest, and `--adapter manifest` reads platform-tagged CSV/JSON. The web workbench intentionally accepts only LinkedIn input. Native Reddit/Instagram capture is deferred.
+
+## Development and verification
 
 ```bash
 python3 -m unittest discover -s tests -v
-python3 saved_to_shipped.py --help
+node --check web/app.js  # optional local JS syntax check; Node is not needed to run the app
 ```
 
-The program is one Python standard-library file. You can extend it into a GitHub project or a ChatGPT connected workflow without a new dependency tree.
+The suite covers archive parsing, dedupe, state preservation, context requirements, classification validation, task lifecycle, project grouping, exports, HTTP boundaries, and separate demo storage. OpenAI success/failure responses are mocked; tests never spend API credits or access LinkedIn. GitHub Actions runs Python 3.10 and 3.12 tests plus the JavaScript syntax check.
+
+The app has been rendered and inspected in Safari. The real LinkedIn archive and a live OpenAI request still need a smoke test with your own data and key. See [docs/DEMO.md](docs/DEMO.md) for a short walkthrough and [ARCHITECTURE.md](ARCHITECTURE.md) for the implementation.
+
+## Development checkpoints
+
+Work lives on `feat/linkedin-workbench`, branched from `main`:
+
+1. `6c013bd`: robust archive imports and synthetic fixtures.
+2. `de76b57`: local web workbench, projects, and backlog.
+3. `99c1988`: optional AI triage and full workflow validation.
+4. Documentation and CI handoff: setup, demo, architecture, and current scope.
+
+Use `git log --oneline` to inspect the checkpoints. Commit messages contain no em dashes.

@@ -1,56 +1,34 @@
-# Roadmap: From bookmarks to a personal execution engine
+# Roadmap
 
-The north star is **meaningful projects shipped per month**, not the size of the backlog.
+Build for one person. Measure ideas acted on, not saves collected.
 
-## Milestone 1 — Reliable inbox (current)
+## Implemented
 
-- [x] Official LinkedIn Saved Items archive importer
-- [x] Reddit user-supplied saved-listing JSON importer
-- [x] Instagram/general normalized manifest importer
-- [x] Per-platform stable identity, deduplication and state preservation
-- [x] Source-aware ChatGPT triage and local issue drafts
-- [x] Regression tests and GitHub CI
-- [ ] Test with 20 real LinkedIn saves and 10 real Reddit/Instagram saves
+- [x] Official LinkedIn ZIP / CSV import and manual LinkedIn capture
+- [x] Deduplication and preservation of existing annotations
+- [x] Inbox search, review filters, and visible missing context
+- [x] Separate synthetic demo workspace and downloadable test archive
+- [x] Project groups and editable assignments
+- [x] Offline classification drafts with honest provenance
+- [x] Optional OpenAI classification and ChatGPT copy/paste triage
+- [x] Review, backlog board, weekly budget, and shipped outcome links
+- [x] JSON/CSV exports, sprint Markdown, and GitHub issue drafts
+- [x] Import, domain, HTTP, and mocked provider tests in CI
 
-## Milestone 2 — Low-friction capture
+## Next: prove it with real saves
 
-- [ ] Study the real native Instagram export and create a tested parser where permitted
-- [ ] Add a user-controlled share-to-inbox action for iOS and Android
-- [ ] Accept screenshot/PDF batches with OCR and provenance
-- [ ] Import Reddit account archives if a stable saved-items file is included
-- [ ] Show missing-content status and capture progress
-- [ ] Detect identical ideas even when they come from different platforms
+- [ ] Import the owner's actual LinkedIn archive and confirm its exact headers/encoding
+- [ ] Add context to 20 promising saves
+- [ ] Make one live optional API request with the owner's configured key
+- [ ] Review the proposed groups and improve first actions based on actual usefulness
+- [ ] Pick one task, finish it, and attach the real commit/PR link
 
-## Milestone 3 — An AI that actually prioritizes
+## Later, only when useful
 
-- [ ] Optional direct model classification with structured outputs (user-configured key)
-- [ ] Project / knowledge / experience taxonomy with evidence confidence
-- [ ] Rank by personal goals, available time, novelty and tangible utility
-- [ ] Cluster recurring themes; identify "you saved this idea six times"
-- [ ] Time-sensitive opportunity checks for hackathons and events
-- [ ] Human approval before moving anything into this week's sprint
+- [ ] Batch context import from user-provided notes or screenshots
+- [ ] Suggest duplicate themes across multiple saves
+- [ ] Native Reddit archive adapter backed by a real fixture
+- [ ] Native Instagram archive adapter backed by a real fixture
+- [ ] Improved project-specific local rules based on observed usage
 
-## Milestone 4 — Shipped outcomes
-
-- [ ] GitHub OAuth/connected integration with repository selection
-- [ ] Create issue on explicit approval, with source and acceptance tests
-- [ ] Optional draft PR / starter skeleton / test scaffolding
-- [ ] Link real commit or PR URLs to source saves
-- [ ] Weekly review of built/learned/done/parked items
-- [ ] No vanity commits: measure working changes and demonstrated learning
-
-## Milestone 5 — Productize if it proves useful
-
-- [ ] Replace local JSON with SQLite, migrations and encrypted backup options
-- [ ] Web UI: Inbox / Build / Learn / Experience / This Week / Shipped
-- [ ] Sync and export across devices without leaking private saves
-- [ ] Provider health monitoring, rate-limit and permissions diagnostics
-- [ ] Optional recurring review reminders
-
-## Suggested first issues
-
-1. **Fixture-driven Instagram export research:** identify the actual user data files; avoid assumptions and ship parser tests.
-2. **Capture context in batches:** ingest screenshots and attach provenance to source URLs.
-3. **Cross-platform duplicate clustering:** several saved posts about the same tool become one project candidate.
-4. **GitHub issue publishing:** select repo and confirm before each batch write.
-5. **Command-line `review`:** record links to actual commits and what was learned.
+Multi-user hosting, monetization, OAuth integrations, scheduling, and automatic publishing are not current goals.

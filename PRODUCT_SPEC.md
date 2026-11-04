@@ -1,55 +1,39 @@
-# Saved → Shipped: V0 Product Spec
+# Saved to Shipped: personal LinkedIn workbench
 
-**Problem.** Anant bookmarks content across LinkedIn, Reddit, Instagram and eventually other sources, but those collections have low retrieval value and do not reliably translate into shipped work.
+**Problem:** useful saved LinkedIn posts disappear into a bookmark collection. The owner wants small project ideas and a backlog, plus a working project they can demonstrate.
 
-**North star.** Number of saved ideas converted into meaningful, verifiable outcomes (a working feature or PR, a short learning experiment, or an attended/applied-for experience) per month.
+**Success:** import saves without losing annotations, provide enough context to classify promising ideas, review a concrete next action, and ship one useful outcome.
 
-## Users and jobs
+## Current experience
 
-- **Collector:** Import historical saves, re-import without duplication, see source links.
-- **Builder:** Pick a high-value first action and get a small, testable commit.
-- **Learner:** Turn an article into a practical explanation or experiment, not just another reading queue.
-- **Explorer:** Surface time-sensitive opportunities and experiences before they expire.
+1. Run one Python command and open the local browser app.
+2. Try an isolated synthetic workspace immediately, without waiting for an archive.
+3. Import the official LinkedIn ZIP or Saved Items CSV, or manually capture a LinkedIn link with context.
+4. Add post text or a personal note to otherwise URL-only saves.
+5. Classify using offline keyword suggestions, an explicit OpenAI API action, or a ChatGPT prompt/response exchange.
+6. Organize related saves into project groups and review task details.
+7. Track Ready, In progress, Shipped, and Parked items. Record a result URL.
+8. Fit up to two reviewed build tasks into a weekly budget and export the backlog, sprint, and local issue drafts.
 
-## P0 requirements
+## Acceptance criteria
 
-| Requirement | Acceptance test |
+| Requirement | Verification |
 | --- | --- |
-| Import each source format | LinkedIn CSV/ZIP, Reddit saved-listing JSON, generic CSV/JSON manifests import without credentials |
-| Keep sources separate | Every save records its platform, canonical URL and optional provider metadata |
-| Deduplicate | Second import adds zero duplicates and retains notes |
-| No source hallucinations | A URL-only item remains `untriaged` until context is supplied |
-| Human-readable triage | ChatGPT prompt contains content-backed items and separate `needs-context` list |
-| Actionable output | Each classified project has ≤2h next action and testable done condition |
-| GitHub handoff | Draft issue Markdown references inspiration link; no external write |
-| Review loop | Ready / doing / done / parked statuses survive re-import |
+| Import official archive shape | Nested Saved Items CSV, common names/headers, BOM, missing/ambiguous/corrupt files tested |
+| Safe repeat import | Same links add zero duplicates; source fields fill blanks and annotations remain |
+| Honest evidence | URL/title-only saves cannot be classified or become ready tasks |
+| Usable without keys | Offline suggestions and manual editing complete the workflow |
+| Optional semantic classification | Strict structured output, complete ID coverage, atomic validation, actionable provider errors |
+| Project grouping | Multiple saves share a stable project ID; user can reassign them |
+| Concrete backlog | Title, context, action, done condition and 0.25 to 2 hour estimate required |
+| Durable personal data | Atomic local JSON, ignored by Git, separate synthetic demo store |
+| Export | JSON backup, CSV table, time-budgeted Markdown sprint, local issue Markdown |
+| Personal scope | No hosted service, login flow, remote database, or scaling infrastructure |
 
-## Data shape
+## Known boundaries
 
-Each item has: stable platform-and-URL-derived ID (with legacy LinkedIn ID compatibility), platform, original external ID, canonical URL, saved date, optional supplied title/text/note, author, provider metadata, kind, status, impact/relevance/novelty scores, first-action effort, next action, done condition, suggested repo/commit, confidence, and tags.
+LinkedIn's Saved Items export contains saved dates and URLs, not third-party post bodies. Automatic post retrieval is not implemented. A real archive smoke test is pending the owner's download. Native Reddit/Instagram input is outside the web release; inherited CLI adapters remain available.
 
-## Pipeline
+Local rules provide broad heuristic suggestions and generic actions. They do not understand the source semantically. The optional LLM route is implemented and tested with mocks; a real account/key request is a separate smoke test. Human review stays part of the workflow.
 
-`Source-specific import → normalized save → deduplicated store → context-backed ChatGPT classification → scored queue → first-action sprint → reviewed GitHub issues → verified completed work`
-
-The first release intentionally has a human-in-the-loop step. LinkedIn's official archive describes **Saved Items** as saved dates and URLs, and automated scraping/browser extensions are prohibited by its help and terms. Reddit requires careful treatment of saved-item authorization and API limits; Instagram native export parsing is unverified. A full unattended crawler is not a reasonable MVP dependency.
-
-## Ranking
-
-Candidates are sorted by:
-
-`2 × relevance + 1.5 × impact + novelty − 0.35 × first-action hours − uncertainty penalty`
-
-The ranking only considers items with contextual support. Projects are selected to fit the user's weekly hours; the default is six hours. The final decision stays with Anant.
-
-## Out of scope for V0
-
-- Automatically logging in to social platforms, scraping saved feeds, or bypassing access controls.
-- Fetching arbitrary private post bodies from URLs.
-- Automatically committing to GitHub or creating issues without a chosen repository and explicit approval.
-- AI judging content it cannot observe.
-- Creating reminders or automations before the desired schedule is established.
-
-## Iteration criteria
-
-Try a batch of 20 real saves. If ≥10 can be provided with usable context and ChatGPT can produce ≥3 credible ideas, pick one and ship the first commit. Measure time from import to first action. Optimize only the bottleneck observed in that test.
+The app runs as one local process. Concurrent CLI edits, public hosting, collaboration, automatic GitHub publishing, reminders, OCR, and authenticated crawling are out of scope.
