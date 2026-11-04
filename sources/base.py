@@ -33,8 +33,13 @@ def csv_rows(raw: bytes) -> list[dict[str, str]]:
     reader = csv.DictReader(io.StringIO(decode_text(raw)))
     if not reader.fieldnames:
         raise ValueError("CSV has no header row")
-    return [{(key or "").strip().lower().replace(" ", "_"): (value or "").strip()
-             for key, value in row.items()} for row in reader]
+    result = []
+    for line, row in enumerate(reader, start=2):
+        if None in row:
+            raise ValueError(f"Too many columns at CSV row {line}. Quote text containing commas.")
+        result.append({(key or "").strip().lower().replace(" ", "_"): (value or "").strip()
+                       for key, value in row.items()})
+    return result
 
 
 def get_field(row: dict[str, Any], *keys: str) -> str:
