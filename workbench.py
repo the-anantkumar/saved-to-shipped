@@ -13,7 +13,7 @@ from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from saved_to_shipped import (KINDS, STATUSES, create_plan, export_issues, import_items,
-                             load_state, new_item, save_state, score, select_item)
+                             load_state, new_item, save_state, score, select_item, apply_triage_records)
 
 
 def now() -> str:
@@ -190,6 +190,21 @@ def classify_local(state: dict) -> int:
 def suggest(path: Path) -> int:
     state = read(path)
     count = classify_local(state)
+    save_state(path, state)
+    return count
+
+
+def apply_classification(path: Path, payload: dict, method: str = "ChatGPT") -> int:
+    if not isinstance(payload.get("items"), list):
+        raise ValueError('Triage JSON must contain an "items" array')
+    state = read(path)
+    count = apply_triage_records(state, payload, mark_ready=False)
+    for record in payload["items"]:
+        item = select_item(state, record["id"])
+        item["classification_method"] = method
+        name = text(record.get("project_name", ""), "Project name", 100)
+        if name:
+            item["project_id"] = project_for(state, name)
     save_state(path, state)
     return count
 

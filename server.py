@@ -17,8 +17,9 @@ from urllib.parse import parse_qs, urlsplit
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import workbench as work
+import classifier
 from demo_data import demo_state
-from saved_to_shipped import save_state, triage_prompt, apply_triage
+from saved_to_shipped import save_state, triage_prompt
 
 ROOT = Path(__file__).resolve().parent
 MAX_UPLOAD = 128 * 1024 * 1024
@@ -87,7 +88,7 @@ class Handler(BaseHTTPRequestHandler):
             route, query, state_path = self.route()
             with self.server.lock:
                 if route == "/api/state":
-                    self.json({**work.snapshot(state_path), "token": self.server.token})
+                    self.json({**work.snapshot(state_path), "token": self.server.token, "ai": classifier.configuration()})
                 elif route == "/api/prompt":
                     self.send(triage_prompt(work.read(state_path), 20).encode(), "text/markdown; charset=utf-8", filename="triage_prompt.md")
                 elif route == "/api/export":
@@ -148,11 +149,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.json({"id": work.save_project(state_path, payload)})
                 elif route == "/api/classify":
                     self.json({"classified": work.suggest(state_path)})
+                elif route == "/api/classify-ai":
+                    payload = classifier.classify(work.read(state_path))
+                    self.json({"classified": work.apply_classification(state_path, payload, "OpenAI")})
                 elif route == "/api/triage":
-                    with tempfile.TemporaryDirectory() as folder:
-                        file = Path(folder) / "triage.json"
-                        file.write_text(json.dumps(payload), encoding="utf-8")
-                        count = apply_triage(file, state_path)
+                    count = work.apply_classification(state_path, payload)
                     self.json({"classified": count})
                 else:
                     self.json({"error": "Not found"}, 404)

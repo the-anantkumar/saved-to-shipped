@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 import tempfile
@@ -30,7 +31,7 @@ AI_FIELDS = {
 
 def canonical_url(raw: str) -> str:
     parts = urlsplit(raw.strip())
-    if parts.scheme not in {"http", "https"} or not parts.netloc:
+    if parts.scheme not in {"http", "https"} or not parts.hostname or parts.username or parts.password:
         raise ValueError(f"Not an HTTP(S) URL: {raw!r}")
     ignored = {"trk", "lipi", "originalsubdomain", "midtoken", "ebp"}
     query = [
@@ -168,6 +169,7 @@ def triage_prompt(state: dict, limit: int) -> str:
         "next_action (concrete, <=2 hours),",
         "definition_of_done (testable), repo_suggestion (can be blank),",
         "commit_message (only for projects), confidence (high/medium/low), tags (array).",
+        "Optionally include project_name to group related saves into a small project.",
         "Preserve each ID exactly. Do not invent facts from URLs, infer post contents,",
         "or present recommendations without source support. If context is weak,",
         "set kind=reference and confidence=low, then explain the missing information.",
@@ -197,38 +199,52 @@ def triage_prompt(state: dict, limit: int) -> str:
 
 def apply_triage(file: Path, state_path: Path) -> int:
     payload = json.loads(file.read_text(encoding="utf-8"))
+    state = load_state(state_path)
+    count = apply_triage_records(state, payload)
+    save_state(state_path, state)
+    return count
+
+
+def apply_triage_records(state: dict, payload, *, mark_ready: bool = True) -> int:
     records = payload.get("items", []) if isinstance(payload, dict) else payload
     if not isinstance(records, list):
         raise ValueError("Triage JSON must be an array or {\"items\": [...]} object")
-    state = load_state(state_path)
     existing = {item["id"]: item for item in state["items"]}
     seen = set()
     for record in records:
+        if not isinstance(record, dict) or not isinstance(record.get("id"), str):
+            raise ValueError("Each triage item must be an object with a string id")
         ident = record.get("id")
         if ident not in existing or ident in seen:
             raise ValueError(f"Unknown or duplicate triage ID: {ident}")
         seen.add(ident)
-        if not existing[ident].get("content") and not existing[ident].get("note"):
+        if not (existing[ident].get("content", "") + existing[ident].get("note", "")).strip():
             raise ValueError(f"No supplied post text or note for {ident}; refusing unsupported classification")
-        if record.get("kind") not in KINDS - {"untriaged"}:
+        if not isinstance(record.get("kind"), str) or record.get("kind") not in KINDS - {"untriaged"}:
             raise ValueError(f"Invalid kind for {ident}: {record.get('kind')}")
+        for key in ("title", "next_action", "definition_of_done"):
+            if not isinstance(record.get(key), str) or not record[key].strip():
+                raise ValueError(f"{key} must be nonempty text for {ident}")
+        for key in ("title", "why", "next_action", "definition_of_done", "repo_suggestion", "commit_message", "project_name"):
+            if key in record and (not isinstance(record[key], str) or len(record[key]) > 20000):
+                raise ValueError(f"{key} must be text with at most 20000 characters for {ident}")
         for key in ("impact", "relevance", "novelty"):
             if key in record and (not isinstance(record[key], (int, float)) or isinstance(record[key], bool) or not 1 <= record[key] <= 5):
                 raise ValueError(f"{key} must be 1-5 for {ident}")
-        if "effort_hours" in record and (not isinstance(record["effort_hours"], (int, float)) or isinstance(record["effort_hours"], bool) or record["effort_hours"] < 0):
-            raise ValueError(f"effort_hours must be a nonnegative number for {ident}")
+        effort = record.get("effort_hours")
+        if not isinstance(effort, (int, float)) or isinstance(effort, bool) or not math.isfinite(effort) or not 0.25 <= effort <= 2:
+            raise ValueError(f"effort_hours must be between 0.25 and 2 for {ident}")
         if "tags" in record and (not isinstance(record["tags"], list) or any(not isinstance(x, str) for x in record["tags"])):
             raise ValueError(f"tags must be a list of strings for {ident}")
-        if record.get("confidence", "unknown") not in {"high", "medium", "low", "unknown"}:
+        if not isinstance(record.get("confidence", "unknown"), str) or record.get("confidence", "unknown") not in {"high", "medium", "low", "unknown"}:
             raise ValueError(f"Invalid confidence for {ident}")
     for record in records:
         item = existing[record["id"]]
         for key in AI_FIELDS:
             if key in record:
                 item[key] = record[key]
-        if item["status"] == "inbox" and item["kind"] not in {"skip", "reference"}:
+        if mark_ready and item["status"] == "inbox" and item["kind"] not in {"skip", "reference"}:
             item["status"] = "ready"
-    save_state(state_path, state)
     return len(records)
 
 
