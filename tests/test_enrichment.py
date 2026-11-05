@@ -174,3 +174,21 @@ class EnrichmentTests(unittest.TestCase):
         self.assertEqual(2, len(start.call_args.args[0]))
         self.assertEqual(2, self.finish()["counts"]["extracted"])
         self.assertTrue(work.read(self.path)["items"][2]["content"])
+
+    def test_inflight_submission_cannot_be_dismissed_to_start_duplicate_work(self):
+        entered, release = threading.Event(), threading.Event()
+        def delayed_start(*args):
+            entered.set()
+            release.wait(2)
+            return self.run
+        with patch.object(fetch.Apify, "start", side_effect=delayed_start):
+            worker = threading.Thread(target=self.manager.start)
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(2))
+                with self.assertRaisesRegex(ValueError, "still in progress"):
+                    self.manager.dismiss_uncertain()
+            finally:
+                release.set()
+                worker.join(timeout=2)
+        self.assertEqual("run123", work.read(self.path)["retrieval_jobs"][0]["run_id"])

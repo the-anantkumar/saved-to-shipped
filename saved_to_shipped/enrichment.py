@@ -214,6 +214,7 @@ class Retrieval:
     def __init__(self, state_path: Path, settings: Settings, lock: threading.RLock):
         self.path, self.settings, self.lock = state_path, settings, lock
         self.poll_lock = threading.Lock()
+        self.submitting = False
 
     def start(self, *, limit: int = 10, max_charge: float = 1, retry: bool = False) -> dict:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
@@ -236,13 +237,17 @@ class Retrieval:
             state.setdefault("retrieval_jobs", []).insert(0, job)
             state["retrieval_jobs"] = state["retrieval_jobs"][:20]
             save_state(self.path, state)
+            self.submitting = True
         try:
             urls = {post_key(item["url"]): item["url"] for item in items}
             run = client.start(list(urls.values()), max_charge)
+            return self.update_job(job["id"], run_id=run["id"], dataset_id=run.get("defaultDatasetId", ""), status=run["status"])
         except ProviderError as error:
             self.update_job(job["id"], status="UNCERTAIN" if error.uncertain else "FAILED", error=str(error))
             raise
-        return self.update_job(job["id"], run_id=run["id"], dataset_id=run.get("defaultDatasetId", ""), status=run["status"])
+        finally:
+            with self.lock:
+                self.submitting = False
 
     def update_job(self, ident: str, **values) -> dict:
         with self.lock:
@@ -292,6 +297,8 @@ class Retrieval:
 
     def dismiss_uncertain(self) -> None:
         with self.lock:
+            if self.submitting:
+                raise ValueError("The submission is still in progress. Wait for its response before dismissing it.")
             state = work.read(self.path)
             job = next((job for job in state.get("retrieval_jobs", []) if job["status"] in {"UNCERTAIN", "STARTING"} and not job.get("run_id")), None)
             if not job:
