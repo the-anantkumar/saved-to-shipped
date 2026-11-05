@@ -42,7 +42,10 @@ let state = { items: [], projects: [], imports: [] },
   projectFilter = "",
   search = "",
   hours = 6,
-  toastTimer;
+  toastTimer,
+  retrievalTimer,
+  visibleLimit = 25,
+  classificationCancelled = false;
 const labels = {
   untriaged: "Needs context",
   project: "Build",
@@ -50,6 +53,15 @@ const labels = {
   experience: "Experience",
   reference: "Reference",
   skip: "Skip",
+};
+const retrievalLabels = {
+  extracted: "Retrieved",
+  partial: "Partial content",
+  gated: "Login required",
+  deleted: "Deleted post",
+  error: "Retrieval error",
+  missing: "No result",
+  empty: "No usable text",
 };
 const statusLabels = {
   inbox: "Inbox / review",
@@ -82,6 +94,7 @@ async function api(route, data, query = "") {
 async function refresh() {
   state = await api("/api/state");
   render();
+  scheduleRetrieval();
 }
 function toast(message) {
   const node = $("#toast");
@@ -94,6 +107,8 @@ function projectName(id) {
   return state.projects.find((p) => p.id === id)?.name || "";
 }
 function category(item) {
+  if (!item.has_context && item.enrichment)
+    return retrievalLabels[item.enrichment.status] || "Needs context";
   return item.kind === "untriaged" && item.has_context
     ? "Ready to classify"
     : labels[item.kind] || item.kind;
@@ -110,6 +125,7 @@ function navigate(next, project = "") {
   projectFilter = project;
   filter = "all";
   search = "";
+  visibleLimit = 25;
   render();
   window.scrollTo({ top: 0 });
 }
@@ -141,7 +157,7 @@ function sidebar() {
   <div class="side-bottom"><div class="local-label"><span class="dot"></span>Stored on this device</div><p>A little less collecting.<br>A little more creating.</p><a class="workspace-link" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${workspace === "demo" ? "Back to my workspace" : "Explore the sample workspace"} ${icon("arrow")}</a></div>`;
 }
 function topbar() {
-  return `<div class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong>${{ inbox: "Saved inbox", projects: "Projects", backlog: "Backlog", week: "This week", shipped: "Shipped" }[view]}</strong></div><div class="top-actions"><span class="private">${icon("lock")}Local & personal</span><button class="button small" data-action="import">${icon("upload")}Import archive</button><div class="avatar" title="Personal workspace">${workspace === "demo" ? "D" : "ME"}</div></div></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample workspace · All posts are synthetic. Your personal saves stay separate.</span><a href="/">My workspace ↗</a></div>' : ""}`;
+  return `<div class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong>${{ inbox: "Saved inbox", projects: "Projects", backlog: "Backlog", week: "This week", shipped: "Shipped" }[view]}</strong></div><div class="top-actions"><button class="button ghost small" data-action="settings">${icon("lock")}Settings</button><button class="button small" data-action="import">${icon("upload")}Import archive</button><div class="avatar" title="Personal workspace">${workspace === "demo" ? "D" : "ME"}</div></div></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample workspace · All posts are synthetic. Your personal saves stay separate.</span><a href="/">My workspace ↗</a></div>' : ""}`;
 }
 function heading(title, description, actions) {
   return `<div class="heading"><div><h1>${title}</h1><p>${description}</p></div><div class="heading-actions">${actions || ""}</div></div>`;
@@ -193,9 +209,10 @@ function inbox() {
     heading(
       "Good saves. Great starting points.",
       "A home for the ideas you want to do something with.",
-      `<button class="button" data-action="capture">${icon("plus")}Add a save</button><button class="button primary" data-action="classify">${icon("spark")}Classify inbox${candidates.length ? ` <span>(${candidates.length})</span>` : ""}</button>`,
+      `<button class="button" data-action="capture">${icon("plus")}Add a save</button><button class="button primary" data-action="retrieve">${icon("download")}Process saves</button>`,
     ) +
     `<section class="hero"><div class="hero-text"><div class="eyebrow">From “someday” to shipped</div><h2>You saved it for a reason.<br><span>Give it a next step.</span></h2><p>Turn the things that caught your eye into small projects,<br>useful experiments, and work you can point to.</p></div><div class="hero-art" aria-hidden="true"><div class="orbit"></div><div class="mini-card">${icon("inbox")}<div class="line"></div><div class="line short"></div></div><div class="mini-card front">${icon("check")}<div class="line"></div><div class="line short"></div></div><span class="spark">✧</span></div></section>` +
+    pipeline() +
     stats() +
     `<div class="section-head"><div class="section-title">Your saved ideas <small>${state.items.length} total</small></div><button class="button ghost small" data-action="export">${icon("download")}Export backlog</button></div>${projectFilter ? `<button class="project-filter" data-action="clear-project">${esc(projectName(projectFilter))} ${icon("close")}</button>` : ""}<div class="toolbar"><div class="tabs">${[
       ["all", "All saves"],
@@ -209,7 +226,7 @@ function inbox() {
       )
       .join(
         "",
-      )}</div><label class="search">${icon("search")}<input id="search" placeholder="Find an idea…" aria-label="Search saved ideas" value="${esc(search)}"><kbd>/</kbd></label></div>${table(items)}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "idea" : "ideas"}${search ? " matching your search" : ""}</span><span>${icon("lock")}Saved locally. AI is optional.</span></div>`
+      )}</div><label class="search">${icon("search")}<input id="search" placeholder="Find an idea…" aria-label="Search saved ideas" value="${esc(search)}"><kbd>/</kbd></label></div>${table(items.slice(0, visibleLimit))}${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25, items.length - visibleLimit)} more ideas</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "idea" : "ideas"}${search ? " matching your search" : ""}</span><span>${icon("lock")}Saved locally. AI is optional.</span></div>`
   );
 }
 function projects() {
@@ -385,7 +402,19 @@ function itemDialog(id) {
   if (!item) return;
   modal(
     "Give this idea a next step",
-    `${item.metadata?.synthetic ? '<div class="callout">Synthetic demo content. This example does not point to a real post.</div>' : `<a class="source-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open original LinkedIn save ${icon("external")}</a>`}${field("Title", "title", item.title, "input", 'maxlength="300"')}${field("Post text", "content", item.content, "textarea")}${field("Your note / why you saved it", "note", item.note, "textarea")}${item.classification_method ? `<div class="callout">Suggested using ${esc(item.classification_method)} · ${esc(item.confidence)} confidence. ${esc(item.why)}</div>` : ""}<div class="details-section">Shape the next step</div><div class="field-row">${select(
+    `${item.metadata?.synthetic ? '<div class="callout">Synthetic demo content. This example does not point to a real post.</div>' : `<a class="source-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open original LinkedIn save ${icon("external")}</a>`}${
+      item.enrichment
+        ? `<div class="callout">Retrieval: ${esc(retrievalLabels[item.enrichment.status] || item.enrichment.status)}. ${esc(item.enrichment.coverage || "No readable post text was returned.")}${item.enrichment.content_truncated ? " The stored text was shortened to 20,000 characters." : ""}${(
+            item.enrichment.links || []
+          )
+            .slice(0, 5)
+            .map(
+              (link) =>
+                `<br><a class="inline-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)}</a>`,
+            )
+            .join("")}</div>`
+        : ""
+    }${field("Title", "title", item.title, "input", 'maxlength="300"')}${field("Post text", "content", item.content, "textarea")}${field("Your note / why you saved it", "note", item.note, "textarea")}${item.classification_method ? `<div class="callout">Suggested using ${esc(item.classification_method)} · ${esc(item.confidence)} confidence. ${esc(item.why)}</div>` : ""}<div class="details-section">Shape the next step</div><div class="field-row">${select(
       "Destination",
       "kind",
       Object.entries(labels).map(([key, label]) => [
@@ -446,7 +475,7 @@ function classifyDialog() {
   ).length;
   modal(
     "Find a direction for your ideas",
-    `<div class="summary"><strong>${eligible} ${eligible === 1 ? "idea has" : "ideas have"} context and can be classified.</strong><br>${state.items.filter((i) => !i.has_context && i.kind === "untriaged").length} saves still need post text or a useful note.</div><p><strong>Local suggestions</strong><br>A simple keyword classifier groups related ideas, suggests a destination, and drafts a small next step. It runs offline and labels suggestions as low confidence. Review them before adding to your backlog.</p><button class="button primary" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Suggest directions locally</button><div class="details-section">Optional AI classification</div><p>${state.ai?.available ? `Use ${esc(state.ai.model)} to classify up to 20 unclassified ideas with context. Clicking below sends their titles, post text, notes, and existing project names to OpenAI. API usage is billed to your key.` : "Set OPENAI_API_KEY before starting the server to enable direct AI classification. No key is needed for local suggestions or the copy/paste route below."}</p>${state.ai?.available ? `<button class="button" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Send batch to OpenAI</button>` : ""}<div class="details-section">Use ChatGPT with copy & paste</div><p>Download a context-only prompt, use it in ChatGPT, then paste the JSON response here. Your archive is never uploaded by this app.</p><a class="button small" href="${apiURL("/api/prompt")}">${icon("download")}Download ChatGPT prompt</a><div class="field heading"><label for="triage-json">Paste triage JSON</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button small" data-action="apply-triage">Apply ChatGPT response</button>`,
+    `<div class="summary"><strong>${eligible} ${eligible === 1 ? "idea has" : "ideas have"} context and can be classified.</strong><br>${state.items.filter((i) => !i.has_context && i.kind === "untriaged").length} still need retrieved text or a useful note.</div><p><strong>Local suggestions</strong><br>A simple keyword classifier groups related ideas, suggests a destination, and drafts a small next step. It runs offline and labels suggestions as low confidence. Review them before adding to your backlog.</p><button class="button primary" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Suggest directions locally</button><div class="details-section">Optional AI classification</div><p>${state.ai?.available ? `Use ${esc(state.ai.model)} to classify up to 20 unclassified ideas with context. Clicking below sends their titles, post text, notes, and existing project names to OpenAI. API usage is billed to your key.` : "Add an optional OpenAI key in Settings to enable direct AI classification. No key is needed for local suggestions or the copy/paste route below."}</p>${state.ai?.available ? `<button class="button" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Send batch to OpenAI</button><label class="checkbox"><input id="classify-all" type="checkbox"> Continue through all eligible ideas in batches (additional API usage)</label>` : ""}<div class="details-section">Use ChatGPT with copy & paste</div><p>Download a context-only prompt, use it in ChatGPT, then paste the JSON response here. Your archive is never uploaded by this app.</p><a class="button small" href="${apiURL("/api/prompt")}">${icon("download")}Download ChatGPT prompt</a><div class="field triage-input"><label for="triage-json">Paste triage JSON</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button small" data-action="apply-triage">Apply ChatGPT response</button>`,
   );
 }
 document.addEventListener("click", async (e) => {
@@ -461,9 +490,33 @@ document.addEventListener("click", async (e) => {
       return navigate("inbox", button.dataset.project);
     if (button.dataset.filter) {
       filter = button.dataset.filter;
+      visibleLimit = 25;
       return render();
     }
     switch (button.dataset.action) {
+      case "settings":
+        settingsDialog();
+        break;
+      case "retrieve":
+        retrievalDialog();
+        break;
+      case "poll-retrieval":
+        await pollRetrieval(true);
+        break;
+      case "stop-retrieval":
+        await api("/api/retrieve/stop", {});
+        await refresh();
+        retrievalDialog();
+        break;
+      case "dismiss-retrieval":
+        await api("/api/retrieve/dismiss", {});
+        $("#modal").close();
+        await refresh();
+        break;
+      case "more":
+        visibleLimit += 25;
+        render();
+        break;
       case "close":
         $("#modal").close();
         break;
@@ -492,17 +545,31 @@ document.addEventListener("click", async (e) => {
         $("#modal").close();
         await refresh();
         toast(
-          `${result.classified} draft suggestions ready. Open an idea to review its next step.`,
+          `${result.classified} draft ${result.classified === 1 ? "suggestion is" : "suggestions are"} ready. Open an idea to review its next step.`,
         );
         break;
       }
       case "run-ai": {
         button.disabled = true;
-        button.textContent = "Classifying…";
-        const result = await api("/api/classify-ai", {});
+        classificationCancelled = false;
+        const all = $("#classify-all")?.checked;
+        let total = 0;
+        do {
+          button.textContent = `Classifying… ${total} done`;
+          const result = await api("/api/classify-ai", {});
+          total += result.classified;
+          await refresh();
+          if (!result.classified) break;
+        } while (
+          all &&
+          !classificationCancelled &&
+          state.items.some(
+            (i) =>
+              i.kind === "untriaged" && i.has_context && i.status === "inbox",
+          )
+        );
         $("#modal").close();
-        await refresh();
-        toast(`${result.classified} AI drafts ready for your review.`);
+        toast(`${total} AI drafts ready for your review.`);
         break;
       }
       case "apply-triage": {
@@ -530,6 +597,7 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "search") {
     const cursor = e.target.selectionStart;
     search = e.target.value;
+    visibleLimit = 25;
     render();
     $("#search").focus();
     $("#search").setSelectionRange(cursor, cursor);
@@ -555,6 +623,9 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     $("#search")?.focus();
   }
+});
+$("#modal").addEventListener("close", () => {
+  classificationCancelled = true;
 });
 $("#modal").addEventListener("click", (e) => {
   if (e.target === $("#modal")) {

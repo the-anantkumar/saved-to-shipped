@@ -85,6 +85,17 @@ class ClassifierTests(unittest.TestCase):
                     work.apply_classification(path, {"items": [dict(self.record, **fields)]})
             self.assertEqual("untriaged", work.read(path)["items"][0]["kind"])
 
+    @patch.dict("os.environ", {}, clear=True)
+    def test_saved_key_and_character_budget_allow_automatic_small_batches(self):
+        items = [new_item(f"https://linkedin.com/posts/example-{i}", "2026-11-01", content="a" * 40000) for i in range(3)]
+        records = [dict(self.record, id=item["id"]) for item in items[:2]]
+        with patch("saved_to_shipped.classifier.urlopen", return_value=self.response({"items": records})) as request:
+            result = classifier.classify({"items": items}, api_key="private-local-key", model="chosen-model")
+        sent = json.loads(request.call_args.args[0].data)
+        self.assertEqual(2, len(result["items"]))
+        self.assertEqual("chosen-model", sent["model"])
+        self.assertNotIn(items[2]["id"], sent["input"])
+
 
 if __name__ == "__main__":
     unittest.main()

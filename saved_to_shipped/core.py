@@ -184,6 +184,7 @@ def triage_prompt(state: dict, limit: int) -> str:
             f"Author: {item.get('author') or '(unknown)'}",
             f"Existing title: {item.get('title') or '(unknown)'}",
             f"Post text: {item.get('content') or '(not supplied)'}",
+            f"Content coverage: {item.get('enrichment', {}).get('coverage', 'User-supplied context')}",
             f"My note: {item.get('note') or '(none)'}", "",
         ])
     lines.extend([

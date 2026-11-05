@@ -10,7 +10,7 @@ from pathlib import Path
 
 with tempfile.TemporaryDirectory() as folder:
     process = subprocess.Popen(
-        [sys.executable, "-I", "-m", "saved_to_shipped", "--port", "0", "--state", str(Path(folder) / "items.json")],
+        [sys.executable, "-I", "-m", "saved_to_shipped", "--no-browser", "--port", "0", "--state", str(Path(folder) / "items.json")],
         cwd=folder, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
     try:
@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory() as folder:
         if not match:
             raise AssertionError("Installed app did not start: " + process.stderr.read())
         connection = http.client.HTTPConnection("127.0.0.1", int(match.group(1)), timeout=5)
-        for route in ("/", "/app.js", "/style.css", "/api/state"):
+        for route in ("/", "/app.js", "/onboarding.js", "/style.css", "/api/state"):
             connection.request("GET", route)
             response = connection.getresponse()
             body = response.read()

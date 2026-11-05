@@ -1393,3 +1393,94 @@ dialog::backdrop {
     padding: 40px 14px;
   }
 }
+
+.pipeline {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 22px;
+  padding: 22px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.pipeline-step {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.step-number {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  background: var(--pale);
+  border-radius: 8px;
+  color: var(--purple);
+  font-size: 12px;
+  font-weight: 650;
+}
+.pipeline-step strong {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.pipeline-step p {
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--muted);
+  margin: 5px 0 9px;
+}
+.pipeline-step button {
+  color: var(--purple);
+  font-size: 10px;
+  text-align: left;
+  padding: 0;
+}
+.retrieval-notice {
+  margin-top: 14px;
+}
+.load-more {
+  display: flex;
+  margin: 15px auto;
+}
+.checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted);
+  font-weight: 400 !important;
+  margin: 16px 0 !important;
+}
+.checkbox input {
+  width: 14px !important;
+  height: 14px;
+  flex: none;
+  padding: 0 !important;
+}
+.triage-input {
+  margin-top: 20px;
+}
+.dialog-body details {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 20px;
+}
+.dialog-body summary {
+  cursor: pointer;
+}
+.pipeline + .stats {
+  margin-top: 18px;
+}
+@media (max-width: 850px) {
+  .pipeline {
+    grid-template-columns: 1fr;
+    padding: 18px;
+    gap: 20px;
+  }
+  .pipeline-step p {
+    margin: 3px 0 5px;
+  }
+}

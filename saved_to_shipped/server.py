@@ -11,6 +11,7 @@ import mimetypes
 import secrets
 import tempfile
 import threading
+import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -21,6 +22,8 @@ from . import classifier
 from .demo_data import demo_state
 from .core import save_state, triage_prompt
 from .settings import Settings, default_state_path
+from .enrichment import Retrieval
+from . import __version__
 
 ROOT = Path(__file__).resolve().parent
 MAX_UPLOAD = 128 * 1024 * 1024
@@ -35,6 +38,7 @@ class WorkbenchServer(ThreadingHTTPServer):
         self.demo_path = state_path.parent / "demo" / state_path.name
         self.lock = threading.RLock()
         self.settings = Settings(state_path.parent / "settings.json")
+        self.retrieval = Retrieval(state_path, self.settings, self.lock)
         self.token = secrets.token_urlsafe(32)
         if not self.demo_path.exists():
             state = demo_state()
@@ -90,7 +94,10 @@ class Handler(BaseHTTPRequestHandler):
             route, query, state_path = self.route()
             with self.server.lock:
                 if route == "/api/state":
-                    self.json({**work.snapshot(state_path), "token": self.server.token, "ai": classifier.configuration()})
+                    settings = self.server.settings.public()
+                    self.json({**work.snapshot(state_path), "token": self.server.token,
+                               "settings": settings,
+                               "ai": {"available": settings["ai_available"], "model": settings["model"]}})
                 elif route == "/api/prompt":
                     self.send(triage_prompt(work.read(state_path), 20).encode(), "text/markdown; charset=utf-8", filename="triage_prompt.md")
                 elif route == "/api/export":
@@ -104,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
                         archive.writestr("Saved_Items.csv", "Date Saved,URL\n2026-11-01,https://www.linkedin.com/feed/update/urn:li:activity:900000000000000001\n2026-11-02,https://www.linkedin.com/feed/update/urn:li:activity:900000000000000002\n")
                         archive.writestr("README.txt", "Synthetic URLs for importer testing only. These do not represent real posts. LinkedIn Saved Items contain dates and URLs, not post bodies.")
                     self.send(buffer.getvalue(), "application/zip", filename="synthetic-linkedin-archive.zip")
-                elif route in {"/", "/app.js", "/style.css"}:
+                elif route in {"/", "/app.js", "/onboarding.js", "/style.css"}:
                     asset = ROOT / "web" / ("index.html" if route == "/" else route.lstrip("/"))
                     self.send(asset.read_bytes(), (mimetypes.guess_type(asset.name)[0] or "text/plain") + "; charset=utf-8")
                 else:
@@ -127,6 +134,24 @@ class Handler(BaseHTTPRequestHandler):
             if route != "/api/import" and length > 1024 * 1024:
                 raise ValueError("Request is too large. Use a smaller triage batch.")
             body = self.rfile.read(length)
+            if route.startswith("/api/retrieve/"):
+                if state_path == self.server.demo_path:
+                    raise ValueError("Hosted retrieval is available in your personal workspace. Demo links are synthetic.")
+                payload = json.loads(body)
+                if not isinstance(payload, dict):
+                    raise ValueError("Request must be a JSON object")
+                if route == "/api/retrieve/start":
+                    self.json(self.server.retrieval.start(limit=payload.get("limit", 10), max_charge=payload.get("max_charge", 1), retry=payload.get("retry", False)))
+                elif route == "/api/retrieve/poll":
+                    self.json(self.server.retrieval.poll())
+                elif route == "/api/retrieve/dismiss":
+                    self.server.retrieval.dismiss_uncertain()
+                    self.json({"ok": True})
+                elif route == "/api/retrieve/stop":
+                    self.json(self.server.retrieval.stop())
+                else:
+                    self.json({"error": "Not found"}, 404)
+                return
             with self.server.lock:
                 if route == "/api/import":
                     filename = query.get("filename", [""])[0].replace("\\", "/").rsplit("/", 1)[-1][:200]
@@ -144,6 +169,15 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Request must be a JSON object")
                 if route == "/api/capture":
                     self.json({"id": work.capture(state_path, payload)})
+                elif route == "/api/settings":
+                    if state_path == self.server.demo_path:
+                        raise ValueError("Configure provider keys from your personal workspace.")
+                    goals = work.text(payload.get("goals", ""), "Goals", 2000)
+                    self.server.settings.update(payload)
+                    state = work.read(state_path)
+                    state["goals"] = goals
+                    save_state(state_path, state)
+                    self.json({"ok": True})
                 elif route == "/api/item":
                     work.update_item(state_path, work.text(payload.get("id", ""), "ID", 50), payload)
                     self.json({"ok": True})
@@ -152,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
                 elif route == "/api/classify":
                     self.json({"classified": work.suggest(state_path)})
                 elif route == "/api/classify-ai":
-                    payload = classifier.classify(work.read(state_path))
+                    payload = classifier.classify(work.read(state_path), api_key=self.server.settings.get("openai_key"), model=self.server.settings.get("model", "gpt-4.1-mini"))
                     self.json({"classified": work.apply_classification(state_path, payload, "OpenAI")})
                 elif route == "/api/triage":
                     count = work.apply_classification(state_path, payload)
@@ -167,10 +201,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8010)
     parser.add_argument("--state", type=Path, default=default_state_path())
+    parser.add_argument("--no-browser", action="store_true", help="Print the local URL without opening a browser")
+    parser.add_argument("--doctor", action="store_true", help="Show local setup status without exposing API keys")
+    parser.add_argument("--version", action="version", version=f"Saved to Shipped {__version__}")
     args = parser.parse_args()
+    if args.doctor:
+        settings = Settings(args.state.resolve().parent / "settings.json")
+        print(json.dumps({"version": __version__, "state_path": str(args.state.resolve()), **settings.public()}, indent=2))
+        return
     server = WorkbenchServer(("127.0.0.1", args.port), args.state.resolve())
     print(f"Saved to Shipped: http://127.0.0.1:{server.server_port}/", flush=True)
     print(f"Try the isolated demo: http://127.0.0.1:{server.server_port}/?workspace=demo", flush=True)
+    if not args.no_browser:
+        threading.Timer(0.2, lambda: webbrowser.open(f"http://127.0.0.1:{server.server_port}/")).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
