@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 from zipfile import ZipFile
 
-from sources.linkedin import parse_linkedin
+from saved_to_shipped.sources.linkedin import parse_linkedin
 from saved_to_shipped import import_items, load_state
 
 
@@ -78,7 +78,7 @@ class LinkedInImportTests(unittest.TestCase):
 
     def test_uncompressed_size_is_bounded(self):
         target = self.zip({"Saved_Items.csv": "Date,URL\n2026-11-01,https://linkedin.com/posts/a"})
-        with patch("sources.linkedin.MAX_SAVED_ITEMS_BYTES", 10):
+        with patch("saved_to_shipped.sources.linkedin.MAX_SAVED_ITEMS_BYTES", 10):
             with self.assertRaisesRegex(ValueError, "8 MiB"):
                 parse_linkedin(target)
 

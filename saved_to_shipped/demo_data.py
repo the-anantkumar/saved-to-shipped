@@ -1,6 +1,6 @@
 """Synthetic examples for a reproducible demo, never represented as real posts."""
 
-from saved_to_shipped import new_item
+from .core import new_item
 
 
 EXAMPLES = [

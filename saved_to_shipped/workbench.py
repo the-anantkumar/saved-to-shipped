@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from saved_to_shipped import (KINDS, STATUSES, create_plan, export_issues, import_items,
+from .core import (KINDS, STATUSES, create_plan, export_issues, import_items,
                              load_state, new_item, save_state, score, select_item, apply_triage_records)
 
 
@@ -110,7 +110,7 @@ def update_item(path: Path, ident: str, payload: dict) -> None:
         if key in payload:
             item[key] = text(payload[key], key, 300 if key == "title" else 20000)
     if item.get("outcome_url"):
-        from saved_to_shipped import canonical_url
+        from .core import canonical_url
         item["outcome_url"] = canonical_url(item["outcome_url"])
     if "kind" in payload:
         if payload["kind"] not in KINDS:

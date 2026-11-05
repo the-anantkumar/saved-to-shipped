@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
-from server import WorkbenchServer
+from saved_to_shipped.server import WorkbenchServer
 
 
 class ServerTests(unittest.TestCase):

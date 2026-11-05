@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
-import workbench as work
-from demo_data import demo_state
+from saved_to_shipped import workbench as work
+from saved_to_shipped.demo_data import demo_state
 from saved_to_shipped import save_state
 
 

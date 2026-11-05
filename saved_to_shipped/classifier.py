@@ -10,7 +10,7 @@ import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from workbench import has_context
+from .workbench import has_context
 
 
 def configuration() -> dict:
