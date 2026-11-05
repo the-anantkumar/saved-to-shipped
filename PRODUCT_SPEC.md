@@ -32,7 +32,7 @@
 
 ## Known boundaries
 
-LinkedIn's Saved Items export contains saved dates and URLs, not third-party post bodies. Automatic post retrieval is not implemented. A real archive smoke test is pending the owner's download. Native Reddit/Instagram input is outside the web release; inherited CLI adapters remain available.
+LinkedIn's Saved Items export contains saved dates and URLs, not third-party post bodies. Automatic post retrieval is not implemented. A real archive has passed import, deduplication, annotation preservation, and export checks. Native Reddit/Instagram input is outside the web release; inherited CLI adapters remain available.
 
 Local rules provide broad heuristic suggestions and generic actions. They do not understand the source semantically. The optional LLM route is implemented and tested with mocks; a real account/key request is a separate smoke test. Human review stays part of the workflow.
 

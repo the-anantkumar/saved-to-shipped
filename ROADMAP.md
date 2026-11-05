@@ -17,7 +17,7 @@ Build for one person. Measure ideas acted on, not saves collected.
 
 ## Next: prove it with real saves
 
-- [ ] Import the owner's actual LinkedIn archive and confirm its exact headers/encoding
+- [x] Import a real LinkedIn archive, confirm numeric filename suffixes and camel-case headers, and verify deduplication and annotation preservation
 - [ ] Add context to 20 promising saves
 - [ ] Make one live optional API request with the owner's configured key
 - [ ] Review the proposed groups and improve first actions based on actual usefulness

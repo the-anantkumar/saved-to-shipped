@@ -29,6 +29,34 @@ class LinkedInImportTests(unittest.TestCase):
         self.assertEqual("2026-11-01", rows[0].saved_at)
         self.assertEqual("", rows[0].content)
 
+    def test_numeric_filename_suffix_and_camel_case_headers(self):
+        target = self.zip({
+            "export/Saved_Items_123456789.csv": (
+                "savedItem,CreatedTime\n"
+                "https://www.linkedin.com/feed/update/urn:li:activity:1234567890,2026-11-01 12:34:56\n"
+            ),
+            "SavedJobs_123456789.csv": "unrelated saved jobs",
+        })
+        records = parse_linkedin(target)
+        self.assertEqual(1, len(records))
+        self.assertEqual("https://www.linkedin.com/feed/update/urn:li:activity:1234567890", records[0].url)
+        self.assertEqual("2026-11-01 12:34:56", records[0].saved_at)
+        self.assertEqual("", records[0].content)
+        state = self.root / "state.json"
+        self.assertEqual((1, 1, 1), import_items(target, state))
+        self.assertEqual((1, 0, 1), import_items(target, state))
+        self.assertEqual("2026-11-01 12:34:56", load_state(state)["items"][0]["saved_at"])
+
+    def test_numeric_suffix_csv_can_be_imported_directly(self):
+        target = self.root / "Saved_Items_123456789.csv"
+        target.write_text("savedItem,CreatedTime\nhttps://linkedin.com/posts/example,2026-11-01 12:34:56\n", encoding="utf-8")
+        self.assertEqual(1, len(parse_linkedin(target)))
+
+    def test_original_and_suffixed_files_remain_ambiguous(self):
+        target = self.zip({"Saved_Items.csv": "", "Saved_Items_123456789.csv": ""})
+        with self.assertRaisesRegex(ValueError, "Multiple"):
+            parse_linkedin(target)
+
     def test_missing_or_ambiguous_saved_items_is_actionable(self):
         with self.assertRaisesRegex(ValueError, "No Saved_Items"):
             parse_linkedin(self.zip({"Saved_Jobs.csv": "Date,URL"}))

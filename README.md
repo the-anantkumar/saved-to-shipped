@@ -65,7 +65,7 @@ Each idea can become a **Build**, **Learn**, **Experience**, **Reference**, or *
 
 On LinkedIn desktop, go to **Settings & Privacy → Data Privacy → Download your data** and request an export containing **Saved Items**. [Official instructions →](https://www.linkedin.com/help/linkedin/answer/a1341346)
 
-The importer accepts a ZIP containing one Saved Items CSV, including inside nested folders, or the CSV directly. Common names such as `Saved_Items.csv` and `Saved Items.csv` are recognized.
+The importer accepts a ZIP containing one Saved Items CSV, including inside nested folders, or the CSV directly. Names such as `Saved_Items.csv`, `Saved Items.csv`, and `Saved_Items_123456789.csv` are recognized. Both `Date Saved` / `URL` and `savedItem` / `CreatedTime` column formats are supported.
 
 A minimal example looks like this:
 
@@ -202,7 +202,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and design choices, [PRODUC
 
 ## Current status and scope
 
-The synthetic import-to-backlog flow is tested, and the interface has been exercised in Safari. The first real archive inspected passed ZIP integrity checks but contained no Saved Items file. Missing-file imports were verified to leave both empty and existing workspaces unchanged. **A successful saved-post import from a real archive and a live OpenAI request remain unverified.**
+The synthetic import-to-backlog flow is tested, and the interface has been exercised in Safari. A real LinkedIn archive with a numeric filename suffix and `savedItem` / `CreatedTime` headers has passed import, duplicate re-import, annotation preservation, and export checks. Missing-file imports also leave existing workspaces unchanged. **Classification of a real batch with supplied context and a live OpenAI request remain unverified.**
 
 The current web application focuses on LinkedIn exports and manual LinkedIn capture. It does not log in to LinkedIn, crawl the saved feed, or retrieve post bodies automatically.
 

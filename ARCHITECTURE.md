@@ -66,4 +66,4 @@ These boundaries suit a personal local app. They are not a replacement for authe
 
 ## Extension points
 
-The inherited `ImportedSave` contract preserves future Reddit/Instagram adapters without changing review, scoring, or export logic. Existing adapters remain available through the CLI. Add native export formats only after obtaining a representative permitted fixture and regression tests. The immediate next validation is the user's real LinkedIn archive, not new platform integrations.
+The inherited `ImportedSave` contract preserves future Reddit/Instagram adapters without changing review, scoring, or export logic. Existing adapters remain available through the CLI. Add native export formats only after obtaining a representative permitted fixture and regression tests. Real LinkedIn archive import is verified; the next validation is useful classification and review of a batch with supplied context.
