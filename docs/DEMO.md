@@ -11,7 +11,7 @@ Start `python3 server.py` and open http://127.0.0.1:8010/?workspace=demo. Every 
 
 For the import demonstration, use **Import archive → Download a synthetic test ZIP**, then import that file into the demo. Import again to show deduplication. Those links already exist in the seeded workspace, so both rows are reported as duplicates.
 
-To demonstrate classification, open one of the two saves marked Needs context, add a note such as “Build a small Python script that totals my expense categories from a CSV,” and save. Choose **Classify inbox → Suggest directions locally**. Review the new draft and set its status to Ready. Explain that local rules are heuristics; optional AI is a different mode.
+To demonstrate classification, open one of the two saves marked Needs context, add a note such as “Build a small Python script that totals my expense categories from a CSV,” and save. Choose **Review classification options → Suggest directions locally**. Review the new draft and set its status to Ready. Explain that local rules are heuristics; optional AI is a different mode.
 
 When presenting the project, say that LinkedIn archives contain URLs and saved dates, and that context comes from user-supplied text or notes. It is an import-and-action workbench. Do not demonstrate synthetic content as a scraped live feed.
 
@@ -25,3 +25,9 @@ When presenting the project, say that LinkedIn archives contain URLs and saved d
 - If using OpenAI, configure your own key and classify a small new batch. Confirm incomplete/URL-only items are excluded.
 
 Avoid showing your real archive contents, notes, or API key in a public screen recording.
+
+## Hosted retrieval without provider charges
+
+For contributor QA, run `python3 -m tests.ui_fixture` and open http://127.0.0.1:8011/. This temporary server uses synthetic saves and mocked provider responses. Add any nonempty test token in Settings, choose Process saves, and start a run. One example receives content and another is marked as gated. Classify the recovered example using local suggestions. No real provider is contacted. Stop the fixture server with Ctrl+C.
+
+For real retrieval, configure your own Apify token in the personal app and start with 10 saved links. Set a spending cap and inspect the originals, recovered text, and any partial media coverage before processing a larger run.
