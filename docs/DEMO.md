@@ -13,7 +13,7 @@ For the import demonstration, use **Import archive → Download a synthetic test
 
 To demonstrate classification, open one of the two saves marked Needs context, add a note such as “Build a small Python script that totals my expense categories from a CSV,” and save. Choose **Review classification options → Suggest directions locally**. Review the new draft and set its status to Ready. Explain that local rules are heuristics; optional AI is a different mode.
 
-When presenting the project, say that LinkedIn archives contain URLs and saved dates, and that context comes from user-supplied text or notes. It is an import-and-action workbench. Do not demonstrate synthetic content as a scraped live feed.
+When presenting the project, say that LinkedIn archives contain URLs and saved dates. Post context comes from explicitly requested hosted retrieval or user-supplied text and notes. Do not demonstrate synthetic content as a scraped live feed. The [live check](LIVE_CHECK.md) records the real-data evidence and remaining limits.
 
 ## Real-data smoke test when the archive arrives
 

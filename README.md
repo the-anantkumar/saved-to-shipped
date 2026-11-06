@@ -10,7 +10,7 @@ Saved → Shipped is an open-source workbench for developers with a collection o
 
 Run it locally. Bring your own extractor API key. Add an optional AI key for more specific project suggestions. Your archive and workspace stay on your computer; selected URLs go to the extractor only when you start retrieval.
 
-> **Development preview:** real archive import is verified. Hosted retrieval and the complete workflow are tested with synthetic provider responses, including browser QA. A live retrieval run and live AI classification are still release gates. This package has not been published to PyPI.
+> **Development preview:** real archive import, a ten-post live provider dataset, and optional OpenAI classification have been checked. Synthetic tests cover the complete workflow and provider failures. Attachment fidelity, inaccessible posts, billing, and fresh-developer setup still need live validation. See the [live check and its limits](docs/LIVE_CHECK.md). This package has not been published to PyPI.
 
 ## Start in one command
 
@@ -79,7 +79,7 @@ The first adapter uses [data_minds/linkedin-post-scraper on Apify](https://apify
 
 Only content the provider can retrieve is available. Private, removed, and gated posts may remain unavailable. When supplied, document transcripts are included; image/video content and missing transcripts are labeled partial. Long text is capped at 20,000 characters with a visible truncation notice. External links are listed but are not automatically crawled.
 
-The adapter implements this actor's documented input/output schema. Changing `APIFY_ACTOR` requires a compatible actor; arbitrary Apify actors are not interchangeable. This provider has not yet been validated against a live batch of this project's saves.
+The adapter implements this actor's documented input/output schema. Changing `APIFY_ACTOR` requires a compatible actor; arbitrary Apify actors are not interchangeable. A ten-post live dataset matched this project's saved links; broader coverage and submission reliability remain under validation. See the [live check](docs/LIVE_CHECK.md).
 
 ### Classification
 

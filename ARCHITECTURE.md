@@ -61,7 +61,7 @@ A network failure during submission may have created a paid run. Such submission
 
 Only text or a nonblank personal note supports classification. URL slugs and titles alone are excluded. Provider login-wall text is rejected. Unrelated dataset rows are ignored and never assigned by output order. Coverage distinguishes recovered post text from document transcripts and partial media content. Text is capped at 20,000 characters with a visible flag.
 
-The provider is trusted to return content for the reported source; a live quality check is still required. No code can infer inaccessible originals or guarantee that every document transcript is complete.
+The provider is trusted to return content for the reported source. A ten-post live dataset matched saved links, but fidelity against original pages and broader coverage still require validation. No code can infer inaccessible originals or guarantee that every document transcript is complete. See the [live check](docs/LIVE_CHECK.md).
 
 ## Concurrency and HTTP boundary
 

@@ -36,14 +36,16 @@
 
 A real LinkedIn archive passed import, repeat import, annotation preservation, and export checks. Hosted setup through retrieval, local classification, review, and export passes HTTP tests with synthetic responses. Browser QA covers key setup and automatic result display. Installed-package startup and assets are tested outside the source checkout.
 
+A ten-post live Apify dataset matched saved links and supplied readable text. Five results have partial media coverage. Live OpenAI classification produced ten review drafts with grouped topics and next actions. A timed-out later submission remained blocked until its outcome was checked. See the [live check and remaining limits](docs/LIVE_CHECK.md).
+
 ## Release gates still open
 
-- Validate the configured hosted actor on a small live batch, including document and inaccessible posts.
+- Validate attachment fidelity and inaccessible posts against live originals, and check new-submission reliability.
 - Check actual provider coverage and charges against requested limits.
-- Run live optional AI classification and review the usefulness of grouped projects.
+- Review AI grouping and task quality across larger, varied batches.
 - Have a new developer complete setup from the published source version.
 
-Do not describe the hosted path as proven on real saved posts until those checks pass.
+Describe the ten-post result with its limits; do not claim general coverage until those checks pass.
 
 ## Scope
 

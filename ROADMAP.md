@@ -19,10 +19,11 @@ The goal is a useful first result with little setup, followed by a small piece o
 
 ## Before calling hosted retrieval release-ready
 
-- [ ] Run the default actor on 10 representative real saved links
+- [x] Check a ten-post live dataset from the default actor against real saved links
 - [ ] Inspect recovered text and attachment coverage against the originals
 - [ ] Confirm inaccessible results, account limits, and actual charges
-- [ ] Make a live optional model request and judge whether its project groups are useful
+- [x] Make live optional model requests and review small-batch groups and tasks
+- [ ] Verify new-submission reliability and grouping across larger, varied batches
 - [ ] Run a fresh-developer setup trial from the version intended for publication
 
 ## Next useful improvements
