@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory() as folder:
         if not match:
             raise AssertionError("Installed app did not start: " + process.stderr.read())
         connection = http.client.HTTPConnection("127.0.0.1", int(match.group(1)), timeout=5)
-        for route in ("/", "/app.js", "/onboarding.js", "/theme.js", "/style.css", "/api/state"):
+        for route in ("/", "/app.js", "/onboarding.js", "/theme.js", "/reading.js", "/style.css", "/api/state"):
             connection.request("GET", route)
             response = connection.getresponse()
             body = response.read()

@@ -32,8 +32,8 @@ function app(data = {}) {
   const context = vm.createContext({
     URLSearchParams, console,
     location: { search: "", hash: "" },
-    history: { pushState(_state, _unused, hash) { context.location.hash = hash; } },
-    window: { matchMedia: () => ({ matches: false }), getSelection: () => selection, scrollTo() {}, addEventListener(type, callback) { events[type] = callback; } },
+    history: { state: null, pushState(state, _unused, hash) { this.state = state; context.location.hash = hash; }, replaceState(state, unused, hash) { this.pushState(state, unused, hash); } },
+    window: { scrollY: 0, innerHeight: 900, requestAnimationFrame() {}, matchMedia: () => ({ matches: false }), getSelection: () => selection, scrollTo() {}, addEventListener(type, callback) { events[type] = callback; } },
     document: {
       documentElement: root, body: { appendChild() {} }, elementFromPoint: () => null,
       querySelector: node, querySelectorAll: () => [],
@@ -43,14 +43,15 @@ function app(data = {}) {
     setTimeout: () => 1, clearTimeout() {},
   });
   vm.runInContext(readFileSync("saved_to_shipped/web/onboarding.js", "utf8"), context);
+  vm.runInContext(readFileSync("saved_to_shipped/web/reading.js", "utf8"), context);
   vm.runInContext(readFileSync("saved_to_shipped/web/app.js", "utf8"), context);
-  context.fixture = { items: [], projects: [], settings: {}, imports: [], ...data };
+  context.fixture = structuredClone({ items: [], projects: [], settings: {}, imports: [], ...data });
   vm.runInContext("state = fixture", context);
   return { run: (code) => vm.runInContext(code, context), node, events, context, root, selection,
     emit(type, event) { for (const callback of events["document:" + type] || []) callback(event); } };
 }
 
-const draft = { id: "draft", title: "Practice query plans", content: "Compare an index", note: "For my app", kind: "learning", status: "inbox", has_context: true, saved_at: "2026-11-01", url: "https://linkedin.com/posts/example", next_action: "Compare one query", definition_of_done: "Two plans saved", effort_hours: 1 };
+const draft = { id: "draft", title: "Practice query plans", content: "Compare an index", note: "For my app", kind: "project", status: "inbox", has_context: true, saved_at: "2026-11-01", url: "https://linkedin.com/posts/example", next_action: "Compare one query", definition_of_done: "Two plans saved", effort_hours: 1 };
 const waiting = { ...draft, id: "waiting", title: "UNKNOWN_POST", content: "", note: "", kind: "untriaged", has_context: false };
 
 test("the next action prioritizes review and never invents context for waiting links", () => {
@@ -208,4 +209,113 @@ test("configured AI has one clear action and other methods stay available", () =
   assert.match(html, /<details><summary>Other ways/);
   assert.match(html, /Use local rules/);
   assert.doesNotMatch(html, /\$\{/);
+});
+
+const article = {...draft, id: "learn", title: "LEARNING_INDEXES", kind: "learning", project_id: "databases", content: "Useful database knowledge", status: "ready"};
+const reference = {...article, id: "reference", title: "REFERENCE_FORMS", kind: "reference", project_id: "forms"};
+const experience = {...article, id: "experience", title: "EXPERIENCE_STORY", kind: "experience", project_id: "careers"};
+const collections = [{id: "databases", name: "Databases"}, {id: "forms", name: "Accessible forms"}, {id: "careers", name: "Careers"}];
+
+test("project board and reading libraries keep their kinds separate", () => {
+  const ui = app({items: [draft, article, reference, experience], projects: collections});
+  const board = ui.run("backlog()");
+  assert.match(board, /Practice query plans/);
+  assert.doesNotMatch(board, /LEARNING_INDEXES|REFERENCE_FORMS|EXPERIENCE_STORY|Accessible forms|Careers/);
+  ui.run('view = "learning"');
+  const learning = ui.run("readingLibrary()");
+  assert.match(learning, /LEARNING_INDEXES/);
+  assert.match(learning, /REFERENCE_FORMS/);
+  assert.doesNotMatch(learning, /Practice query plans|EXPERIENCE_STORY|Careers/);
+  ui.run('view = "experiences"');
+  assert.match(ui.run("readingLibrary()"), /EXPERIENCE_STORY/);
+  assert.doesNotMatch(ui.run("readingLibrary()"), /LEARNING_INDEXES|REFERENCE_FORMS|Practice query plans/);
+  assert.equal(ui.run("reviewItems().length"), 1);
+});
+
+test("topic, reading time, search, and completion narrow the library together", () => {
+  const long = {...article, id: "long", title: "LONG_READ", content: "index ".repeat(1400)};
+  const read = {...reference, reading: {status: "read", progress: 100}};
+  const ui = app({items: [article, long, read], projects: collections});
+  ui.run('view = "learning"; readingLength = "5"; search = "knowledge"; projectFilter = "databases"');
+  assert.match(ui.run("readingLibrary()"), /LEARNING_INDEXES/);
+  assert.doesNotMatch(ui.run("readingLibrary()"), /LONG_READ|REFERENCE_FORMS/);
+  ui.run('search = ""; projectFilter = ""; readingFilter = "read"');
+  assert.match(ui.run("readingLibrary()"), /REFERENCE_FORMS/);
+  assert.doesNotMatch(ui.run("readingLibrary()"), /LEARNING_INDEXES|LONG_READ/);
+  assert.equal(ui.run("readingMinutes(state.items[1])"), 7);
+});
+
+test("reading prioritizes an unfinished read then the chosen Read next queue", () => {
+  const ui = app({items: [article, {...reference, reading: {status: "unread", queued: true}}, {...article, id: "started", reading: {status: "reading", progress: 40}}]});
+  assert.equal(ui.run("readingOrder(state.items).map(item => item.id).join(',')"), "started,reference,learn");
+  ui.run('view="learning"; readingFilter="queued"');
+  assert.equal(ui.run("filteredReading(libraryItems()).map(item => item.id).join(',')"), "reference");
+});
+
+test("reading routes retain filters, deep links, and legacy project links", () => {
+  const ui = app({items: [article]});
+  ui.context.location.hash = "#learning?project=databases&filter=reading&length=5&q=hello+world&read=learn";
+  ui.run("restoreRoute()");
+  assert.equal(ui.run("libraryHash()"), ui.context.location.hash);
+  assert.equal(ui.run("readerId"), "learn");
+  ui.context.location.hash = "#experiences?read=learn";
+  ui.events.popstate();
+  assert.equal(ui.run("readerId"), "");
+  ui.context.location.hash = "#projects";
+  ui.run("restoreRoute()");
+  assert.equal(ui.run("view"), "backlog");
+  ui.context.location.hash = "";
+  ui.run("restoreRoute()");
+  assert.equal(ui.run("view"), "learning");
+});
+
+test("the reader escapes source text and keeps coverage and notes visible", () => {
+  const ui = app({items: [{...article, content: '<script>bad()</script>\n\nA second paragraph.', enrichment: {status: "partial", coverage: "Video not transcribed", links: ["javascript:bad()", "https://example.com/read"]}}]});
+  ui.run('view="learning"; readerId="learn"');
+  const page = ui.run("readingPage()");
+  assert.match(page, /&lt;script&gt;bad\(\)&lt;\/script&gt;/);
+  assert.match(page, /Video not transcribed|Partial text/);
+  assert.match(page, /Your notes|Add a takeaway/);
+  assert.match(page, /https:\/\/example.com\/read/);
+  assert.doesNotMatch(page, /<script>|javascript:|name="next_action"|name="note"|data-draggable/);
+});
+
+test("reading mutations are serialized so completion follows pending progress", async () => {
+  const ui = app({items: [article]});
+  ui.run('let calls = []; api = async (_route, payload) => { calls.push(payload); return {reading: {...readingState(state.items[0]), ...payload}}; };');
+  await ui.run('Promise.all([changeReading("learn", {progress: 50}), changeReading("learn", {status: "read", progress: 100})])');
+  assert.equal(ui.run("calls.map(call => call.status || call.progress).join(',')"), "50,read");
+  assert.equal(ui.run("state.items[0].reading.status"), "read");
+  assert.equal(ui.run("state.items[0].status"), "ready");
+  assert.equal(ui.run("readingRequests.size"), 0);
+});
+
+test("reading organization sends metadata without rewriting tasks or notes", async () => {
+  const ui = app({items: [article], projects: collections});
+  ui.run('let saveReading, sent; bindForm = callback => saveReading = callback; api = async (_route, payload) => { sent = payload; }; readingDialog("learn");');
+  assert.doesNotMatch(ui.node("#modal").innerHTML, /name="status"|name="note"|name="next_action"|name="effort_hours"/);
+  ui.context.form = new Map([["title", "A clearer title"], ["kind", "reference"], ["project_id", "forms"]]);
+  await ui.run("saveReading(form)");
+  assert.deepEqual(JSON.parse(ui.run("JSON.stringify(sent)")), {id: "learn", title: "A clearer title", kind: "reference", project_id: "forms"});
+});
+
+test("navigation flushes pending progress before leaving a reading space", async () => {
+  const ui = app({items: [article]});
+  ui.run('view="learning"; readerId="learn"; pendingReadingProgress={id:"learn", progress:40}; let sent; api = async (_route,payload) => { sent = payload; return {reading:{status:"reading",progress:payload.progress,queued:false}}; };');
+  await ui.run('navigate("experiences")');
+  assert.deepEqual(JSON.parse(ui.run("JSON.stringify(sent)")), {id: "learn", progress: 40, status: "reading"});
+  assert.equal(ui.run("state.items[0].reading.progress"), 40);
+  assert.equal(ui.run("state.items[0].status"), "ready");
+  assert.equal(ui.context.location.hash, "#experiences");
+  assert.equal(ui.run("readerId"), "");
+});
+
+test("a save opened from intake returns to its reading library", async () => {
+  const ui = app({items: [{...article, reading: {status: "read", progress: 100}}]});
+  ui.run('view="inbox"; openReading("learn")');
+  assert.equal(ui.context.history.state.libraryReturn, "#learning");
+  assert.equal(ui.context.history.state.fromLibrary, false);
+  await ui.run("backToLibrary()");
+  assert.equal(ui.context.location.hash, "#learning");
+  assert.equal(ui.run("readerId"), "");
 });

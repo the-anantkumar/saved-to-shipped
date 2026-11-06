@@ -6,7 +6,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-7160df)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
 
-Saved → Shipped is an open-source workbench for developers with a collection of good ideas hidden in LinkedIn bookmarks. Import your official archive, retrieve available post content through a hosted extractor, and organize the results into projects, small tasks, and a weekly plan.
+Saved → Shipped is an open-source workbench for developers with a collection of good ideas hidden in LinkedIn bookmarks. Import your official archive, retrieve available post content through a hosted extractor, and give each save a home: a project to build, something to learn, or an experience to revisit.
 
 Run it locally. Bring your own extractor API key. Add an optional AI key for more specific project suggestions. Your archive and workspace stay on your computer; selected URLs go to the extractor only when you start retrieval.
 
@@ -41,12 +41,28 @@ saved-to-shipped
 2. **Open Settings.** Paste your Apify API token. An OpenAI key and your build/learning goals are optional. Blank key fields keep existing keys.
 3. **Process saves.** Follow the next-step panel on Saves. Start with 10 posts and choose a maximum provider charge. The app submits one hosted run and checks it automatically. First-time key setup returns you directly to retrieval.
 4. **Review the recovered content.** Readable posts receive text, a title or excerpt, author, source provenance, and available external links. Missing, gated, deleted, and partial results remain visible.
-5. **Organize and review.** Choose **Organize saves**, then review the proposed next actions. Organized drafts also appear in the board's Review lane. **Add to backlog** approves a draft and opens the next one; **Park for later** moves it aside. Personal notes and pasted source text have a separate **Notes** editor on each save and tile. Alternative classification methods and batch options stay available under details.
-6. **Move work forward.** Open **Board** and drag tiles through Review, To do, In progress, and Done. Arrange tiles within a lane to save their order. Each tile also has a keyboard/touch-friendly **Move…** control. The **This week** tab provides a weekly build-task budget. Open a task to attach the result, commit, or PR link. **Export** stays in the top bar.
+5. **Organize.** Choose **Organize saves**. Build ideas go to **Projects**, learning and reference material to **Learning**, and experience saves to **Experiences**. Suggestions are editable. Notes and pasted source text have a separate **Notes** editor.
+6. **Build or read.** In Projects, review next actions and drag approved tasks through To do, In progress, and Done. In the reading spaces, choose a topic, check the preview and read time, or pin something to **Read next**. Open a save to read, keep a takeaway, and explicitly **Mark read**. **Export** stays in the top bar.
 
 You do not need to manually annotate every link. Manual text and notes remain available for inaccessible posts or extra personal context.
 
 The [sample workspace](http://127.0.0.1:8010/?workspace=demo) works without keys and stays separate from personal data. It contains synthetic examples, not live scraped posts. Hosted retrieval is disabled for demo URLs.
+
+## Three spaces, three intentions
+
+| Space | What belongs here | How you use it |
+| --- | --- | --- |
+| **Projects** | Saves classified as Build / Project | Review small next actions, drag tiles, plan a week, and attach finished work. |
+| **Learning** | Learning and reference saves | Browse editorial rows by topic, search, or available reading time. Keep a short Read next queue. |
+| **Experiences** | Stories, interview experiences, event opportunities, and other experience saves | A separate reading library with the same topic and progress controls. |
+
+**Saves** is the intake area for import, retrieval, and classification. It remains available when something needs more context.
+
+The reading spaces offer **To read**, **Reading**, **Read next**, **Read**, and **All** filters. To read includes unfinished reads. In-progress saves appear first, followed by your Read next choices and newer saves. Read-time estimates use the available text at 200 words per minute; missing attachments and shortened content remain labeled. No reading suggestion calls an AI provider.
+
+Opening a readable save starts its reading progress. Scrolling remembers your furthest position, and opening it again resumes near that point. Scrolling never marks a save complete. Use **Mark read** when finished, or **Mark as unread** to reset it. **Organize** changes the title, topic, or kind without a task form; **Your notes** stays separate from the source.
+
+Reading progress is independent of project stages. Existing task states, notes, text, and group assignments are preserved. Older learning or experience saves marked In progress or Done initially appear as Reading or Read until you set their reading state. Existing groups act as reading topics, so no regrouping or re-import is needed.
 
 ## How it works
 
@@ -56,8 +72,12 @@ flowchart LR
     B --> C[Hosted content retrieval]
     C --> D[Local content cache]
     D --> E[Classify and group]
-    E --> F[Review small next steps]
-    F --> G[Backlog, sprint and exports]
+    E --> F[Projects: review and build]
+    E --> G[Learning: choose and read]
+    E --> H[Experiences: read and reflect]
+    F --> J[Private workspace exports]
+    G --> J
+    H --> J
 ```
 
 ### Archive input
@@ -93,7 +113,7 @@ The adapter implements this actor's documented input/output schema. Changing `AP
 
 The OpenAI dialog can continue through all eligible saves in batches. Closing it stops additional batches after any current request finishes. API usage is billed to your key.
 
-URL-only and title-only saves are excluded. Retrieval coverage accompanies the supplied context. Every web classification remains a draft until you review it. A ready task requires context, a title, classification, first action, done condition, and a 0.25 to 2 hour first-action estimate.
+URL-only and title-only saves are excluded. Retrieval coverage accompanies the supplied context. Classification produces editable suggestions. Project tasks remain drafts until reviewed; a ready task requires context, a title, classification, first action, done condition, and a 0.25 to 2 hour first-action estimate. Reading does not require approving a task or setting an effort estimate.
 
 ## Configuration
 
@@ -132,7 +152,7 @@ The server listens on loopback only, validates its Host header, and requires a p
 
 **Export backlog** produces one ZIP with:
 
-- `backlog.json`: workspace backup, excluding provider credentials.
+- `backlog.json`: workspace backup, including reading progress and Read next choices, excluding provider credentials.
 - `backlog.csv`: portable task table with project names, estimates, sources, and results.
 - `weekly_sprint.md`: up to two reviewed build tasks fitting your selected hours, with optional learning/experience suggestions listed separately.
 - `issues/*.md`: local GitHub issue drafts with source links and acceptance criteria.
@@ -160,10 +180,11 @@ python3 -m unittest discover -s tests -v
 node --check saved_to_shipped/web/app.js
 node --check saved_to_shipped/web/onboarding.js
 node --check saved_to_shipped/web/theme.js
+node --check saved_to_shipped/web/reading.js
 node --test tests/*_behavior.mjs
 ```
 
-Node is only needed for JavaScript syntax checks. CI tests Python 3.10 and 3.12, installs the package, and launches it outside the checkout to verify bundled assets and HTTP responses. Automated provider responses are mocked; tests do not spend API credit.
+Node is only needed for JavaScript syntax and behavior checks. CI tests Python 3.10 and 3.12, installs the package, and launches it outside the checkout to verify bundled assets and HTTP responses. Automated provider responses are mocked; tests do not spend API credit.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, test fixtures, and release gates; [ARCHITECTURE.md](ARCHITECTURE.md) for implementation boundaries; [PRODUCT_SPEC.md](PRODUCT_SPEC.md) for the user journey; and [ROADMAP.md](ROADMAP.md) for outstanding work.
 

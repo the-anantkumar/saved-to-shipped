@@ -11,8 +11,11 @@ flowchart TD
     A --> V[Source matching and coverage checks]
     V --> S
     S --> C[Local rules or optional AI]
-    C --> H[Human review]
-    H --> B[Projects, backlog and sprint]
+    C --> H[Project review]
+    H --> B[Project board and sprint]
+    C --> L[Learning and Experiences libraries]
+    L --> P[Independent reading progress]
+    P --> S
     B --> E[Private exports]
     K[Separate private settings] --> A
     K --> C
@@ -27,7 +30,7 @@ flowchart TD
 | `settings.py` | Data path resolution and private provider configuration |
 | `enrichment.py` | Apify transport, persisted retrieval lifecycle, source matching, content cache and coverage |
 | `classifier.py` | Optional structured OpenAI request and batch validation |
-| `workbench.py` | Capture, groups, local suggestions, review rules and ZIP exports |
+| `workbench.py` | Capture, groups, suggestions, task validation, independent reading state, and ZIP exports |
 | `server.py` | Loopback transport, static allowlist, write token and provider orchestration |
 | `web/` | Setup, import/retrieval guidance, polling, review and views |
 | `demo_data.py` | Explicitly synthetic examples |
@@ -36,7 +39,13 @@ Root `server.py` and `saved_to_shipped.py` preserve earlier source commands. The
 
 Shared CSS color tokens define light and dark palettes across every surface. A small synchronous `theme.js` applies the saved browser preference before the stylesheet loads, avoiding a light flash for a dark override. System mode listens for device appearance changes; explicit light/dark choices persist in local storage and synchronize between tabs. Theme changes update root attributes without redrawing editors. Provider settings and workspace exports remain independent of browser appearance preferences.
 
-The browser has three primary destinations: Saves, Projects, and Board. Weekly planning and completed items are board subviews. The board becomes the landing view once organized ideas exist. URL fragments retain the view and project filter across refresh and browser history. Saves presents one contextual next action: resolve a pending run, review drafts, classify readable content, or retrieve missing content. Review keeps source context read-only and advances through drafts after approval/parking. A separate Notes editor changes personal context or pasted post text, submitting only changed fields. Compact layouts collapse source reading; provider options and less frequent editing controls use details disclosures.
+The browser has four primary destinations: Saves, Projects, Learning, and Experiences. Projects contains the build-only board, weekly planning, and completed build items. Learning includes `learning` and `reference`; Experiences includes `experience`. Existing group IDs serve as reading topics. Landing prefers Projects when build items exist, then Learning, Experiences, or Saves. Legacy `#projects` and `#backlog` links still open the project board.
+
+Saves presents one contextual next action: resolve a pending run, review project drafts, classify readable content, or retrieve missing content. Project review keeps source context read-only and advances through drafts after approval/parking. A separate Notes editor changes personal context or pasted post text, submitting only changed fields. Provider options and less frequent editing controls use details disclosures.
+
+`web/reading.js` renders the two reading libraries and the focused reader. Library filtering combines topic, reading state, text search, and estimated available time. Order is deterministic: unfinished reading, queued choices, then saved date. Suggestions use those same filters and exclude completed saves. Estimates count cached source words, falling back to personal notes, at 200 words per minute. Excerpts are escaped source text, not generated summaries. Coverage notices and source links remain attached.
+
+Reading routes retain topic, status, length, search, and reader ID in the fragment. Opening a save starts reading; debounced scroll updates persist the furthest position, capped below explicit completion. The client serializes mutations per item and flushes pending progress before navigation. A reload restores an approximate position in the saved text. `Mark read` completes the read and clears its queue flag. Notes and metadata use separate editors; reading never changes task `status`.
 
 The board has Review, To do, In progress, and Done lanes. Pointer dragging uses a handle, movement threshold, pointer capture, drop indicator, and cancellation outside a lane or on Escape. A native Move select provides a keyboard/touch alternative. `/api/move` validates status and destination, then atomically saves the status and explicit `board_order`. Existing task-readiness checks apply to dragging as well. The client reconciles with the server after saving or an uncertain response; it does not resubmit automatically. Notes, source content, task fields, and provider provenance are preserved during moves.
 
@@ -48,6 +57,7 @@ The version-1 workspace format remains compatible with earlier saves. Items reta
 - `imports`: recent import summaries.
 - `retrieval_jobs`: selected item IDs, provider/actor, run and dataset references, status, charge cap, counts, timestamps, and safe errors.
 - Item `enrichment`: retrieval provenance, coverage, source links, status, and truncation information.
+- Item `reading`: optional `{status, progress, queued, started_at?, completed_at?, updated_at}`. Status is `unread`, `reading`, or `read`; progress is 0 to 100. `/api/reading` validates the item kind and available context, then saves atomically under the HTTP mutation lock. Progress is monotonic until an explicit unread reset. A snapshot derives legacy doing/done as reading/read without rewriting the file. Explicit reading metadata takes precedence. Included in JSON backups.
 - `goals`: optional personal direction used during triage.
 - `board_order`: stable item IDs in the user's explicit tile order. Unranked items use score order until arranged. Included in workspace backups.
 

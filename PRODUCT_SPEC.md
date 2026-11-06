@@ -2,7 +2,7 @@
 
 **Problem:** developers save useful LinkedIn content but face too much work to recover, organize, and act on it.
 
-**Product promise:** run locally, provide a hosted extractor key, import an official saved archive, retrieve available content, and review a small set of useful projects and tasks.
+**Product promise:** run locally, import an official saved archive, retrieve available content with your hosted extractor key, and spend time deliberately: build a project, learn something, or reflect on an experience.
 
 **First useful result:** readable recovered content and an actionable draft without manually transcribing posts.
 
@@ -13,9 +13,10 @@
 3. Configure a hosted extractor key in Settings. AI key and goals are optional.
 4. Start a small retrieval run with a spending cap, then process more saves when satisfied.
 5. See recovered text, titles/excerpts, authors, source links, and coverage. Unavailable results stay visible.
-6. Classify with offline rules, optional AI, or ChatGPT copy/paste. Group related ideas into projects.
-7. Review first actions, done conditions, estimates, and project assignments before marking tasks Ready.
-8. Track work, plan a realistic week, export, and attach actual shipped outcomes.
+6. Classify with offline rules, optional AI, or ChatGPT copy/paste. Separate Projects, Learning (including references), and Experiences; existing groups become topics in the reading spaces.
+7. For projects, review first actions, done conditions, estimates, and assignments before marking tasks Ready. Track work, plan a realistic week, and attach shipped outcomes.
+8. For learning and experiences, choose a topic, preview, or reading-time budget. Queue a read, open a focused reader, resume later, keep a takeaway, and explicitly mark it read.
+9. Export the private workspace, including reading progress, with sprint and issue drafts available for work.
 
 ## Acceptance criteria
 
@@ -30,6 +31,9 @@
 | Controlled spending | User-selected run size and per-run provider charge cap; no paid work on import/settings save |
 | Honest evidence | Gated/deleted/missing/error/partial statuses; no classification from URL/title alone |
 | Complete review loop | Project groups, concrete tasks, ready/doing/done/parked, sprint and exports |
+| Distinct organizing spaces | Build-only Projects board, editorial Learning and Experiences libraries, separate Saves intake |
+| Deliberate reading | Topic/search/time filters, Read next queue, source previews, focused reader, saved position, and explicit completion |
+| Independent progress | Reading and notes do not overwrite task stages; existing workspace data remains usable |
 | Open-source maintenance | MIT license, contribution guide, synthetic fixtures, packaging and provider tests |
 
 ## Current verification

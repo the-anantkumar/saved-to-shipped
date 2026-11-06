@@ -29,5 +29,6 @@ jobs:
           node --check saved_to_shipped/web/app.js
           node --check saved_to_shipped/web/onboarding.js
           node --check saved_to_shipped/web/theme.js
+          node --check saved_to_shipped/web/reading.js
       - name: Check UI behavior
         run: node --test tests/*_behavior.mjs

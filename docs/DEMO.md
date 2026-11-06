@@ -2,10 +2,10 @@
 
 Start `python3 server.py` and open http://127.0.0.1:8010/?workspace=demo. Every example is synthetic, and the personal workspace stays separate.
 
-1. **The problem:** open Board to see organized sample ideas. Open Saves to show the next-step panel and the To review, All saves, and Waiting filters.
-2. **The shape:** open Projects. Follow a group to its related saves.
+1. **The problem:** open Projects to see the build-only board. Open Saves to show intake and the next-step panel.
+2. **The shape:** open Learning. Show topics, source previews, read-time estimates, and the Read next bookmark. Experiences has its own reading library.
 3. **The action:** open a build idea. Show the read-only source beside its next action, done condition, estimate, and project assignment. Close review and use Notes on the tile to add personal context separately.
-4. **The payoff:** drag a tile from To do to In progress, then reorder two tiles within a lane. Refresh to show persistence. Demonstrate the Move control as an alternative. Open the This week tab within Board and change the time budget.
+4. **The payoff:** drag a project tile from To do to In progress, then reorder within a lane. Refresh to show persistence. Demonstrate Move and This week. In Learning, read part of the indexes example, return to the library, and Continue reading. Add a takeaway separately, then Mark read. Show that it moves to Read without changing any project stage.
 5. **The handoff:** use Export in the top bar. Explain that this produces local sprint and issue drafts, with the original inspiration link kept attached.
 6. **The result:** open the task again, add a real result URL only if you actually completed the work, and move it to Done. Synthetic example statuses illustrate the interface, not actual shipped work.
 
@@ -28,6 +28,6 @@ Avoid showing your real archive contents, notes, or API key in a public screen r
 
 ## Hosted retrieval without provider charges
 
-For contributor QA, run `python3 -m tests.ui_fixture` and open http://127.0.0.1:8011/. This temporary server uses three synthetic saves and mocked provider responses. Follow Process saves, enter any nonempty test token, and start retrieval. Two examples receive content (one partial); the third is gated. Organize with local rules, approve the first draft, and park the second. Confirm that review advances automatically and finishes on the board. The fixture's `?workspace=demo#backlog` has a fuller sample board for testing cross-lane moves, reordering, dropping outside a lane, the Move control, independent notes, and refresh persistence. No real provider is contacted. Stop the fixture server with Ctrl+C.
+For contributor QA, run `python3 -m tests.ui_fixture` and open http://127.0.0.1:8011/. This temporary server uses three synthetic saves and mocked provider responses. Follow Process saves, enter any nonempty test token, and start retrieval. Two examples receive content (one partial); the third is gated. Organize with local rules and approve the build draft. Confirm the learning save appears in Learning without task approval. The fixture's `?workspace=demo#backlog` has a fuller sample board for checking moves, ordering, cancellation, and notes. Its `#learning` and `#experiences` routes cover libraries, topic assignment, Read next, takeaways, explicit completion, and progress after reload. Check both themes and a compact window; topics become a select beside reading-time controls. No real provider is contacted. Stop the fixture server with Ctrl+C.
 
 For real retrieval, configure your own Apify token in the personal app and start with 10 saved links. Set a spending cap and inspect the originals, recovered text, and any partial media coverage before processing a larger run.
