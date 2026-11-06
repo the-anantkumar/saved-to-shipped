@@ -6,13 +6,17 @@ function pendingRetrieval() {
   );
 }
 
+function latestRetrieval() {
+  return (state.retrieval_jobs || []).find((job) => job.status !== "DISMISSED");
+}
+
 function pipeline() {
   const recovered = state.items.filter((item) => item.content?.trim()).length;
   const eligible = state.items.filter(
     (item) =>
       item.has_context && item.kind === "untriaged" && item.status === "inbox",
   ).length;
-  const job = state.retrieval_jobs?.[0];
+  const job = latestRetrieval();
   return `<section class="pipeline" aria-label="Process your saved archive">
     <div class="pipeline-step"><span class="step-number">1</span><div><strong>Bring your saves</strong><p>${state.items.length ? `${state.items.length} ideas imported` : "Start with your LinkedIn archive ZIP"}</p><button data-action="import">${state.items.length ? "Import another archive" : "Import archive"} ↗</button></div></div>
     <div class="pipeline-step"><span class="step-number">2</span><div><strong>Recover the content</strong><p>${recovered} ${recovered === 1 ? "save has" : "saves have"} post text${job ? ` · ${esc(job.status.toLowerCase().replaceAll("_", " "))}` : ""}</p><button data-action="retrieve">${state.settings?.extractor_available ? "Retrieve posts" : "Set up hosted retrieval"} ↗</button></div></div>
@@ -61,7 +65,7 @@ function retrievalDialog() {
     return;
   }
   if (!state.settings?.extractor_available) return settingsDialog();
-  const job = state.retrieval_jobs?.[0];
+  const job = pendingRetrieval() || latestRetrieval();
   if (job && (job.status === "STARTING" || job.status === "UNCERTAIN")) {
     modal(
       "Check your hosted submission",

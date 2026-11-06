@@ -36,6 +36,16 @@ class ClassifierTests(unittest.TestCase):
         self.assertNotIn(self.item["url"], sent["input"])
         self.assertTrue(sent["text"]["format"]["strict"])
 
+    def test_missing_media_and_truncation_are_visible_to_the_model(self):
+        self.item["enrichment"] = {"status": "partial", "coverage": "post text only", "content_truncated": True}
+        with patch("saved_to_shipped.classifier.urlopen", return_value=self.response()) as request:
+            classifier.classify(self.state, api_key="test-key")
+        supplied = json.loads(json.loads(request.call_args.args[0].data)["input"])["items"]
+        self.assertEqual(1, len(supplied))
+        self.assertEqual("partial", supplied[0]["content_status"])
+        self.assertEqual("post text only", supplied[0]["content_coverage"])
+        self.assertTrue(supplied[0]["content_truncated"])
+
     @patch.dict("os.environ", {}, clear=True)
     def test_key_is_optional_and_missing_key_does_not_make_request(self):
         with patch("saved_to_shipped.classifier.urlopen") as request:
