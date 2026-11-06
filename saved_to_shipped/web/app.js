@@ -312,6 +312,38 @@ function field(label, name, value = "", type = "input", attrs = "") {
 function select(label, name, options, value) {
   return `<div class="field"><label for="f-${name}">${label}</label><select id="f-${name}" name="${name}">${options.map(([key, label]) => `<option value="${esc(key)}" ${key === value ? "selected" : ""}>${esc(label)}</option>`).join("")}</select></div>`;
 }
+const NEW_SECTION = "__new_section__";
+function sectionLabels(kind) {
+  if (kind === "project") return {label: "Project", name: "Project name", create: "+ New project…", placeholder: "e.g. My AI playground"};
+  if (["learning", "reference"].includes(kind)) return {label: "Learning topic", name: "Topic name", create: "+ New learning topic…", placeholder: "e.g. Systems thinking"};
+  if (kind === "experience") return {label: "Experience section", name: "Section name", create: "+ New experience section…", placeholder: "e.g. Interview experiences"};
+  return {label: "Section", name: "Section name", create: "+ New section…", placeholder: "Give it a name"};
+}
+function organizationFields(item) {
+  const copy = sectionLabels(item.kind);
+  return `<div class="organization-fields">${select(copy.label, "project_id", [["", "Unsorted"], ...state.projects.map(project => [project.id, project.name]), [NEW_SECTION, copy.create]], item.project_id || "")}<div id="new-section-field" class="new-section-field hidden">${field(copy.name, "new_project_name", "", "input", `disabled maxlength="100" placeholder="${esc(copy.placeholder)}"`)}<p class="helper">Created and assigned when you save. Your other edits stay here.</p></div></div>`;
+}
+function syncOrganizationFields(focusNew = false) {
+  const group = $("#f-project_id");
+  if (!group) return;
+  const copy = sectionLabels($("#f-kind")?.value);
+  const isNew = group.value === NEW_SECTION;
+  $('label[for="f-project_id"]').textContent = copy.label;
+  $('label[for="f-new_project_name"]').textContent = copy.name;
+  group.querySelector(`option[value="${NEW_SECTION}"]`).textContent = copy.create;
+  $("#new-section-field").classList.toggle("hidden", !isNew);
+  const input = $("#f-new_project_name");
+  input.disabled = !isNew;
+  input.required = isNew;
+  input.placeholder = copy.placeholder;
+  if (isNew && focusNew) input.focus();
+}
+function organizationPayload(form) {
+  const payload = Object.fromEntries(form);
+  if (payload.project_id === NEW_SECTION) delete payload.project_id;
+  else delete payload.new_project_name;
+  return payload;
+}
 function bindForm(callback) {
   $("#dialog-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -401,12 +433,12 @@ function itemDialog(id) {
   const compact = window.matchMedia("(max-width: 800px)").matches;
   modal(
     draft ? "One idea. One next step." : "Your saved idea",
-    `<div class="review-layout"><section class="source-panel"><div class="eyebrow">THE INSPIRATION</div><h2>${esc(item.title || "Saved LinkedIn post")}</h2><div class="source-byline">${esc(item.author || "LinkedIn")} · ${esc(dateLabel(item.saved_at))}<a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original ${icon("external")}</a></div>${item.metadata?.synthetic ? '<div class="coverage-note">Synthetic sample content.</div>' : ""}${coverage ? `<div class="coverage-note ${coverage.status === "partial" ? "partial" : ""}">${icon(coverage.status === "partial" ? "file" : "check")}${esc(retrievalLabels[coverage.status] || coverage.status)} · ${esc(coverage.coverage || "No readable text returned")}${coverage.content_truncated ? ". Text shortened to 20,000 characters." : ""}</div>` : ""}<details class="read-source" ${compact ? "" : "open"}><summary>${item.content ? "Read post text" : "Read saved context"}</summary><div class="post-text">${esc(item.content || item.note || "The archive contains this post's link. Use Notes on the save to add context, or retrieve its text.")}</div></details>${coverage?.links?.length ? `<details class="source-links"><summary>${coverage.links.length} links from this post</summary>${coverage.links.slice(0,30).map(link => `<a class="quiet-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)} ${icon("external")}</a>`).join("")}</details>` : ""}</section><section class="action-panel"><div class="eyebrow">MAKE IT USEFUL</div>${item.classification_method ? `<p class="suggestion-note">Draft from ${esc(item.classification_method)} · ${esc(item.confidence)} confidence</p>` : '<p class="suggestion-note">Add context, then organize this save or shape a task yourself.</p>'}${field("Working title", "title", item.title, "input", 'maxlength="300" placeholder="Give the idea a short name"')}${field("Next action", "next_action", item.next_action, "textarea", 'placeholder="One small thing you can do in under two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="A result you can point to."')}<div class="field-row">${select("Project", "project_id", [["", "No project"], ...state.projects.map(p => [p.id,p.name])], item.project_id || "")}${select("Time to make a start", "effort_hours", effortChoices(item.effort_hours || 1), String(item.effort_hours || 1))}</div><details><summary>More details</summary>${select("Kind of idea", "kind", Object.entries(labels).map(([key,label]) => [key,key === "untriaged" ? "Not organized yet" : label]),item.kind)}${select("Status", "status", Object.entries(statusLabels),item.status)}${item.why ? `<p>${esc(item.why)}</p>` : ""}${field("Result / commit / PR link", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}</details></section></div>`,
+    `<div class="review-layout"><section class="source-panel"><div class="eyebrow">THE INSPIRATION</div><h2>${esc(item.title || "Saved LinkedIn post")}</h2><div class="source-byline">${esc(item.author || "LinkedIn")} · ${esc(dateLabel(item.saved_at))}<a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original ${icon("external")}</a></div>${item.metadata?.synthetic ? '<div class="coverage-note">Synthetic sample content.</div>' : ""}${coverage ? `<div class="coverage-note ${coverage.status === "partial" ? "partial" : ""}">${icon(coverage.status === "partial" ? "file" : "check")}${esc(retrievalLabels[coverage.status] || coverage.status)} · ${esc(coverage.coverage || "No readable text returned")}${coverage.content_truncated ? ". Text shortened to 20,000 characters." : ""}</div>` : ""}<details class="read-source" ${compact ? "" : "open"}><summary>${item.content ? "Read post text" : "Read saved context"}</summary><div class="post-text">${esc(item.content || item.note || "The archive contains this post's link. Use Notes on the save to add context, or retrieve its text.")}</div></details>${coverage?.links?.length ? `<details class="source-links"><summary>${coverage.links.length} links from this post</summary>${coverage.links.slice(0,30).map(link => `<a class="quiet-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)} ${icon("external")}</a>`).join("")}</details>` : ""}</section><section class="action-panel"><div class="eyebrow">MAKE IT USEFUL</div>${item.classification_method ? `<p class="suggestion-note">Draft from ${esc(item.classification_method)} · ${esc(item.confidence)} confidence</p>` : '<p class="suggestion-note">Add context, then organize this save or shape a task yourself.</p>'}${field("Working title", "title", item.title, "input", 'maxlength="300" placeholder="Give the idea a short name"')}${field("Next action", "next_action", item.next_action, "textarea", 'placeholder="One small thing you can do in under two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="A result you can point to."')}<div class="field-row">${organizationFields(item)}${select("Time to make a start", "effort_hours", effortChoices(item.effort_hours || 1), String(item.effort_hours || 1))}</div><details><summary>More details</summary>${select("Kind of idea", "kind", Object.entries(labels).map(([key,label]) => [key,key === "untriaged" ? "Not organized yet" : label]),item.kind)}${select("Status", "status", Object.entries(statusLabels),item.status)}${item.why ? `<p>${esc(item.why)}</p>` : ""}${field("Result / commit / PR link", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}</details></section></div>`,
     `${draft ? `<span class="review-count">${queue.length} ${queue.length === 1 ? "idea" : "ideas"} left to review</span><button class="button ghost" type="submit" name="decision" value="parked">Park for later</button>` : ""}<button class="button" type="submit" name="decision" value="save">${draft ? "Save draft" : "Save changes"}</button>${draft ? '<button class="button primary" type="submit" name="decision" value="ready">Add to backlog '+icon("arrow")+'</button>' : ""}`,
     true,
   );
   bindForm(async (form, submitter) => {
-    const payload = Object.fromEntries(form);
+    const payload = organizationPayload(form);
     payload.id = id;
     payload.effort_hours = Number(payload.effort_hours);
     const decision = submitter?.value;
@@ -779,6 +811,10 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("change", async (e) => {
+  if (["f-project_id", "f-kind"].includes(e.target.id)) {
+    syncOrganizationFields(e.target.id === "f-project_id");
+    return;
+  }
   if (e.target.id === "reading-topic-select") {
     projectFilter = e.target.value;
     visibleLimit = 25;

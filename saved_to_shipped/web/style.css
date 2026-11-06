@@ -482,6 +482,10 @@ html { scrollbar-color: var(--line-strong) var(--bg); }
 .reader-finish h2 { font-family: "Iowan Old Style", Georgia, serif; font-size: 27px; font-weight: 500; margin: 15px 0 10px; }
 .reader-finish p { color: var(--muted); font-size: 13px; line-height: 1.7; }
 .reader-finish > div { display: flex; flex-wrap: wrap; gap: 10px; margin: 23px 0 26px; }
+.organization-fields { min-width: 0; }
+.new-section-field { padding-left: 13px; border-left: 2px solid var(--line-strong); margin-bottom: 20px; }
+.new-section-field .field { margin-bottom: 7px; }
+.new-section-field .helper { margin: 0; }
 @media (max-width: 1120px) {
   .library-layout { grid-template-columns: minmax(0,1fr) 195px; gap: 27px; }
   .library-rail { padding-left: 20px; }

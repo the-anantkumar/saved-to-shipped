@@ -165,7 +165,7 @@ def update_item(path: Path, ident: str, payload: dict) -> None:
 
 
 def _update_item(state: dict, ident: str, payload: dict) -> None:
-    """Validate changes in memory so compound board moves save atomically."""
+    """Validate in memory so item edits, group creation, and board moves save atomically."""
     item = select_item(state, ident)
     for key in ("title", "content", "note", "why", "next_action", "definition_of_done", "outcome_url"):
         if key in payload:
@@ -179,7 +179,14 @@ def _update_item(state: dict, ident: str, payload: dict) -> None:
         item["kind"] = payload["kind"]
     if item["kind"] != "untriaged" and not has_context(item):
         raise ValueError("Add post text or a useful note before classifying this save")
-    if "project_id" in payload:
+    if "new_project_name" in payload:
+        if "project_id" in payload:
+            raise ValueError("Choose an existing section or create a new one")
+        name = text(payload["new_project_name"], "Project or topic name", 100)
+        if not name:
+            raise ValueError("Give the new project or topic a name")
+        item["project_id"] = project_for(state, name)
+    elif "project_id" in payload:
         project = payload["project_id"]
         if project and not any(p["id"] == project for p in state["projects"]):
             raise ValueError("Choose an existing project")

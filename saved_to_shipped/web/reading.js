@@ -155,10 +155,10 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 function readingDialog(id) {
   const item = state.items.find(item => item.id === id);
   if (!item) return;
-  modal("Find the right place for it", field("Title", "title", item.title, "input", 'maxlength="300" required') + select("Keep this as", "kind", [["learning", "Learning"], ["reference", "Reference"], ["experience", "Experience"], ["project", "Project"]], item.kind) + select("Topic or project", "project_id", [["", "Unsorted"], ...state.projects.map(topic => [topic.id, topic.name])], item.project_id || "") + `<button class="quiet-link" type="button" data-action="reading-new-topic" data-id="${esc(id)}">${icon("plus")}Create a topic</button>`, '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save organization</button>', true);
+  modal("Find the right place for it", field("Title", "title", item.title, "input", 'maxlength="300" required') + select("Keep this as", "kind", [["learning", "Learning"], ["reference", "Reference"], ["experience", "Experience"], ["project", "Project"]], item.kind) + organizationFields(item), '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save organization</button>', true);
   bindForm(async form => {
     await flushReadingProgress();
-    const payload = {id, ...Object.fromEntries(form)};
+    const payload = {id, ...organizationPayload(form)};
     await api("/api/item", payload);
     toast("Organization saved.");
     if (payload.kind !== item.kind && (payload.kind === "project" || (payload.kind === "experience") !== (item.kind === "experience"))) {
