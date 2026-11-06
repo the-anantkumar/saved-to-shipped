@@ -37,10 +37,10 @@ saved-to-shipped
 
 1. **Import archive.** Choose your LinkedIn export ZIP or its Saved Items CSV.
 2. **Open Settings.** Paste your Apify API token. An OpenAI key and your build/learning goals are optional. Blank key fields keep existing keys.
-3. **Process saves.** Start with 10 posts and choose a maximum provider charge. The app submits one hosted run and checks it automatically.
+3. **Process saves.** Follow the next-step panel on Saves. Start with 10 posts and choose a maximum provider charge. The app submits one hosted run and checks it automatically. First-time key setup returns you directly to retrieval.
 4. **Review the recovered content.** Readable posts receive text, a title or excerpt, author, source provenance, and available external links. Missing, gated, deleted, and partial results remain visible.
-5. **Find your next project.** Choose local suggestions, optional OpenAI classification, or the ChatGPT copy/paste route. Review the project, first action, done condition, and estimate, then set the task Ready.
-6. **Ship a small step.** Use the backlog and weekly time budget, then attach the result, commit, or PR link when finished.
+5. **Organize and review.** Choose **Organize saves**, then **Start reviewing**. Read the source beside its proposed next action. **Add to backlog** approves a draft and opens the next one; **Park for later** moves it aside. Alternative classification methods and batch options stay available under details.
+6. **Ship a small step.** Use **Start task** and **Mark shipped** on the backlog. The **This week** tab provides a weekly build-task budget. Open a task to attach the result, commit, or PR link. **Export** stays in the top bar.
 
 You do not need to manually annotate every link. Manual text and notes remain available for inaccessible posts or extra personal context.
 
@@ -157,6 +157,7 @@ Issue drafts are not published automatically. Backups contain your supplied text
 python3 -m unittest discover -s tests -v
 node --check saved_to_shipped/web/app.js
 node --check saved_to_shipped/web/onboarding.js
+node --test tests/ui_behavior.mjs
 ```
 
 Node is only needed for JavaScript syntax checks. CI tests Python 3.10 and 3.12, installs the package, and launches it outside the checkout to verify bundled assets and HTTP responses. Automated provider responses are mocked; tests do not spend API credit.

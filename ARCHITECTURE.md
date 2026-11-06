@@ -34,6 +34,8 @@ flowchart TD
 
 Root `server.py` and `saved_to_shipped.py` preserve earlier source commands. The package ships its own HTML/CSS/JS. Installed tests use isolated imports and a different working directory, so a missing wheel asset cannot be hidden by the checkout.
 
+The browser has three primary destinations: Saves, Projects, and Backlog. Weekly planning and shipped items are backlog subviews. URL fragments retain the view and project filter across refresh and browser history. Saves presents one contextual next action: resolve a pending run, review drafts, classify readable content, or retrieve missing content. Review separates the source from the editable task, advances through drafts after approval/parking, and opens the backlog when the queue is finished. Compact layouts collapse source reading; provider options and less frequent editing controls use details disclosures.
+
 ## Persistent state
 
 The version-1 workspace format remains compatible with earlier saves. Items retain stable IDs, URLs, saved dates, annotations, classifications, project assignments, and progress. New optional collections are initialized lazily.

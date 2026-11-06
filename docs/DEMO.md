@@ -2,16 +2,16 @@
 
 Start `python3 server.py` and open http://127.0.0.1:8010/?workspace=demo. Every example is synthetic, and the personal workspace stays separate.
 
-1. **The problem:** show the saved inbox. Ideas are collected, grouped, and visibly waiting for context where needed.
+1. **The problem:** open Saves. Point out the single next-step panel and the To review, All saves, and Waiting filters.
 2. **The shape:** open Projects. Follow a group to its related saves.
-3. **The action:** open a ready build idea. Show the supplied context, suggested first action, done condition, estimate, and project assignment. Edit the task to make it specific, and change its status to In progress.
-4. **The payoff:** open Backlog and show that task in its new column. Open This week and change the time budget.
-5. **The handoff:** export the sprint and issue drafts. Explain that this produces local files, with the original inspiration link kept attached.
+3. **The action:** open a ready build idea. Show the source beside its next action, done condition, estimate, and project assignment. Edit the task if needed. Use Start task on the backlog to move it into progress.
+4. **The payoff:** show that task in its new column. Open the This week tab within Backlog and change the time budget.
+5. **The handoff:** use Export in the top bar. Explain that this produces local sprint and issue drafts, with the original inspiration link kept attached.
 6. **The result:** open the task again, add a real result URL only if you actually completed the work, and mark it Shipped. Synthetic example statuses illustrate the interface, not actual shipped work.
 
 For the import demonstration, use **Import archive → Download a synthetic test ZIP**, then import that file into the demo. Import again to show deduplication. Those links already exist in the seeded workspace, so both rows are reported as duplicates.
 
-To demonstrate classification, open one of the two saves marked Needs context, add a note such as “Build a small Python script that totals my expense categories from a CSV,” and save. Choose **Review classification options → Suggest directions locally**. Review the new draft and set its status to Ready. Explain that local rules are heuristics; optional AI is a different mode.
+To demonstrate classification, find an item under Waiting, add a note such as “Build a small Python script that totals my expense categories from a CSV,” and save. Choose **Organize saves → Organize with local rules**. If AI is configured, local rules are under Other ways to organize. Choose **Start reviewing**, inspect the draft, and **Add to backlog**. Explain that local rules are heuristics; optional AI is a different mode.
 
 When presenting the project, say that LinkedIn archives contain URLs and saved dates. Post context comes from explicitly requested hosted retrieval or user-supplied text and notes. Do not demonstrate synthetic content as a scraped live feed. The [live check](LIVE_CHECK.md) records the real-data evidence and remaining limits.
 
@@ -28,6 +28,6 @@ Avoid showing your real archive contents, notes, or API key in a public screen r
 
 ## Hosted retrieval without provider charges
 
-For contributor QA, run `python3 -m tests.ui_fixture` and open http://127.0.0.1:8011/. This temporary server uses synthetic saves and mocked provider responses. Add any nonempty test token in Settings, choose Process saves, and start a run. One example receives content and another is marked as gated. Classify the recovered example using local suggestions. No real provider is contacted. Stop the fixture server with Ctrl+C.
+For contributor QA, run `python3 -m tests.ui_fixture` and open http://127.0.0.1:8011/. This temporary server uses three synthetic saves and mocked provider responses. Follow Process saves, enter any nonempty test token, and start retrieval. Two examples receive content (one partial); the third is gated. Organize with local rules, approve the first draft, and park the second. Confirm that review advances automatically and finishes on the backlog. Try Start task, Mark shipped, browser Back, refresh, and a compact window. No real provider is contacted. Stop the fixture server with Ctrl+C.
 
 For real retrieval, configure your own Apify token in the personal app and start with 10 saved links. Set a spending cap and inspect the originals, recovered text, and any partial media coverage before processing a larger run.
