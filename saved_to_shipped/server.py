@@ -111,7 +111,7 @@ class Handler(BaseHTTPRequestHandler):
                         archive.writestr("Saved_Items.csv", "Date Saved,URL\n2026-11-01,https://www.linkedin.com/feed/update/urn:li:activity:900000000000000001\n2026-11-02,https://www.linkedin.com/feed/update/urn:li:activity:900000000000000002\n")
                         archive.writestr("README.txt", "Synthetic URLs for importer testing only. These do not represent real posts. LinkedIn Saved Items contain dates and URLs, not post bodies.")
                     self.send(buffer.getvalue(), "application/zip", filename="synthetic-linkedin-archive.zip")
-                elif route in {"/", "/app.js", "/onboarding.js", "/theme.js", "/style.css"}:
+                elif route in {"/", "/app.js", "/onboarding.js", "/theme.js", "/reading.js", "/style.css"}:
                     asset = ROOT / "web" / ("index.html" if route == "/" else route.lstrip("/"))
                     self.send(asset.read_bytes(), (mimetypes.guess_type(asset.name)[0] or "text/plain") + "; charset=utf-8")
                 else:
@@ -184,6 +184,8 @@ class Handler(BaseHTTPRequestHandler):
                 elif route == "/api/move":
                     work.move_item(state_path, payload)
                     self.json({"ok": True})
+                elif route == "/api/reading":
+                    self.json({"reading": work.update_reading(state_path, payload)})
                 elif route == "/api/project":
                     self.json({"id": work.save_project(state_path, payload)})
                 elif route == "/api/classify":

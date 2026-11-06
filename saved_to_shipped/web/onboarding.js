@@ -26,16 +26,17 @@ function pipeline() {
     action = 'data-action="review-next"'; label = "Start reviewing";
   } else if (eligible) {
     title = `${eligible} readable ${eligible === 1 ? "save. Let’s find its next step." : "saves. Let’s find their next steps."}`;
-    description = "Turn the useful bits into project groups and small actions.";
+    description = "Find a home for each save: Projects, Learning, or Experiences.";
     action = 'data-action="classify"'; label = "Organize saves"; image = "spark";
   } else if (missing) {
     title = "There’s something in your saves.";
     description = `${missing} links are waiting for content. Start with a small batch.`;
     action = 'data-action="retrieve"'; label = `Process ${Math.min(10, missing)} ${missing === 1 ? "save" : "saves"}`; image = "download";
   } else {
-    title = "A little space to make something.";
-    description = "Your reviewed next steps are waiting in the backlog.";
-    action = 'data-view="backlog"'; label = "Open backlog"; image = "check";
+    const destination = state.items.some(item => item.kind === "project") ? "backlog" : state.items.some(item => ["learning", "reference"].includes(item.kind)) ? "learning" : "experiences";
+    title = "Your saves have a place now.";
+    description = "Build something, learn something, or make room for a fresh perspective.";
+    action = `data-view="${destination}"`; label = destination === "backlog" ? "Open Projects" : destination === "learning" ? "Open Learning" : "Open Experiences"; image = "check";
   }
   return `<section class="next-step" aria-label="Your next step"><div class="next-symbol" aria-hidden="true">✳</div><div class="next-copy"><span class="eyebrow">UP NEXT</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div><button class="button primary" ${action}>${label}${icon(image)}</button></section>`;
 }

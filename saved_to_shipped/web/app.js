@@ -32,6 +32,8 @@ const shapes = {
   note: "M4 4h16v12l-4 4H4z M8 8h8 M8 12h6 M15 20v-5h5",
   grip: "M9 5h.01 M15 5h.01 M9 12h.01 M15 12h.01 M9 19h.01 M15 19h.01",
   moon: "M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z",
+  book: "M12 5C8 2 4 3 2 4v16c3-1 6-1 10 1 4-2 7-2 10-1V4c-3-1-6-2-10 1Z M12 5v16",
+  bookmark: "M6 3h12v18l-6-4-6 4Z",
 };
 const icon = (name) =>
   `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${shapes[name] || shapes.file}"/></svg>`;
@@ -84,6 +86,7 @@ async function api(route, data, query = "") {
       ? {}
       : {
           method: "POST",
+          keepalive: route === "/api/reading",
           headers: {
             "Content-Type": "application/json",
             "X-Workbench-Token": state.token,
@@ -97,13 +100,20 @@ async function api(route, data, query = "") {
   return result;
 }
 async function refresh() {
+  if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
   state = await api("/api/state");
+  const first = initialLoad;
   if (initialLoad) {
     restoreRoute();
     filter = reviewItems().length ? "review" : "all";
     initialLoad = false;
   }
   if (!draggedTile) render();
+  if (first && readerId) {
+    restoreReadingPosition();
+    const item = state.items.find(item => item.id === readerId);
+    if (item) startReading(item);
+  }
   scheduleRetrieval();
 }
 function toast(message) {
@@ -130,30 +140,45 @@ function dateLabel(raw) {
     ? raw
     : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
-function navigate(next, project = "") {
-  view = next;
+async function navigate(next, project = "") {
+  if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
+  readerId = "";
+  view = next === "projects" ? "backlog" : next;
   projectFilter = project;
   filter = next === "inbox" && !project && reviewItems().length ? "review" : "all";
   search = "";
+  readingFilter = "unread";
+  readingLength = "any";
   visibleLimit = 25;
-  history.pushState(null, "", `#${next}${project ? "?project=" + encodeURIComponent(project) : ""}`);
-  render();
+  history.pushState(null, "", `#${view}${project ? "?project=" + encodeURIComponent(project) : ""}`);
+  render(false);
   window.scrollTo({ top: 0 });
   $("h1")?.focus({ preventScroll: true });
 }
 function restoreRoute() {
   const [route, query = ""] = location.hash.slice(1).split("?");
-  view = ["inbox", "projects", "backlog", "week", "shipped"].includes(route) ? route : state.items.some(item => item.kind !== "untriaged") ? "backlog" : "inbox";
-  projectFilter = new URLSearchParams(query).get("project") || "";
+  const fallback = state.items.some(item => item.kind === "project") ? "backlog" : state.items.some(item => ["learning", "reference"].includes(item.kind)) ? "learning" : state.items.some(item => item.kind === "experience") ? "experiences" : "inbox";
+  view = route === "projects" ? "backlog" : ["inbox", "backlog", "week", "shipped", "learning", "experiences"].includes(route) ? route : fallback;
+  const params = new URLSearchParams(query);
+  projectFilter = params.get("project") || "";
+  search = params.get("q") || "";
+  readingFilter = ["unread", "reading", "read", "all", "queued"].includes(params.get("filter")) ? params.get("filter") : "unread";
+  readingLength = ["5", "10"].includes(params.get("length")) ? params.get("length") : "any";
+  readerId = isReadingView() ? params.get("read") || "" : "";
+  if (readerId && !libraryItems().some(item => item.id === readerId && item.has_context)) readerId = "";
 }
-window.addEventListener("popstate", () => {
+window.addEventListener("popstate", async () => {
+  if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
   restoreRoute();
   filter = "all";
-  search = "";
-  render();
+  render(false);
+  if (readerId) {
+    restoreReadingPosition();
+    startReading(state.items.find(item => item.id === readerId));
+  }
 });
 function reviewItems() {
-  return state.items.filter((item) => item.status === "inbox" && item.has_context && item.kind !== "untriaged");
+  return state.items.filter((item) => item.status === "inbox" && item.has_context && item.kind === "project");
 }
 function sidebar() {
   const theme = window.save2shipTheme?.preference || "system";
@@ -161,8 +186,9 @@ function sidebar() {
     `<a class="brand" href="/?workspace=${workspace}" aria-label="Save2Ship home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
   <nav class="nav" aria-label="Main navigation">${[
     ["inbox", "inbox", "Saves"],
-    ["projects", "grid", "Projects"],
-    ["backlog", "board", "Board"],
+    ["backlog", "board", "Projects"],
+    ["learning", "book", "Learning"],
+    ["experiences", "leaf", "Experiences"],
   ]
     .map(
       ([key, img, label]) =>
@@ -201,14 +227,6 @@ function inbox() {
     (projectFilter ? `<button class="quiet-link back-link" data-view="projects">← All projects</button>` : pipeline()) +
     `<div class="toolbar"><div class="tabs" aria-label="Filter saves">${[["review", "To review", reviews.length], ["all", "All saves", scope.length], ["context", "Waiting", waiting.length]].map(([key,label,count]) => `<button class="tab ${filter === key ? "selected" : ""}" data-filter="${key}" aria-pressed="${filter === key}">${label}<span>${count}</span></button>`).join("")}</div><label class="search">${icon("search")}<input id="search" placeholder="Search saves" aria-label="Search saves" value="${esc(search)}"><kbd>/</kbd></label></div>` + table(items.slice(0,visibleLimit)) + `${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25,items.length-visibleLimit)} more</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "save" : "saves"}${projectFilter ? " in this project" : ""}</span>${waiting.length && filter !== "context" && !projectFilter ? '<button class="quiet-link" data-action="retrieve">Process more saves ↗</button>' : ""}</div>`;
 }
-function projects() {
-  return heading("A little direction.", `${state.projects.length} projects bringing related ideas together.`, '<button class="button" data-action="project">'+icon("plus")+'New project</button>') + `<div class="project-grid">${state.projects.length ? state.projects.map((project,index) => {
-    const items = state.items.filter((item) => item.project_id === project.id);
-    const active = items.filter((item) => ["ready","doing"].includes(item.status)).length;
-    const done = items.filter((item) => item.status === "done").length;
-    return `<button class="project-card" data-project="${project.id}"><span class="project-icon c${index%3}">${icon("folder")}</span><h2>${esc(project.name)}</h2>${project.description ? `<p>${esc(project.description)}</p>` : ""}<footer><span>${items.length} saves${active ? ` · ${active} active` : ""}${done ? ` · ${done} shipped` : ""}</span>${icon("arrow")}</footer></button>`;
-  }).join("") : empty("Let a project take shape", "Organize your saves to find related ideas, or start a group of your own.", '<button class="button primary" data-view="inbox">Back to saves</button>')}</div>`;
-}
 function orderedTiles(items) {
   const rank = new Map((state.board_order || []).map((id,index) => [id,index]));
   return [...items].sort((a,b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || (b.score || 0) - (a.score || 0));
@@ -221,9 +239,10 @@ function backlogTabs() {
   return `<div class="tabs backlog-tabs" aria-label="Board views">${[["backlog","Board"],["week","This week"],["shipped","Done"]].map(([key,label]) => `<button class="tab ${view===key ? "selected" : ""}" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join("")}</div>`;
 }
 function backlog() {
-  const items = state.items.filter(item => !projectFilter || item.project_id === projectFilter);
-  return heading("Your board.", "Drag ideas between stages. Arrange what comes next.", reviewItems().length ? '<button class="button" data-action="review-next">Review next '+icon("arrow")+'</button>' : "") +
-    `<div class="board-toolbar">${backlogTabs()}<label class="board-filter"><span class="sr-only">Filter board by project</span><select id="board-project" aria-label="Filter board by project"><option value="">All projects</option>${state.projects.map(project => `<option value="${project.id}" ${projectFilter===project.id ? "selected" : ""}>${esc(project.name)}</option>`).join("")}</select></label></div>` +
+  const items = state.items.filter(item => item.kind === "project" && (!projectFilter || item.project_id === projectFilter));
+  const groups = state.projects.filter(project => state.items.some(item => item.kind === "project" && item.project_id === project.id));
+  return heading("A place to make things.", "Only projects here. Pick a next step and move it forward.", '<button class="button" data-action="project">'+icon("plus")+'New project</button>') +
+    `<div class="board-toolbar">${backlogTabs()}<label class="board-filter"><span class="sr-only">Filter board by project</span><select id="board-project" aria-label="Filter board by project"><option value="">All projects</option>${groups.map(project => `<option value="${project.id}" ${projectFilter===project.id ? "selected" : ""}>${esc(project.name)}</option>`).join("")}</select></label></div>` +
     `<div class="board-scroll"><div class="board kanban" aria-label="Idea board" aria-busy="${movingTile}">${[["inbox","Review"],["ready","To do"],["doing","In progress"],["done","Done"]].map(([key,label]) => {
       const lane = orderedTiles(items.filter(item => item.status === key && item.kind !== "untriaged" && item.has_context));
       return `<section class="column" data-drop-status="${key}" aria-label="${label}"><div class="column-title"><span class="stage-dot ${key}"></span><h2>${label}</h2><small>${lane.length}</small></div><div class="lane-body">${lane.map(item => task(item,true)).join("")}<p class="lane-placeholder">${key === "inbox" ? "Organized ideas land here." : key === "ready" ? "Drop an idea to line it up." : key === "doing" ? "Make a little room to begin." : "A place for finished work."}</p></div></section>`;
@@ -234,7 +253,7 @@ function week() {
   const selected = [];
   for (const item of state.items
     .filter(
-      (i) => i.kind === "project" && ["ready", "doing"].includes(i.status),
+      (i) => i.kind === "project" && ["ready", "doing"].includes(i.status) && (!projectFilter || i.project_id === projectFilter),
     )
     .sort((a, b) => b.score - a.score)) {
     if (
@@ -255,22 +274,26 @@ function week() {
     backlogTabs() + `<div class="week-note">${selected.length ? `${selected.length} small build ${selected.length === 1 ? "task" : "tasks"} · ${Math.round((hours - remaining) * 100) / 100}h planned · ${Math.round(remaining * 100) / 100}h breathing room` : "No reviewed build tasks fit this budget yet."}<br>A maximum of two build tasks. Leave yourself room to finish.</div><div class="board">${selected.length ? selected.map(item => task(item)).join("") : empty("Make space for one good idea", "Review a build idea, set a next action, then add it to your backlog.", '<button class="button primary" data-view="inbox">Review saved ideas</button>')}</div>`
   );
 }
-function render() {
+function render(preserveScroll = true) {
+  const scroll = readerId && preserveScroll ? window.scrollY : null;
   sidebar();
   $("#main").classList.toggle("board-page", view === "backlog");
+  $("#main").classList.toggle("reading-page", isReadingView());
   $("#main").innerHTML =
     topbar() +
     {
       inbox,
-      projects,
       backlog,
       week,
+      learning: readingPage,
+      experiences: readingPage,
       shipped: () =>
         heading(
           "Look what you made.",
           "A small collection of things you followed through on.",
-        ) + backlogTabs() + table(state.items.filter((i) => i.status === "done")),
+        ) + backlogTabs() + table(state.items.filter((i) => i.kind === "project" && i.status === "done")),
     }[view]();
+  if (scroll !== null) window.requestAnimationFrame(() => window.scrollTo({top: scroll}));
 }
 function modal(
   title,
@@ -323,29 +346,30 @@ function captureDialog() {
     toast("Idea captured. Give it context, then classify it.");
   });
 }
-function projectDialog() {
+function projectDialog(asTopic = false, itemId = "") {
   modal(
-    "Make room for a project",
+    asTopic ? "Give your reading a home" : "Make room for a project",
     field(
-      "Project name",
+      asTopic ? "Topic name" : "Project name",
       "name",
       "",
       "input",
-      'required maxlength="100" placeholder="e.g. My AI playground"',
+      `required maxlength="100" placeholder="${asTopic ? "e.g. Systems thinking" : "e.g. My AI playground"}"`,
     ) +
       field(
-        "What are you working toward?",
+        asTopic ? "What belongs here?" : "What are you working toward?",
         "description",
         "",
         "textarea",
-        'maxlength="2000" placeholder="A small outcome you would like to make real."',
+        `maxlength="2000" placeholder="${asTopic ? "The subjects and questions you want to explore." : "A small outcome you would like to make real."}"`,
       ),
-    '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Create project</button>',
+    `<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Create ${asTopic ? "topic" : "project"}</button>`,
     true,
   );
   bindForm(async (form) => {
-    await api("/api/project", Object.fromEntries(form));
-    toast("Project created. Assign ideas from their review panel.");
+    const result = await api("/api/project", Object.fromEntries(form));
+    if (itemId) await api("/api/item", {id: itemId, project_id: result.id});
+    toast(asTopic ? itemId ? "Saved to your new topic." : "Topic created. Choose it when organizing a save." : "Project created. Assign ideas from their review panel.");
   });
 }
 function effortChoices(current) {
@@ -452,7 +476,9 @@ document.addEventListener("click", async (e) => {
     if (suppressTileClick) return;
     if (button.dataset.item) {
       const item = state.items.find(candidate => candidate.id === button.dataset.item);
-      return item && !item.has_context ? contextDialog(item.id) : itemDialog(button.dataset.item);
+      if (!item) return;
+      if (!item.has_context) return contextDialog(item.id);
+      return READING_KINDS.includes(item.kind) ? openReading(item.id) : itemDialog(item.id);
     }
     if (button.dataset.project)
       return navigate("inbox", button.dataset.project);
@@ -462,6 +488,53 @@ document.addEventListener("click", async (e) => {
       return render();
     }
     switch (button.dataset.action) {
+      case "library-back":
+        backToLibrary();
+        break;
+      case "reading-filter":
+        readingFilter = button.dataset.value;
+        visibleLimit = 25;
+        syncLibraryRoute();
+        render(false);
+        break;
+      case "reading-reset":
+        readingFilter = "unread";
+        readingLength = "any";
+        projectFilter = "";
+        search = "";
+        visibleLimit = 25;
+        syncLibraryRoute();
+        render(false);
+        break;
+      case "reading-topic":
+        projectFilter = button.dataset.id || "";
+        visibleLimit = 25;
+        syncLibraryRoute();
+        render(false);
+        break;
+      case "reading-queue": {
+        const item = state.items.find(item => item.id === button.dataset.id);
+        button.disabled = true;
+        await changeReading(item.id, {queued: !readingState(item).queued});
+        render();
+        break;
+      }
+      case "reading-status":
+        button.disabled = true;
+        await flushReadingProgress();
+        await changeReading(button.dataset.id, {status: button.dataset.value});
+        if (button.dataset.value === "unread") {
+          render(false);
+          restoreReadingPosition();
+        } else render();
+        toast(button.dataset.value === "read" ? "Read. Take one useful thing with you." : "Moved to To read.");
+        break;
+      case "reading-organize":
+        readingDialog(button.dataset.id);
+        break;
+      case "reading-new-topic":
+        projectDialog(true, button.dataset.id || "");
+        break;
       case "notes":
         contextDialog(button.dataset.id);
         break;
@@ -699,12 +772,25 @@ document.addEventListener("input", (e) => {
     const cursor = e.target.selectionStart;
     search = e.target.value;
     visibleLimit = 25;
+    if (isReadingView()) syncLibraryRoute();
     render();
     $("#search").focus();
     $("#search").setSelectionRange(cursor, cursor);
   }
 });
 document.addEventListener("change", async (e) => {
+  if (e.target.id === "reading-topic-select") {
+    projectFilter = e.target.value;
+    visibleLimit = 25;
+    syncLibraryRoute();
+    return render(false);
+  }
+  if (e.target.id === "reading-length") {
+    readingLength = e.target.value;
+    visibleLimit = 25;
+    syncLibraryRoute();
+    return render(false);
+  }
   if (e.target.id === "theme-mode") {
     window.save2shipTheme.set(e.target.value);
     return;

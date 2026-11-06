@@ -42,7 +42,62 @@ def snapshot(path: Path) -> dict:
     for item in state["items"]:
         item["has_context"] = has_context(item)
         item["score"] = score(item)
+        if item["kind"] in {"learning", "reference", "experience"}:
+            item["reading"] = reading_state(item)
     return state
+
+
+def reading_state(item: dict) -> dict:
+    """Keep reading independent of task status, with a non-mutating legacy fallback."""
+    saved = item.get("reading", {})
+    saved = saved if isinstance(saved, dict) else {}
+    legacy = {"doing": "reading", "done": "read"}.get(item.get("status"), "unread")
+    status = saved.get("status", legacy)
+    if status not in {"unread", "reading", "read"}:
+        status = "unread"
+    progress = saved.get("progress", 100 if status == "read" else 0)
+    if isinstance(progress, bool) or not isinstance(progress, (int, float)) or not math.isfinite(progress):
+        progress = 0
+    return {**saved, "status": status, "progress": 100 if status == "read" else min(100, max(0, progress)),
+            "queued": saved.get("queued") is True}
+
+
+def update_reading(path: Path, payload: dict) -> dict:
+    state = read(path)
+    item = select_item(state, text(payload.get("id", ""), "ID", 50))
+    if item["kind"] not in {"learning", "reference", "experience"} or not has_context(item):
+        raise ValueError("Reading progress needs a learning, reference, or experience save with text or notes")
+    reading = reading_state(item)
+    if not any(key in payload for key in ("status", "progress", "queued")):
+        raise ValueError("Choose a reading update")
+    if "status" in payload:
+        status = payload["status"]
+        if not isinstance(status, str) or status not in {"unread", "reading", "read"}:
+            raise ValueError("Choose To read, Reading, or Read")
+        reading["status"] = status
+        if status == "unread":
+            reading["progress"] = 0
+            reading.pop("completed_at", None)
+            reading.pop("started_at", None)
+        elif status == "reading":
+            reading.setdefault("started_at", now())
+        elif status == "read":
+            reading.update(progress=100, completed_at=now(), queued=False)
+    if "progress" in payload:
+        value = payload["progress"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100:
+            raise ValueError("Reading progress must be between 0 and 100")
+        reading["progress"] = max(reading["progress"], round(value, 1))
+    if "queued" in payload:
+        if not isinstance(payload["queued"], bool):
+            raise ValueError("Read next must be true or false")
+        reading["queued"] = payload["queued"]
+    if reading["status"] == "read":
+        reading["queued"] = False
+    reading["updated_at"] = now()
+    item["reading"] = reading
+    save_state(path, state)
+    return reading
 
 
 def import_linkedin(source: Path, path: Path, filename: str) -> dict:
