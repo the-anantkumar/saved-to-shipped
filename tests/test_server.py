@@ -4,10 +4,23 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from zipfile import ZipFile
 
 from saved_to_shipped.server import WorkbenchServer
+
+
+class ServerStartupTests(unittest.TestCase):
+    def test_numeric_loopback_startup_does_not_depend_on_reverse_dns(self):
+        with tempfile.TemporaryDirectory() as folder, patch("socket.getfqdn", side_effect=AssertionError("Unexpected reverse DNS")):
+            server = WorkbenchServer(("127.0.0.1", 0), Path(folder) / "items.json")
+            try:
+                self.assertEqual("127.0.0.1", server.server_name)
+                self.assertGreater(server.server_port, 0)
+                self.assertEqual(server.socket.getsockname()[1], server.server_port)
+            finally:
+                server.server_close()
 
 
 class ServerTests(unittest.TestCase):

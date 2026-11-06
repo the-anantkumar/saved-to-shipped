@@ -1,6 +1,6 @@
 """Saved to Shipped: turn saved ideas into useful next steps."""
 
-__version__ = "0.3.0"
+from ._version import __version__
 
 from .core import (
     AI_FIELDS, KINDS, STATUSES, apply_triage, apply_triage_records, canonical_url,

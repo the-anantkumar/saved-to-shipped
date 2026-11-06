@@ -186,7 +186,9 @@ node --check saved_to_shipped/web/reading.js
 node --test tests/*_behavior.mjs
 ```
 
-Node is only needed for JavaScript syntax and behavior checks. CI tests Python 3.10 and 3.12, installs the package, and launches it outside the checkout to verify bundled assets and HTTP responses. Automated provider responses are mocked; tests do not spend API credit.
+Node is only needed for JavaScript syntax and behavior checks. CI covers Python 3.10, 3.12, and 3.14 on Linux, plus Python 3.12 on macOS and Windows. Installed checks exercise the local organizing, reading, export, and restart flow outside the checkout. A separate job validates wheel/source contents and metadata, then installs each in a fresh environment. Automated provider responses are mocked; tests do not spend API credit.
+
+For release builds, see [docs/RELEASING.md](docs/RELEASING.md). Optional build tools are in `requirements-dev.txt`; the runtime remains dependency-free. The [changelog](CHANGELOG.md) records unreleased work, and [SECURITY.md](SECURITY.md) explains private reporting and the local application boundary.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, test fixtures, and release gates; [ARCHITECTURE.md](ARCHITECTURE.md) for implementation boundaries; [PRODUCT_SPEC.md](PRODUCT_SPEC.md) for the user journey; and [ROADMAP.md](ROADMAP.md) for outstanding work.
 

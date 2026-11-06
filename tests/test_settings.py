@@ -18,7 +18,8 @@ class SettingsTests(unittest.TestCase):
             self.assertTrue(settings.public()["extractor_available"])
             self.assertNotIn("private-", json.dumps(settings.public()))
             self.assertEqual("private-test-token", Settings(path).get("apify_token"))
-            self.assertEqual(0o600, path.stat().st_mode & 0o777)
+            if os.name == "posix":
+                self.assertEqual(0o600, path.stat().st_mode & 0o777)
             settings.update({"apify_token": ""})
             self.assertEqual("private-test-token", settings.get("apify_token"))
             settings.update({"clear_apify_token": True})
