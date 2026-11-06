@@ -1,211 +1,193 @@
 # Saved → Shipped
 
-**Turn saved LinkedIn ideas into small projects you can finish.**
+**Turn your LinkedIn saved archive into readable ideas and projects you can act on.**
 
 [![Tests](https://github.com/the-anantkumar/saved-to-shipped/actions/workflows/tests.yml/badge.svg)](https://github.com/the-anantkumar/saved-to-shipped/actions/workflows/tests.yml)
+[![MIT License](https://img.shields.io/badge/license-MIT-7160df)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
-![Runtime dependencies: standard library](https://img.shields.io/badge/runtime-standard_library-7160df)
 
-Saved → Shipped is a personal workbench for the ideas that usually disappear into a bookmark collection. Bring in your LinkedIn saves, add the context worth keeping, group related ideas into projects, and turn them into a realistic backlog with a clear next action.
+Saved → Shipped is an open-source workbench for developers with a collection of good ideas hidden in LinkedIn bookmarks. Import your official archive, retrieve available post content through a hosted extractor, and give each save a home: a project to build, something to learn, or an experience to revisit.
 
-It runs on your computer with Python and a browser. The demo and local classification work without an API key. Optional AI classification adds more specific task suggestions when you want it.
+Run it locally. Bring your own extractor API key. Add an optional AI key for more specific project suggestions. Your archive and workspace stay on your computer; selected URLs go to the extractor only when you start retrieval.
 
-> **Before importing:** LinkedIn's Saved Items export contains saved dates and URLs, not other people's post text. Classification needs pasted text or your own note. The archive must contain **Saved Items**, which is different from **Saved Jobs**. See [LinkedIn's export documentation](https://www.linkedin.com/help/linkedin/answer/a1341346).
+> **Development preview:** real archive import, a ten-post live provider dataset, and optional OpenAI classification have been checked. Synthetic tests cover the complete workflow and provider failures. Attachment fidelity, inaccessible posts, billing, and fresh-developer setup still need live validation. See the [live check and its limits](docs/LIVE_CHECK.md). This package has not been published to PyPI.
 
-## Quick start
+## Start in one command
 
-Requires **Python 3.10+** and a modern browser. There are no packages to install and no frontend build step.
+From a checkout of this version, with **Python 3.10+** installed:
 
 ```bash
-git clone https://github.com/the-anantkumar/saved-to-shipped.git
-cd saved-to-shipped
 python3 server.py
 ```
 
-| Workspace | Address |
-| --- | --- |
-| Your saves | [http://127.0.0.1:8010/](http://127.0.0.1:8010/) |
-| Sample workspace | [http://127.0.0.1:8010/?workspace=demo](http://127.0.0.1:8010/?workspace=demo) |
+The browser opens at [http://127.0.0.1:8010/](http://127.0.0.1:8010/). There are no runtime packages to install, frontend build tools, database services, or application accounts to configure.
 
-Stop the server with `Ctrl+C`. To choose a different port or storage location:
+Use **Appearance** in the sidebar to choose **System theme**, **Light**, or **Dark**. System theme follows your device's appearance. Your choice is remembered in this browser and applies to the board, forms, and editors.
+
+Prefer an installed command? Install into your own environment:
 
 ```bash
-python3 server.py --port 8011
-python3 server.py --state /path/to/private/items.json
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+python -m pip install .
+saved-to-shipped
 ```
 
-### Try it before importing anything
+`python -m saved_to_shipped` also launches the app. Stop it with `Ctrl+C`.
 
-Open the sample workspace. It starts with 12 synthetic saves, three project groups, and tasks at different stages. These are illustrative examples with placeholder URLs, not scraped posts or claims of completed work.
+## Your first useful run
 
-1. Open a saved idea and inspect its context, first action, estimate, and done condition.
-2. Edit the next step and change its status to **Ready** or **In progress**.
-3. Open **Backlog** to see it in the corresponding column.
-4. Open **This week**, set your available hours, and download the sprint and issue drafts.
+1. **Import archive.** Choose your LinkedIn export ZIP or its Saved Items CSV.
+2. **Open Settings.** Paste your Apify API token. An OpenAI key and your build/learning goals are optional. Blank key fields keep existing keys.
+3. **Process saves.** Follow the next-step panel on Saves. Start with 10 posts and choose a maximum provider charge. The app submits one hosted run and checks it automatically. First-time key setup returns you directly to retrieval.
+4. **Review the recovered content.** Readable posts receive text, a title or excerpt, author, source provenance, and available external links. Missing, gated, deleted, and partial results remain visible.
+5. **Organize.** Choose **Organize saves**. Build ideas go to **Projects**, learning and reference material to **Learning**, and experience saves to **Experiences**. Suggestions are editable. Notes and pasted source text have a separate **Notes** editor.
+6. **Build or read.** In Projects, review next actions and drag approved tasks through To do, In progress, and Done. In the reading spaces, choose a topic, check the preview and read time, or pin something to **Read next**. Open a save to read, keep a takeaway, and explicitly **Mark read**. **Export** stays in the top bar.
 
-For a classification demo, add a note to an item marked **Needs context**, save it, then choose **Classify inbox → Suggest directions locally**. Review the draft before changing its status to Ready.
+You do not need to manually annotate every link. Manual text and notes remain available for inaccessible posts or extra personal context.
 
-Demo data lives in a separate store, so experimenting there does not alter your personal saves. [Full demo walkthrough →](docs/DEMO.md)
+The [sample workspace](http://127.0.0.1:8010/?workspace=demo) works without keys and stays separate from personal data. It contains synthetic examples, not live scraped posts. Hosted retrieval is disabled for demo URLs.
 
-## What you can do
+## Three spaces, three intentions
 
-| View | Purpose |
-| --- | --- |
-| **Saved inbox** | Import saves, capture a LinkedIn link manually, add context, search, and review classifications. |
-| **Projects** | Group related saves around something you want to build or explore. |
-| **Backlog** | Track reviewed tasks through Ready, In progress, and Shipped, with a separate Parked section. |
-| **This week** | Fit up to two build tasks into your available hours. |
-| **Shipped** | Keep completed ideas and attach a result, commit, or PR link. |
-
-Each idea can become a **Build**, **Learn**, **Experience**, **Reference**, or **Skip** item. A project group can contain several related saves; each save keeps its own task details and progress.
-
-## Import your LinkedIn saves
-
-### 1. Get the right export
-
-On LinkedIn desktop, go to **Settings & Privacy → Data Privacy → Download your data** and request an export containing **Saved Items**. [Official instructions →](https://www.linkedin.com/help/linkedin/answer/a1341346)
-
-The importer accepts a ZIP containing one Saved Items CSV, including inside nested folders, or the CSV directly. Common names such as `Saved_Items.csv` and `Saved Items.csv` are recognized.
-
-A minimal example looks like this:
-
-```csv
-Date Saved,URL
-2026-11-01,https://www.linkedin.com/feed/update/urn:li:activity:1234567890
-```
-
-The URL above is illustrative. Only the Saved Items CSV is read from an archive; unrelated account records are not imported.
-
-### 2. Bring it into the inbox
-
-Choose **Import archive** and select the ZIP or CSV. Re-importing the same links skips duplicates and preserves your notes, classifications, project assignments, and task statuses.
-
-You can also use **Add a save** to capture a LinkedIn post or article URL with its text or a personal note. This works while you wait for an export.
-
-### 3. Give the save enough context
-
-Open an idea and paste relevant post text or explain why you saved it. A URL or title by itself does not qualify for classification, even if the URL slug sounds descriptive.
-
-### 4. Review the suggested task
-
-Choose a classification method below, then edit the destination, project assignment, first action, done condition, and estimate. A task needs context, a title, a classification, an action, a finish condition, and a **0.25 to 2 hour** first-action estimate before it can become Ready.
-
-Web classifications stay in the inbox until you review them. Once ready, move the task through the backlog and attach its real outcome when finished.
-
-## Choose how to classify
-
-| Method | Setup | What it produces |
+| Space | What belongs here | How you use it |
 | --- | --- | --- |
-| **Local suggestions** | None | Offline keyword rules suggest broad project groups and generic starter actions. Suggestions are labeled low confidence. |
-| **OpenAI** | Your API key | Context-specific task drafts and project groups for up to 20 unclassified inbox items per click. |
-| **ChatGPT copy/paste** | Your existing ChatGPT access | Download a triage prompt, use it in ChatGPT, then paste the returned JSON into the workbench. |
+| **Projects** | Saves classified as Build / Project | Review small next actions, drag tiles, plan a week, and attach finished work. |
+| **Learning** | Learning and reference saves | Browse editorial rows by topic, search, or available reading time. Keep a short Read next queue. |
+| **Experiences** | Stories, interview experiences, event opportunities, and other experience saves | A separate reading library with the same topic and progress controls. |
 
-All three methods rely on the context you supply. Local rules provide a starting point; they do not semantically understand the post. To classify an item again, set its destination to **Not classified** and its status to **Inbox / review** first.
+**Saves** is the intake area for import, retrieval, and classification. It remains available when something needs more context.
 
-### Optional OpenAI setup
+The reading spaces offer **To read**, **Reading**, **Read next**, **Read**, and **All** filters. To read includes unfinished reads. In-progress saves appear first, followed by your Read next choices and newer saves. Read-time estimates use the available text at 200 words per minute; missing attachments and shortened content remain labeled. No reading suggestion calls an AI provider.
 
-Export your key before starting the server:
+Opening a readable save starts its reading progress. Scrolling remembers your furthest position, and opening it again resumes near that point. Scrolling never marks a save complete. Use **Mark read** when finished, or **Mark as unread** to reset it. **Organize** changes the title, topic, or kind without a task form; **Your notes** stays separate from the source.
 
-```bash
-export OPENAI_API_KEY='your-api-key'
-export OPENAI_MODEL='gpt-4.1-mini'  # optional; this is the application default
-python3 server.py
+Need another home for a save? Choose **+ New project…**, **+ New learning topic…**, or **+ New experience section…** inside its organizing dropdown. Name it in the same form, then save to create and assign it together. Other unsaved edits stay in place; cancelling creates nothing. Existing names are reused without duplicates.
+
+Reading progress is independent of project stages. Existing task states, notes, text, and group assignments are preserved. Older learning or experience saves marked In progress or Done initially appear as Reading or Read until you set their reading state. Existing groups act as reading topics, so no regrouping or re-import is needed.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[LinkedIn ZIP or CSV] --> B[Deduplicated saves]
+    B --> C[Hosted content retrieval]
+    C --> D[Local content cache]
+    D --> E[Classify and group]
+    E --> F[Projects: review and build]
+    E --> G[Learning: choose and read]
+    E --> H[Experiences: read and reflect]
+    F --> J[Private workspace exports]
+    G --> J
+    H --> J
 ```
 
-The application does **not** automatically load `.env` files. [.env.example](.env.example) documents the available settings.
+### Archive input
 
-The **Send batch to OpenAI** button sends the eligible batch's IDs, titles, supplied post text, notes, and existing project names to OpenAI. The raw ZIP, other archive records, and browser credentials are excluded. API usage is billed to your key. No API request runs automatically.
+LinkedIn's Saved Items export contains saved dates and URLs, not other people's post bodies. That is why content retrieval is a separate step. Request an export containing **Saved Items** from **Settings & Privacy → Data Privacy → Download your data**. [LinkedIn's instructions](https://www.linkedin.com/help/linkedin/answer/a1341346).
 
-The client uses the [Responses API with strict structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs) and `store: false`; provider data policies still apply. Returned IDs and fields are validated before saving. Failed or incomplete batches leave stored data unchanged.
+The importer recognizes nested files, numeric suffixes such as `Saved_Items_123456789.csv`, and both `Date Saved` / `URL` and `savedItem` / `CreatedTime` headers. **Saved Jobs is a different category.** Only Saved Items is read from the ZIP.
 
-## Export work you can act on
+Re-importing skips duplicate links and preserves notes, classifications, project assignments, and progress. Uploads are capped at 128 MiB; the uncompressed Saved Items CSV at 8 MiB. Import the CSV directly if the full ZIP is too large.
 
-**Export backlog** downloads a ZIP containing:
+### Hosted retrieval
 
-| File | Contents |
+The first adapter uses [data_minds/linkedin-post-scraper on Apify](https://apify.com/data_minds/linkedin-post-scraper). The app supplies selected post URLs with extra profile discovery disabled. No LinkedIn password or browser cookie is requested.
+
+- Start with 10 posts, process up to 50, or select all eligible saves up to 1,000 in one run.
+- Set a per-run maximum charge. This is sent to Apify using its documented `maxTotalChargeUsd` option. Provider account plans and result limits still apply. [Apify API contract](https://docs.apify.com/api/v2/actors-runs-post).
+- Results are matched to requested URLs or post IDs, never assigned by list position.
+- Successful content is cached and skipped on later runs. Your notes and edits are preserved.
+- Run references persist locally. Closing the tab or restarting the app resumes checking the same hosted run.
+- Stop a known run or retry unavailable saves explicitly. If a submission's outcome is uncertain, the app asks you to check the provider console before submitting again.
+
+Only content the provider can retrieve is available. Private, removed, and gated posts may remain unavailable. When supplied, document transcripts are included; image/video content and missing transcripts are labeled partial. Long text is capped at 20,000 characters with a visible truncation notice. External links are listed but are not automatically crawled.
+
+The adapter implements this actor's documented input/output schema. Changing `APIFY_ACTOR` requires a compatible actor; arbitrary Apify actors are not interchangeable. A ten-post live dataset matched this project's saved links; broader coverage and submission reliability remain under validation. See the [live check](docs/LIVE_CHECK.md).
+
+### Classification
+
+| Method | Setup | Result |
+| --- | --- | --- |
+| Local rules | None | Offline keyword suggestions, broad groups, generic first actions; labeled low confidence. |
+| OpenAI | Your API key | Context-specific drafts and project groups. Processes up to 20 saves within a text budget per batch. |
+| ChatGPT copy/paste | Your existing ChatGPT access | Download a prompt and paste the resulting triage JSON back into the app. |
+
+The OpenAI dialog can continue through all eligible saves in batches. Closing it stops additional batches after any current request finishes. API usage is billed to your key.
+
+URL-only and title-only saves are excluded. Retrieval coverage accompanies the supplied context. Classification produces editable suggestions. Project tasks remain drafts until reviewed; a ready task requires context, a title, classification, first action, done condition, and a 0.25 to 2 hour first-action estimate. Reading does not require approving a task or setting an effort estimate.
+
+## Configuration
+
+Settings can be entered in the UI. Environment variables override locally saved values:
+
+| Variable | Purpose |
 | --- | --- |
-| `backlog.json` | Full workspace data for backup. |
-| `backlog.csv` | Task table with project names, estimates, source URLs, and outcome links. |
-| `weekly_sprint.md` | Up to two reviewed build tasks within your selected time budget, plus optional learning and experience suggestions. |
-| `issues/*.md` | GitHub issue drafts for Ready or In progress build tasks, with their source links and acceptance criteria. |
+| `APIFY_TOKEN` | Hosted extraction credential. |
+| `APIFY_ACTOR` | Compatible actor override; default `data_minds/linkedin-post-scraper`. |
+| `OPENAI_API_KEY` | Optional AI classification credential. |
+| `OPENAI_MODEL` | Optional model override; default `gpt-4.1-mini`. |
+| `SAVED_TO_SHIPPED_DATA_DIR` | Optional directory for persistent state and local settings. |
 
-The time budget applies to selected build tasks. Optional learning and experience suggestions are listed separately. Issue drafts remain local files; the application does not publish them to GitHub.
+`.env` is not loaded automatically. [.env.example](.env.example) documents shell configuration. You can use Settings instead of exporting variables.
 
-## Storage and privacy
+```bash
+saved-to-shipped --doctor       # show paths and configured/not-configured status, never keys
+saved-to-shipped --port 8011
+saved-to-shipped --no-browser
+saved-to-shipped --state /path/to/private/items.json
+```
 
-Personal state defaults to `data/items.json`; demo state defaults to `data/demo/items.json`. Both persist across restarts and are ignored by Git, along with `output/`, ZIP archives, and `.env` files. Exported backups contain your notes and supplied text, so store them privately.
+In a source checkout, state defaults to `data/items.json`. An installed package uses `$XDG_DATA_HOME/saved-to-shipped/items.json` or `~/.local/share/saved-to-shipped/items.json`. Demo data and private settings are separate files beside the personal store. `--doctor` shows the resolved path.
 
-The server listens only on `127.0.0.1`. It validates the Host header and requires a per-run token for writes. This is a single-user local application. Public hosting and collaboration are outside the current scope.
+## Data, privacy, and costs
 
-Writes replace the state file atomically. The web server serializes its own requests, but the CLI is a separate process. **Stop the server before editing the same state through the CLI or restoring a backup.** To restore, extract `backlog.json` from your export and copy it to your chosen state path while the server is stopped.
+The application is MIT licensed and has no hosted application subscription. The selected extraction provider and optional AI provider charge under your own accounts.
+
+Saving settings or importing an archive does not start a paid request. Starting retrieval sends selected URLs to Apify. AI classification sends the selected titles, retrieved or supplied text, notes, goals, coverage, and existing project names to OpenAI. The raw ZIP and unrelated account records are excluded.
+
+Keys are held in a separate private local settings file, with owner-only permissions on supported systems. They are not returned in API state responses or included in exports. The OpenAI client uses strict structured outputs and `store: false`; provider data policies still apply.
+
+The server listens on loopback only, validates its Host header, and requires a per-run write token. State updates use atomic file replacement. Stop the web server before mutating the same store through the CLI or restoring a backup.
+
+## Exports
+
+**Export backlog** produces one ZIP with:
+
+- `backlog.json`: workspace backup, including reading progress and Read next choices, excluding provider credentials.
+- `backlog.csv`: portable task table with project names, estimates, sources, and results.
+- `weekly_sprint.md`: up to two reviewed build tasks fitting your selected hours, with optional learning/experience suggestions listed separately.
+- `issues/*.md`: local GitHub issue drafts with source links and acceptance criteria.
+
+Issue drafts are not published automatically. Backups contain your supplied text and notes; keep them private. To restore, stop the server and copy the extracted `backlog.json` to the state path printed by `--doctor`.
 
 ## Troubleshooting
 
-| Problem | What to check |
+| Symptom | Next step |
 | --- | --- |
-| **No Saved_Items.csv found** | Inspect the ZIP for Saved Items. Saved Jobs and Saved Job Alerts are different categories. Check LinkedIn for an export that includes saved posts and articles. |
-| **Multiple Saved Items CSVs found** | Select the intended CSV directly instead of uploading the combined ZIP. |
-| **Archive is too large** | Uploads are capped at 128 MiB. Import the Saved Items CSV directly; its uncompressed limit is 8 MiB. |
-| **Nothing can be classified** | Add post text or a nonblank personal note to an unclassified inbox item. A title alone is insufficient. |
-| **Task cannot become Ready** | Fill in its context, title, classification, first action, done condition, and estimate. |
-| **OpenAI option is unavailable** | Export `OPENAI_API_KEY`, then restart the server. `.env` is not loaded automatically. |
-| **OpenAI request fails** | Check connectivity, key validity, model access, and usage limits. Existing data is preserved. |
-| **Port 8010 is in use** | Start with `python3 server.py --port 8011` and use the printed URL. |
+| Saved Items file missing | Check that the export includes Saved Items rather than Saved Jobs. |
+| More than one Saved Items CSV | Import the intended CSV directly. |
+| Extractor not configured | Add the token in Settings or set `APIFY_TOKEN`. |
+| Fewer results than requested | Inspect run counts and the provider's plan/result limits. Retry missing saves explicitly. |
+| Submission outcome uncertain | Check Apify Console for an existing run before dismissing the local submission. |
+| Existing run needs attention | Use Check results now to retry reading it without starting a new paid run. |
+| Partial or unavailable content | Inspect coverage, source link, and external links. Add context or park the save. |
+| Nothing ready to classify | Retrieve content first; a URL or title alone is insufficient. |
+| Port already in use | Choose another `--port` and use the printed URL. |
 
-You can download a synthetic test ZIP from **Import archive** to check the import flow without using personal data.
-
-## Command-line workflow
-
-The original CLI shares the same state format:
-
-```bash
-python3 saved_to_shipped.py ingest /path/to/LinkedInDataExport.zip
-python3 saved_to_shipped.py list
-python3 saved_to_shipped.py attach ITEM_ID --title 'An idea' --content-file post.txt --note 'Why this helps'
-python3 saved_to_shipped.py prompt
-python3 saved_to_shipped.py apply triage.json
-python3 saved_to_shipped.py plan --hours 6
-python3 saved_to_shipped.py issues
-python3 saved_to_shipped.py status ITEM_ID done
-```
-
-Replace `ITEM_ID` with an ID from `list`. The prompt, sprint, and issue drafts are written under `output/` by default. Use `python3 saved_to_shipped.py --help` for commands and `--state` for a separate store.
-
-Explicitly applying CLI triage marks actionable inbox items Ready. The web flow keeps classifications as drafts for review.
-
-## Development
+## Development and contributions
 
 ```bash
 python3 -m unittest discover -s tests -v
-node --check web/app.js
+node --check saved_to_shipped/web/app.js
+node --check saved_to_shipped/web/onboarding.js
+node --check saved_to_shipped/web/theme.js
+node --check saved_to_shipped/web/reading.js
+node --test tests/*_behavior.mjs
 ```
 
-Node is only needed for the optional local JavaScript syntax check, not to run the application. GitHub Actions runs the Python suite on 3.10 and 3.12 and checks JavaScript syntax with Node 22.
+Node is only needed for JavaScript syntax and behavior checks. CI tests Python 3.10 and 3.12, installs the package, and launches it outside the checkout to verify bundled assets and HTTP responses. Automated provider responses are mocked; tests do not spend API credit.
 
-Tests cover archive parsing, deduplication, annotation preservation, context requirements, classification validation, task transitions, project grouping, exports, HTTP boundaries, and separate demo storage. Provider responses are mocked; the suite does not call LinkedIn or spend API credits.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, test fixtures, and release gates; [ARCHITECTURE.md](ARCHITECTURE.md) for implementation boundaries; [PRODUCT_SPEC.md](PRODUCT_SPEC.md) for the user journey; and [ROADMAP.md](ROADMAP.md) for outstanding work.
 
-### Project structure
-
-```text
-server.py                Local HTTP server and upload/download endpoints
-workbench.py             Capture, projects, review rules, local suggestions, exports
-saved_to_shipped.py      CLI, persistence, deduplication, triage validation, sprint planning
-classifier.py            Optional OpenAI client
-sources/                 Import adapters and normalized record contract
-web/                     Browser interface, styles, and interactions
-demo_data.py             Synthetic examples for the isolated demo
-tests/                   Import, domain, HTTP, and provider-response tests
-docs/DEMO.md             Walkthrough and real-data smoke-test checklist
-```
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for data flow and design choices, [PRODUCT_SPEC.md](PRODUCT_SPEC.md) for acceptance criteria, and [ROADMAP.md](ROADMAP.md) for the next steps.
-
-## Current status and scope
-
-The synthetic import-to-backlog flow is tested, and the interface has been exercised in Safari. The first real archive inspected passed ZIP integrity checks but contained no Saved Items file. Missing-file imports were verified to leave both empty and existing workspaces unchanged. **A successful saved-post import from a real archive and a live OpenAI request remain unverified.**
-
-The current web application focuses on LinkedIn exports and manual LinkedIn capture. It does not log in to LinkedIn, crawl the saved feed, or retrieve post bodies automatically.
-
-Existing CLI adapters can read user-provided Reddit saved-listing JSON and normalized Instagram/generic manifests. Native Reddit and Instagram archive support is future work. The source-adapter boundary keeps that extension separate from project review and backlog management.
-
-This is a personal project built around one useful loop: save something worth keeping, decide what to do with it, and finish the next step.
+Existing CLI commands remain available through `python3 saved_to_shipped.py --help` or the installed `saved-to-shipped-cli` command. Future source adapters can reuse the normalized save contract. Native Reddit and Instagram archive support is outside the current web release.

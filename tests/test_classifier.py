@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
 
-import classifier
-import workbench as work
+from saved_to_shipped import classifier
+from saved_to_shipped import workbench as work
 from saved_to_shipped import new_item, save_state
 
 
@@ -27,7 +27,7 @@ class ClassifierTests(unittest.TestCase):
 
     @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key", "OPENAI_MODEL": "test-model"})
     def test_request_sends_context_only_and_validates_batch(self):
-        with patch("classifier.urlopen", return_value=self.response()) as request:
+        with patch("saved_to_shipped.classifier.urlopen", return_value=self.response()) as request:
             self.assertEqual([self.record], classifier.classify(self.state)["items"])
         sent = json.loads(request.call_args.args[0].data)
         self.assertFalse(sent["store"])
@@ -36,9 +36,19 @@ class ClassifierTests(unittest.TestCase):
         self.assertNotIn(self.item["url"], sent["input"])
         self.assertTrue(sent["text"]["format"]["strict"])
 
+    def test_missing_media_and_truncation_are_visible_to_the_model(self):
+        self.item["enrichment"] = {"status": "partial", "coverage": "post text only", "content_truncated": True}
+        with patch("saved_to_shipped.classifier.urlopen", return_value=self.response()) as request:
+            classifier.classify(self.state, api_key="test-key")
+        supplied = json.loads(json.loads(request.call_args.args[0].data)["input"])["items"]
+        self.assertEqual(1, len(supplied))
+        self.assertEqual("partial", supplied[0]["content_status"])
+        self.assertEqual("post text only", supplied[0]["content_coverage"])
+        self.assertTrue(supplied[0]["content_truncated"])
+
     @patch.dict("os.environ", {}, clear=True)
     def test_key_is_optional_and_missing_key_does_not_make_request(self):
-        with patch("classifier.urlopen") as request:
+        with patch("saved_to_shipped.classifier.urlopen") as request:
             with self.assertRaisesRegex(ValueError, "OPENAI_API_KEY"):
                 classifier.classify(self.state)
             request.assert_not_called()
@@ -47,18 +57,18 @@ class ClassifierTests(unittest.TestCase):
     @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
     def test_partial_invented_and_duplicate_ids_are_rejected(self):
         for records in [[], [dict(self.record, id="invented")], [self.record, self.record]]:
-            with patch("classifier.urlopen", return_value=self.response({"items": records})):
+            with patch("saved_to_shipped.classifier.urlopen", return_value=self.response({"items": records})):
                 with self.assertRaisesRegex(ValueError, "invalid or incomplete"):
                     classifier.classify(self.state)
 
     @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
     def test_provider_failure_has_actionable_message_without_secrets(self):
         for error in [HTTPError("https://api.openai.com", 429, "secret data", {}, None), URLError("secret data")]:
-            with patch("classifier.urlopen", side_effect=error):
+            with patch("saved_to_shipped.classifier.urlopen", side_effect=error):
                 with self.assertRaisesRegex(ValueError, "No items were changed") as result:
                     classifier.classify(self.state)
                 self.assertNotIn("secret", str(result.exception))
-        with patch("classifier.urlopen", return_value=self.response(status="incomplete")):
+        with patch("saved_to_shipped.classifier.urlopen", return_value=self.response(status="incomplete")):
             with self.assertRaisesRegex(ValueError, "did not complete"):
                 classifier.classify(self.state)
 
@@ -84,6 +94,17 @@ class ClassifierTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     work.apply_classification(path, {"items": [dict(self.record, **fields)]})
             self.assertEqual("untriaged", work.read(path)["items"][0]["kind"])
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_saved_key_and_character_budget_allow_automatic_small_batches(self):
+        items = [new_item(f"https://linkedin.com/posts/example-{i}", "2026-11-01", content="a" * 40000) for i in range(3)]
+        records = [dict(self.record, id=item["id"]) for item in items[:2]]
+        with patch("saved_to_shipped.classifier.urlopen", return_value=self.response({"items": records})) as request:
+            result = classifier.classify({"items": items}, api_key="private-local-key", model="chosen-model")
+        sent = json.loads(request.call_args.args[0].data)
+        self.assertEqual(2, len(result["items"]))
+        self.assertEqual("chosen-model", sent["model"])
+        self.assertNotIn(items[2]["id"], sent["input"])
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
-from server import WorkbenchServer
+from saved_to_shipped.server import WorkbenchServer
 
 
 class ServerTests(unittest.TestCase):
@@ -34,7 +34,7 @@ class ServerTests(unittest.TestCase):
         return result
 
     def test_ui_assets_and_private_response_headers(self):
-        for route in ["/", "/app.js", "/style.css"]:
+        for route in ["/", "/app.js", "/onboarding.js", "/theme.js", "/reading.js", "/style.css"]:
             status, headers, body = self.request("GET", route)
             self.assertEqual(200, status)
             self.assertTrue(body)
@@ -53,6 +53,21 @@ class ServerTests(unittest.TestCase):
     def test_csrf_and_dns_rebinding_requests_are_blocked(self):
         self.assertEqual(403, self.request("POST", "/api/classify", "{}")[0])
         self.assertEqual(403, self.request("GET", "/api/state", headers={"Host": "evil.example"})[0])
+
+    def test_reading_endpoint_requires_token_and_keeps_task_status(self):
+        demo = json.loads(self.request("GET", "/api/state?workspace=demo")[2])
+        item = next(item for item in demo["items"] if item["kind"] == "learning")
+        payload = json.dumps({"id": item["id"], "status": "read"})
+        route = "/api/reading?workspace=demo"
+        self.assertEqual(403, self.request("POST", route, payload)[0])
+        headers = {"X-Workbench-Token": self.server.token, "Content-Type": "application/json"}
+        status, _, body = self.request("POST", route, payload, headers)
+        self.assertEqual(200, status)
+        self.assertEqual("read", json.loads(body)["reading"]["status"])
+        after = json.loads(self.request("GET", "/api/state?workspace=demo")[2])
+        self.assertEqual(item["status"], next(saved for saved in after["items"] if saved["id"] == item["id"])["status"])
+        project = next(item for item in demo["items"] if item["kind"] == "project")
+        self.assertEqual(400, self.request("POST", route, json.dumps({"id": project["id"], "status": "read"}), headers)[0])
 
     def test_sample_archive_import_and_reimport_are_idempotent(self):
         sample = self.request("GET", "/api/sample")[2]

@@ -1,6 +1,6 @@
 """Synthetic examples for a reproducible demo, never represented as real posts."""
 
-from saved_to_shipped import new_item
+from .core import new_item
 
 
 EXAMPLES = [
@@ -10,7 +10,15 @@ EXAMPLES = [
     ("The bookmark graveyard is real", "Build a personal bookmark dashboard. Import a CSV, group saved links by project, and pick a single next action. Keep all storage local.", "Personal tools"),
     ("Ship the boring automation", "Automate a weekly expenses report from a local CSV using Python. Start by totaling categories and export a Markdown summary.", "Personal tools"),
     ("A tiny API worth building", "Build a quote capture API backed by SQLite. The first slice is a POST endpoint and a test that reads the saved quote back.", "Personal tools"),
-    ("Understanding database indexes", "Learn how a database index changes query execution. Run EXPLAIN on one query before and after creating an index and write down the result.", "Learning lab"),
+    ("Understanding database indexes", (
+        "Learn how a database index changes query execution. Run EXPLAIN on one query before and after creating an index and write down the result.\n\n"
+        "Start with a question, rather than a tuning rule. Imagine a table of saved articles and a screen that asks for unread articles in one topic. The useful question is how much work the database does to find that small set of rows. A query that returns ten results might still inspect thousands of candidates.\n\n"
+        "An index offers another path to the rows. It keeps an ordered representation of selected values, together with a way to locate the corresponding records. When a condition matches the index, the database may narrow its search before reading the full records. That is an opportunity for less work, rather than a promise that every query will become faster.\n\n"
+        "For the experiment, keep the data and query constant. Record the query text, the number of rows, and the execution plan before adding an index. Then repeat the same observation after adding it. Notice whether the plan changes, how many rows are examined, and whether an additional sorting step remains. Try the query more than once so a single timing does not carry the whole conclusion.\n\n"
+        "The trade-off matters too. An index occupies space and needs maintenance when indexed values change. A table that receives frequent writes has different constraints from an archive that is mostly read. An index that helps one query may have little value for another. A small dataset can also make a full scan perfectly reasonable.\n\n"
+        "Finish with a short explanation in your own words. What did the database do before? What changed after? Which cost did you accept? Keep the two plans alongside your note so the observation is easy to revisit. The useful outcome is a reasoned comparison, rather than a collection of indexes added just in case.\n\n"
+        "One thing to take away: connect an index to a specific access pattern. When the query or data changes, revisit the evidence. This synthetic example is a reading exercise, not a performance measurement from a real application."
+    ), "Learning lab"),
     ("Small experiments beat long reading lists", "A tutorial on testing prompts with a fixed dataset. Learn by running three prompt variants against five examples and documenting failure cases.", "Learning lab"),
     ("Find your next builder weekend", "A fictional community hackathon invitation. Research dates and entry requirements before deciding whether to attend. This is sample content, not a live event.", ""),
     ("A reference for accessible forms", "A reference checklist for accessible forms: visible labels, useful error messages, keyboard navigation, and focus management. Keep for the next UI review.", ""),

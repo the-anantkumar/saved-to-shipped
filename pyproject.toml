@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saved-to-shipped"
+version = "0.3.0"
+description = "Turn your LinkedIn saved archive into readable ideas, projects, and next steps."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+authors = [{name = "Saved to Shipped contributors"}]
+dependencies = []
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/the-anantkumar/saved-to-shipped"
+Issues = "https://github.com/the-anantkumar/saved-to-shipped/issues"
+
+[project.scripts]
+saved-to-shipped = "saved_to_shipped.server:main"
+saved-to-shipped-cli = "saved_to_shipped.core:main"
+
+[tool.setuptools.packages.find]
+include = ["saved_to_shipped*"]
+
+[tool.setuptools.package-data]
+saved_to_shipped = ["web/*.html", "web/*.css", "web/*.js"]

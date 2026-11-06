@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from zipfile import ZipFile
 
-import workbench as work
-from demo_data import demo_state
+from saved_to_shipped import workbench as work
+from saved_to_shipped.demo_data import demo_state
 from saved_to_shipped import save_state
 
 
@@ -75,6 +75,45 @@ class WorkbenchTests(unittest.TestCase):
         self.assertEqual("New name", work.read(self.path)["projects"][0]["name"])
         with self.assertRaisesRegex(ValueError, "existing project"):
             work.update_item(self.path, ident, {"project_id": "missing"})
+
+    def test_inline_section_creation_assigns_and_reuses_names(self):
+        ident = self.capture("Learn how database indexes work")
+        work.update_item(self.path, ident, {"kind": "learning", "title": "Indexes", "note": "Try this later"})
+        work.update_reading(self.path, {"id": ident, "status": "reading", "progress": 42})
+        before = work.read(self.path)["items"][0]
+        work.update_item(self.path, ident, {"title": "Indexes in practice", "new_project_name": "  Database notes  "})
+        state = work.read(self.path)
+        self.assertEqual(1, len(state["projects"]))
+        self.assertEqual("Database notes", state["projects"][0]["name"])
+        item = state["items"][0]
+        self.assertEqual(state["projects"][0]["id"], item["project_id"])
+        self.assertEqual("Indexes in practice", item["title"])
+        for key in ("content", "note", "status", "kind", "reading"):
+            self.assertEqual(before[key], item[key])
+        work.update_item(self.path, ident, {"new_project_name": "DATABASE NOTES"})
+        self.assertEqual(1, len(work.read(self.path)["projects"]))
+
+    def test_inline_project_creation_can_approve_a_task_in_one_save(self):
+        ident = self.capture()
+        work.suggest(self.path)
+        work.update_item(self.path, ident, {"new_project_name": "My next build", "status": "ready"})
+        state = work.read(self.path)
+        item = state["items"][0]
+        self.assertEqual("ready", item["status"])
+        self.assertEqual("My next build", next(p for p in state["projects"] if p["id"] == item["project_id"])["name"])
+
+    def test_invalid_inline_creation_never_saves_a_partial_item_or_orphan_group(self):
+        ident = self.capture()
+        before = self.path.read_bytes()
+        for patch in [{"new_project_name": name} for name in ("", "   ", "x" * 101, None, [])] + [
+            {"new_project_name": "New section", "project_id": ""},
+            {"new_project_name": "New section", "status": "ready"},
+            {"new_project_name": "New section", "effort_hours": 10},
+        ]:
+            with self.subTest(patch=patch):
+                with self.assertRaises(ValueError):
+                    work.update_item(self.path, ident, {"title": "Unsaved edit", **patch})
+                self.assertEqual(before, self.path.read_bytes())
 
     def test_capture_rejects_duplicates_and_foreign_hosts(self):
         self.capture()

@@ -1,34 +1,36 @@
 # Roadmap
 
-Build for one person. Measure ideas acted on, not saves collected.
+The goal is a useful first result with little setup, followed by a small piece of work actually shipped.
 
 ## Implemented
 
-- [x] Official LinkedIn ZIP / CSV import and manual LinkedIn capture
-- [x] Deduplication and preservation of existing annotations
-- [x] Inbox search, review filters, and visible missing context
-- [x] Separate synthetic demo workspace and downloadable test archive
-- [x] Project groups and editable assignments
-- [x] Offline classification drafts with honest provenance
-- [x] Optional OpenAI classification and ChatGPT copy/paste triage
-- [x] Review, backlog board, weekly budget, and shipped outcome links
-- [x] JSON/CSV exports, sprint Markdown, and GitHub issue drafts
-- [x] Import, domain, HTTP, and mocked provider tests in CI
+- [x] LinkedIn ZIP/CSV import, including a verified real export format
+- [x] Deduplication and annotation/status preservation
+- [x] Namespaced installable package, console commands, browser launch, and doctor command
+- [x] MIT license and contributor documentation
+- [x] Private local settings with optional environment overrides
+- [x] Hosted Apify retrieval adapter with explicit run size and charge cap
+- [x] Persisted run references, resume, stop, explicit retry, and uncertain-submission handling
+- [x] Source matching, cached post text, author, links, document transcripts when supplied, and coverage status
+- [x] Import/retrieve/classify guidance and paginated inbox rendering
+- [x] Optional model key, generic goals, batch classification, local rules, and copy/paste route
+- [x] Project review, backlog, weekly plan, and private exports
+- [x] Synthetic provider/HTTP tests and installed-package smoke test
 
-## Next: prove it with real saves
+## Before calling hosted retrieval release-ready
 
-- [ ] Import the owner's actual LinkedIn archive and confirm its exact headers/encoding
-- [ ] Add context to 20 promising saves
-- [ ] Make one live optional API request with the owner's configured key
-- [ ] Review the proposed groups and improve first actions based on actual usefulness
-- [ ] Pick one task, finish it, and attach the real commit/PR link
+- [x] Check a ten-post live dataset from the default actor against real saved links
+- [ ] Inspect recovered text and attachment coverage against the originals
+- [ ] Confirm inaccessible results, account limits, and actual charges
+- [x] Make live optional model requests and review small-batch groups and tasks
+- [ ] Verify new-submission reliability and grouping across larger, varied batches
+- [ ] Run a fresh-developer setup trial from the version intended for publication
 
-## Later, only when useful
+## Next useful improvements
 
-- [ ] Batch context import from user-provided notes or screenshots
-- [ ] Suggest duplicate themes across multiple saves
-- [ ] Native Reddit archive adapter backed by a real fixture
-- [ ] Native Instagram archive adapter backed by a real fixture
-- [ ] Improved project-specific local rules based on observed usage
-
-Multi-user hosting, monetization, OAuth integrations, scheduling, and automatic publishing are not current goals.
+- [ ] Additional extractor adapters backed by tested schemas and real samples
+- [ ] Better attachment and linked-article coverage with explicit limits
+- [ ] Semantic clustering across saves before selecting project tasks
+- [ ] Import/export of enrichment datasets for developers who already have extracted content
+- [ ] Release tags and package publication after the live checks
+- [ ] Native Reddit/Instagram archive adapters once a real fixture is available

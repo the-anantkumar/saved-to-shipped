@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from saved_to_shipped import (KINDS, STATUSES, create_plan, export_issues, import_items,
+from .core import (KINDS, STATUSES, create_plan, export_issues, import_items,
                              load_state, new_item, save_state, score, select_item, apply_triage_records)
 
 
@@ -42,7 +42,62 @@ def snapshot(path: Path) -> dict:
     for item in state["items"]:
         item["has_context"] = has_context(item)
         item["score"] = score(item)
+        if item["kind"] in {"learning", "reference", "experience"}:
+            item["reading"] = reading_state(item)
     return state
+
+
+def reading_state(item: dict) -> dict:
+    """Keep reading independent of task status, with a non-mutating legacy fallback."""
+    saved = item.get("reading", {})
+    saved = saved if isinstance(saved, dict) else {}
+    legacy = {"doing": "reading", "done": "read"}.get(item.get("status"), "unread")
+    status = saved.get("status", legacy)
+    if status not in {"unread", "reading", "read"}:
+        status = "unread"
+    progress = saved.get("progress", 100 if status == "read" else 0)
+    if isinstance(progress, bool) or not isinstance(progress, (int, float)) or not math.isfinite(progress):
+        progress = 0
+    return {**saved, "status": status, "progress": 100 if status == "read" else min(100, max(0, progress)),
+            "queued": saved.get("queued") is True}
+
+
+def update_reading(path: Path, payload: dict) -> dict:
+    state = read(path)
+    item = select_item(state, text(payload.get("id", ""), "ID", 50))
+    if item["kind"] not in {"learning", "reference", "experience"} or not has_context(item):
+        raise ValueError("Reading progress needs a learning, reference, or experience save with text or notes")
+    reading = reading_state(item)
+    if not any(key in payload for key in ("status", "progress", "queued")):
+        raise ValueError("Choose a reading update")
+    if "status" in payload:
+        status = payload["status"]
+        if not isinstance(status, str) or status not in {"unread", "reading", "read"}:
+            raise ValueError("Choose To read, Reading, or Read")
+        reading["status"] = status
+        if status == "unread":
+            reading["progress"] = 0
+            reading.pop("completed_at", None)
+            reading.pop("started_at", None)
+        elif status == "reading":
+            reading.setdefault("started_at", now())
+        elif status == "read":
+            reading.update(progress=100, completed_at=now(), queued=False)
+    if "progress" in payload:
+        value = payload["progress"]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= 100:
+            raise ValueError("Reading progress must be between 0 and 100")
+        reading["progress"] = max(reading["progress"], round(value, 1))
+    if "queued" in payload:
+        if not isinstance(payload["queued"], bool):
+            raise ValueError("Read next must be true or false")
+        reading["queued"] = payload["queued"]
+    if reading["status"] == "read":
+        reading["queued"] = False
+    reading["updated_at"] = now()
+    item["reading"] = reading
+    save_state(path, state)
+    return reading
 
 
 def import_linkedin(source: Path, path: Path, filename: str) -> dict:
@@ -105,12 +160,18 @@ def save_project(path: Path, payload: dict) -> str:
 
 def update_item(path: Path, ident: str, payload: dict) -> None:
     state = read(path)
+    _update_item(state, ident, payload)
+    save_state(path, state)
+
+
+def _update_item(state: dict, ident: str, payload: dict) -> None:
+    """Validate in memory so item edits, group creation, and board moves save atomically."""
     item = select_item(state, ident)
     for key in ("title", "content", "note", "why", "next_action", "definition_of_done", "outcome_url"):
         if key in payload:
             item[key] = text(payload[key], key, 300 if key == "title" else 20000)
     if item.get("outcome_url"):
-        from saved_to_shipped import canonical_url
+        from .core import canonical_url
         item["outcome_url"] = canonical_url(item["outcome_url"])
     if "kind" in payload:
         if payload["kind"] not in KINDS:
@@ -118,7 +179,14 @@ def update_item(path: Path, ident: str, payload: dict) -> None:
         item["kind"] = payload["kind"]
     if item["kind"] != "untriaged" and not has_context(item):
         raise ValueError("Add post text or a useful note before classifying this save")
-    if "project_id" in payload:
+    if "new_project_name" in payload:
+        if "project_id" in payload:
+            raise ValueError("Choose an existing section or create a new one")
+        name = text(payload["new_project_name"], "Project or topic name", 100)
+        if not name:
+            raise ValueError("Give the new project or topic a name")
+        item["project_id"] = project_for(state, name)
+    elif "project_id" in payload:
         project = payload["project_id"]
         if project and not any(p["id"] == project for p in state["projects"]):
             raise ValueError("Choose an existing project")
@@ -138,6 +206,36 @@ def update_item(path: Path, ident: str, payload: dict) -> None:
         if not 0.25 <= item.get("effort_hours", 0) <= 2:
             raise ValueError("Set a first-action estimate between 0.25 and 2 hours")
     item["updated_at"] = now()
+
+
+def move_item(path: Path, payload: dict) -> None:
+    ident = text(payload.get("id", ""), "ID", 50)
+    status = text(payload.get("status", ""), "Status", 20)
+    before = payload.get("before_id")
+    if before is not None:
+        before = text(before, "Next tile ID", 50)
+    state = read(path)
+    ident = select_item(state, ident)["id"]
+    _update_item(state, ident, {"status": status})
+    if before:
+        anchor = select_item(state, before)
+        before = anchor["id"]
+        if before == ident or anchor["status"] != status:
+            raise ValueError("The destination tile changed. Refresh the board and try again.")
+
+    # User order wins; previously unranked saves retain their score-based order.
+    stored = state.get("board_order", [])
+    stored = stored if isinstance(stored, list) else []
+    positions = {value: index for index, value in enumerate(stored) if isinstance(value, str)}
+    items = sorted(state["items"], key=lambda item: (positions.get(item["id"], math.inf), -score(item)))
+    order = [item["id"] for item in items if item["id"] != ident]
+    if before:
+        index = order.index(before)
+    else:
+        lane = {item["id"] for item in items if item["status"] == status and item["id"] != ident}
+        index = max((index + 1 for index, value in enumerate(order) if value in lane), default=len(order))
+    order.insert(index, ident)
+    state["board_order"] = order
     save_state(path, state)
 
 

@@ -1,39 +1,58 @@
-# Saved to Shipped: personal LinkedIn workbench
+# Saved to Shipped: open-source developer workbench
 
-**Problem:** useful saved LinkedIn posts disappear into a bookmark collection. The owner wants small project ideas and a backlog, plus a working project they can demonstrate.
+**Problem:** developers save useful LinkedIn content but face too much work to recover, organize, and act on it.
 
-**Success:** import saves without losing annotations, provide enough context to classify promising ideas, review a concrete next action, and ship one useful outcome.
+**Product promise:** run locally, import an official saved archive, retrieve available content with your hosted extractor key, and spend time deliberately: build a project, learn something, or reflect on an experience.
 
-## Current experience
+**First useful result:** readable recovered content and an actionable draft without manually transcribing posts.
 
-1. Run one Python command and open the local browser app.
-2. Try an isolated synthetic workspace immediately, without waiting for an archive.
-3. Import the official LinkedIn ZIP or Saved Items CSV, or manually capture a LinkedIn link with context.
-4. Add post text or a personal note to otherwise URL-only saves.
-5. Classify using offline keyword suggestions, an explicit OpenAI API action, or a ChatGPT prompt/response exchange.
-6. Organize related saves into project groups and review task details.
-7. Track Ready, In progress, Shipped, and Parked items. Record a result URL.
-8. Fit up to two reviewed build tasks into a weekly budget and export the backlog, sprint, and local issue drafts.
+## Primary journey
+
+1. Launch from a source checkout or installed command; the browser opens automatically.
+2. Import a LinkedIn ZIP or Saved Items CSV.
+3. Configure a hosted extractor key in Settings. AI key and goals are optional.
+4. Start a small retrieval run with a spending cap, then process more saves when satisfied.
+5. See recovered text, titles/excerpts, authors, source links, and coverage. Unavailable results stay visible.
+6. Classify with offline rules, optional AI, or ChatGPT copy/paste. Separate Projects, Learning (including references), and Experiences; existing groups become topics in the reading spaces.
+7. For projects, review first actions, done conditions, estimates, and assignments before marking tasks Ready. Track work, plan a realistic week, and attach shipped outcomes.
+8. For learning and experiences, choose a topic, preview, or reading-time budget. Queue a read, open a focused reader, resume later, keep a takeaway, and explicitly mark it read.
+9. Export the private workspace, including reading progress, with sprint and issue drafts available for work.
 
 ## Acceptance criteria
 
-| Requirement | Verification |
+| Requirement | Evidence |
 | --- | --- |
-| Import official archive shape | Nested Saved Items CSV, common names/headers, BOM, missing/ambiguous/corrupt files tested |
-| Safe repeat import | Same links add zero duplicates; source fields fill blanks and annotations remain |
-| Honest evidence | URL/title-only saves cannot be classified or become ready tasks |
-| Usable without keys | Offline suggestions and manual editing complete the workflow |
-| Optional semantic classification | Strict structured output, complete ID coverage, atomic validation, actionable provider errors |
-| Project grouping | Multiple saves share a stable project ID; user can reassign them |
-| Concrete backlog | Title, context, action, done condition and 0.25 to 2 hour estimate required |
-| Durable personal data | Atomic local JSON, ignored by Git, separate synthetic demo store |
-| Export | JSON backup, CSV table, time-budgeted Markdown sprint, local issue Markdown |
-| Personal scope | No hosted service, login flow, remote database, or scaling infrastructure |
+| No application account or runtime dependency installation | Source launcher uses Python standard library and opens the local browser |
+| Installable distribution | Namespaced package, console commands, bundled assets, installed smoke test outside the checkout |
+| Hosted setup | Local Settings UI, environment overrides, credential-free doctor output |
+| Archive compatibility | Original and suffixed filenames, both known header formats, nested files, malformed/ambiguous cases |
+| Useful content retrieval | Hosted actor integration matches output to requested sources and preserves edits |
+| Resumability | Stored run/dataset IDs are checked after refresh/restart without a new submission |
+| Controlled spending | User-selected run size and per-run provider charge cap; no paid work on import/settings save |
+| Honest evidence | Gated/deleted/missing/error/partial statuses; no classification from URL/title alone |
+| Complete review loop | Project groups, concrete tasks, ready/doing/done/parked, sprint and exports |
+| Distinct organizing spaces | Build-only Projects board, editorial Learning and Experiences libraries, separate Saves intake |
+| Deliberate reading | Topic/search/time filters, Read next queue, source previews, focused reader, saved position, and explicit completion |
+| Independent progress | Reading and notes do not overwrite task stages; existing workspace data remains usable |
+| Open-source maintenance | MIT license, contribution guide, synthetic fixtures, packaging and provider tests |
 
-## Known boundaries
+## Current verification
 
-LinkedIn's Saved Items export contains saved dates and URLs, not third-party post bodies. Automatic post retrieval is not implemented. A real archive smoke test is pending the owner's download. Native Reddit/Instagram input is outside the web release; inherited CLI adapters remain available.
+A real LinkedIn archive passed import, repeat import, annotation preservation, and export checks. Hosted setup through retrieval, local classification, review, and export passes HTTP tests with synthetic responses. Browser QA covers key setup and automatic result display. Installed-package startup and assets are tested outside the source checkout.
 
-Local rules provide broad heuristic suggestions and generic actions. They do not understand the source semantically. The optional LLM route is implemented and tested with mocks; a real account/key request is a separate smoke test. Human review stays part of the workflow.
+A ten-post live Apify dataset matched saved links and supplied readable text. Five results have partial media coverage. Live OpenAI classification produced ten review drafts with grouped topics and next actions. A timed-out later submission remained blocked until its outcome was checked. See the [live check and remaining limits](docs/LIVE_CHECK.md).
 
-The app runs as one local process. Concurrent CLI edits, public hosting, collaboration, automatic GitHub publishing, reminders, OCR, and authenticated crawling are out of scope.
+## Release gates still open
+
+- Validate attachment fidelity and inaccessible posts against live originals, and check new-submission reliability.
+- Check actual provider coverage and charges against requested limits.
+- Review AI grouping and task quality across larger, varied batches.
+- Have a new developer complete setup from the published source version.
+
+Describe the ten-post result with its limits; do not claim general coverage until those checks pass.
+
+## Scope
+
+The default is hosted extraction with a developer-provided key. No LinkedIn session credential is requested. Local rules and ChatGPT copy/paste keep the model provider optional. Data stays local apart from explicitly initiated provider calls.
+
+Public application hosting, collaboration, automatic GitHub publishing, recurring jobs, arbitrary linked-page crawling, and guaranteed image/video/OCR coverage are outside this release. Future source support remains behind importer/provider boundaries.
