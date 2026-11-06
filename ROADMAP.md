@@ -16,6 +16,13 @@ The goal is a useful first result with little setup, followed by a small piece o
 - [x] Optional model key, generic goals, batch classification, local rules, and copy/paste route
 - [x] Project review, backlog, weekly plan, and private exports
 - [x] Synthetic provider/HTTP tests and installed-package smoke test
+- [x] Separate project board, Learning and Experiences libraries, reading progress, and takeaways
+- [x] Inline creation of projects, learning topics, and experience sections
+- [x] Persistent light/dark/system appearance and board drag selection fixes
+- [x] Wheel/source-archive content checks, modern license metadata, single-source version, and clean-install/restart checks
+- [x] CI configuration for Linux, macOS, and Windows with pinned actions and reviewable build artifacts
+
+The organizing experience is checkpointed at `checkpoint/organizing-ux-2026-11-07`. Release hardening continues on `feat/oss-release-readiness`; [RELEASING.md](docs/RELEASING.md) records the sequence and remaining evidence.
 
 ## Before calling hosted retrieval release-ready
 

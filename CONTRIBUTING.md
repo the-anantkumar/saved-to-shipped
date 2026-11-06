@@ -18,9 +18,23 @@ For installed-command development, create a virtual environment and run `python 
 python3 -m unittest discover -s tests -v
 node --check saved_to_shipped/web/app.js
 node --check saved_to_shipped/web/onboarding.js
+node --check saved_to_shipped/web/reading.js
+node --check saved_to_shipped/web/theme.js
+node --test tests/*_behavior.mjs
 ```
 
-After packaging or asset changes, install a regular wheel build into an isolated environment with `python -m pip install .`, then run `python tests/smoke_installed.py` with that environment's Python. The smoke test starts the installed app outside this checkout and checks all browser assets and the state endpoint.
+After packaging or asset changes, build both distribution formats and verify them:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m build --outdir dist/candidate
+python -m twine check --strict dist/candidate/*
+python scripts/check_distribution.py --dist dist/candidate --install
+```
+
+Use a fresh output directory. The checker rejects missing assets, mismatched versions, known private files, and unexpected wheel contents. It installs the wheel and source archive into separate temporary environments, then runs the provider-free app flow outside the checkout. This includes commands, organizing, inline section creation, reading, exports, and restart persistence. See [the release guide](docs/RELEASING.md) for evidence and publication steps.
+
+CI runs source tests and an installed-app smoke test on Linux, macOS, and Windows; Linux covers Python 3.10, 3.12, and 3.14. Browser JavaScript and distribution checks run in their own jobs. Build tooling is optional and never added to the application's runtime dependencies.
 
 For browser QA without an account or charge:
 
@@ -41,6 +55,8 @@ Preserve user edits on repeat imports and during hosted work. New state fields m
 ## Reporting bugs
 
 Include the app version, Python/OS version, the step that failed, and a redacted error. For archive-format issues, include only the column names and a synthetic example. Do not attach the real ZIP or provider keys to public issues.
+
+For security-sensitive reports, follow [SECURITY.md](SECURITY.md) rather than posting details in a public bug report.
 
 ## Release gates
 
