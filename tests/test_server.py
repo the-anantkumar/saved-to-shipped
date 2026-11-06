@@ -34,7 +34,7 @@ class ServerTests(unittest.TestCase):
         return result
 
     def test_ui_assets_and_private_response_headers(self):
-        for route in ["/", "/app.js", "/style.css"]:
+        for route in ["/", "/app.js", "/theme.js", "/style.css"]:
             status, headers, body = self.request("GET", route)
             self.assertEqual(200, status)
             self.assertTrue(body)

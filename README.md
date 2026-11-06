@@ -22,6 +22,8 @@ python3 server.py
 
 The browser opens at [http://127.0.0.1:8010/](http://127.0.0.1:8010/). There are no runtime packages to install, frontend build tools, database services, or application accounts to configure.
 
+Use **Appearance** in the sidebar to choose **System theme**, **Light**, or **Dark**. System theme follows your device's appearance. Your choice is remembered in this browser and applies to the board, forms, and editors.
+
 Prefer an installed command? Install into your own environment:
 
 ```bash
@@ -157,7 +159,8 @@ Issue drafts are not published automatically. Backups contain your supplied text
 python3 -m unittest discover -s tests -v
 node --check saved_to_shipped/web/app.js
 node --check saved_to_shipped/web/onboarding.js
-node --test tests/ui_behavior.mjs
+node --check saved_to_shipped/web/theme.js
+node --test tests/*_behavior.mjs
 ```
 
 Node is only needed for JavaScript syntax checks. CI tests Python 3.10 and 3.12, installs the package, and launches it outside the checkout to verify bundled assets and HTTP responses. Automated provider responses are mocked; tests do not spend API credit.
