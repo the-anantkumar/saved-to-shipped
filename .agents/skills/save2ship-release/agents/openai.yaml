@@ -1,0 +1,6 @@
+interface:
+  display_name: "Save2ship Release"
+  short_description: "Prepare releases and bounded beta rollouts"
+  default_prompt: "Use $save2ship-release to prepare the next release candidate with verified artifacts, rollout evidence, and rollback steps."
+policy:
+  allow_implicit_invocation: true

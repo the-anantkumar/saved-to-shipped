@@ -1,0 +1,6 @@
+interface:
+  display_name: "Save2ship Verification"
+  short_description: "Verify changed behaviour and release evidence"
+  default_prompt: "Use $save2ship-verify to validate the current change with relevant checks and report what passed, failed, or remains untested."
+policy:
+  allow_implicit_invocation: true

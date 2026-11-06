@@ -2,6 +2,8 @@
 
 Help a developer get from an export to a useful next step with less work.
 
+For agent-assisted development, use a Git checkout and start with its root `AGENTS.md` and the [agent workflow](docs/AGENT_WORKFLOW.md). Project-scoped roles and skills live in `.codex/agents/` and `.agents/skills/`; they inherit your model and permissions. Hosted work follows the acceptance criteria in [the production plan](docs/PRODUCTION_PLAN.md). These development tools do not add application runtime dependencies and are not included in package archives.
+
 ## Run locally
 
 Use Python 3.10+ from the repository:

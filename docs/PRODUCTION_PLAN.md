@@ -1,6 +1,6 @@
 # Free beta execution plan
 
-Status: planning and agent setup. Hosted implementation, deployment and capacity validation have not started. Last reviewed: 2026-11-07.
+Status: P0 complete; P1 is the next implementation phase. Hosted implementation, deployment and capacity validation have not started. Last reviewed: 2026-11-07. See [P0 evidence](evidence/P0.md).
 
 Build a useful, private hosted workspace for a bounded cohort while retaining the account-free local application. The user has chosen **hard free limits with no overage billing**. A paid plan with alerts does not meet that requirement.
 
@@ -58,7 +58,7 @@ Critical path: **P0 -> P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7**. P4 UI work can 
 
 | Phase | Status | Primary owner | Dependency | Reviewable result |
 | --- | --- | --- | --- | --- |
-| P0 | In progress | Coordinator | Existing release foundation | Plan, repository instructions, configured agents and skills |
+| P0 | Complete | Coordinator | Existing release foundation | Plan, repository instructions, configured agents and skills; [evidence](evidence/P0.md) |
 | P1 | Not started | beta_platform | P0 | Reproducible runtime and storage evidence |
 | P2 | Not started | beta_platform | P1 | Hosted contracts, private storage and quota enforcement |
 | P3 | Not started | beta_platform | P2 | Google sessions, membership and account lifecycle |
