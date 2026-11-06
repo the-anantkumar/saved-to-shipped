@@ -192,4 +192,6 @@ For release builds, see [docs/RELEASING.md](docs/RELEASING.md). Optional build t
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, test fixtures, and release gates; [ARCHITECTURE.md](ARCHITECTURE.md) for implementation boundaries; [PRODUCT_SPEC.md](PRODUCT_SPEC.md) for the user journey; and [ROADMAP.md](ROADMAP.md) for outstanding work.
 
+The proposed capped hosted beta has a separate [production execution plan](docs/PRODUCTION_PLAN.md). Google sign-in, private cloud workspaces and hosted capacity limits are planned work; the application described above runs locally today.
+
 Existing CLI commands remain available through `python3 saved_to_shipped.py --help` or the installed `saved-to-shipped-cli` command. Future source adapters can reuse the normalized save contract. Native Reddit and Instagram archive support is outside the current web release.
