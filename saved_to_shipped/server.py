@@ -14,6 +14,7 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from urllib.parse import parse_qs, urlsplit
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -31,6 +32,11 @@ MAX_UPLOAD = 128 * 1024 * 1024
 
 class WorkbenchServer(ThreadingHTTPServer):
     daemon_threads = True
+
+    def server_bind(self):
+        # HTTPServer normally calls getfqdn here. Numeric loopback needs no reverse DNS.
+        TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
     def __init__(self, address, state_path: Path):
         super().__init__(address, Handler)
