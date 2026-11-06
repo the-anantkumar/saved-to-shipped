@@ -404,7 +404,12 @@ details[open] summary { margin-bottom: 14px; }
 .source-panel .read-source[open] > summary { font-size: 10px; color: var(--subtle); margin-bottom: 14px; }
 
 #drag-preview { position: fixed; z-index: 1000; pointer-events: none; margin: 0; opacity: .96; transform: rotate(1deg); box-shadow: 0 12px 35px var(--shadow-strong); }
-.tile[data-draggable="true"] { user-select: none; }
+.tile[data-draggable="true"],
+html.tile-dragging,
+html.tile-dragging * {
+  -webkit-user-select: none;
+  user-select: none;
+}
 
 @media (pointer: coarse) { .drag-handle { padding: 12px; margin: -12px; } .move-select, .tile .notes-button { min-height: 44px; } }
 

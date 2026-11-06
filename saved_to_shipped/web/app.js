@@ -618,6 +618,7 @@ function finishPointerDrag(destination = null) {
   const id = draggedTile;
   pointerDrag = null;
   draggedTile = "";
+  document.documentElement.classList.remove("tile-dragging");
   clearDropMarker();
   $("#drag-preview")?.remove();
   if (active) {
@@ -638,13 +639,15 @@ document.addEventListener("pointerdown", event => {
   pointerDrag = {tile, pointerId: event.pointerId, x: event.clientX, y: event.clientY,
                  offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, width: rect.width};
   tile.setPointerCapture(event.pointerId);
-  if (event.target.closest(".drag-handle")) event.preventDefault();
+  document.documentElement.classList.add("tile-dragging");
+  event.preventDefault();
 });
 document.addEventListener("pointermove", event => {
   if (!pointerDrag || event.pointerId !== pointerDrag.pointerId) return;
   if (!draggedTile) {
     if (Math.hypot(event.clientX - pointerDrag.x, event.clientY - pointerDrag.y) < 6) return;
     draggedTile = pointerDrag.tile.dataset.tileId;
+    window.getSelection()?.removeAllRanges();
     suppressTileClick = true;
     pointerDrag.tile.classList.add("dragging");
     const preview = pointerDrag.tile.cloneNode(true);
@@ -670,7 +673,18 @@ document.addEventListener("pointerup", event => {
   const column = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-drop-status]");
   finishPointerDrag(draggedTile && column ? dropDestination(column, event.clientY) : null);
 });
-document.addEventListener("pointercancel", () => finishPointerDrag());
+document.addEventListener("pointercancel", event => {
+  if (pointerDrag?.pointerId === event.pointerId) finishPointerDrag();
+});
+document.addEventListener("lostpointercapture", event => {
+  if (pointerDrag?.pointerId === event.pointerId) finishPointerDrag();
+});
+document.addEventListener("selectstart", event => {
+  if (pointerDrag) event.preventDefault();
+});
+window.addEventListener("blur", () => {
+  if (pointerDrag) finishPointerDrag();
+});
 document.addEventListener("keydown", event => {
   if (event.key === "Escape" && pointerDrag) {
     event.preventDefault();
