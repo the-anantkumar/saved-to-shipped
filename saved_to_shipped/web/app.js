@@ -31,6 +31,7 @@ const shapes = {
   file: "M5 3h9l5 5v13H5z M14 3v6h5 M8 13h8 M8 17h6",
   note: "M4 4h16v12l-4 4H4z M8 8h8 M8 12h6 M15 20v-5h5",
   grip: "M9 5h.01 M15 5h.01 M9 12h.01 M15 12h.01 M9 19h.01 M15 19h.01",
+  moon: "M20 14A8 8 0 0 1 10 4a8 8 0 1 0 10 10Z",
 };
 const icon = (name) =>
   `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${shapes[name] || shapes.file}"/></svg>`;
@@ -155,6 +156,7 @@ function reviewItems() {
   return state.items.filter((item) => item.status === "inbox" && item.has_context && item.kind !== "untriaged");
 }
 function sidebar() {
+  const theme = window.save2shipTheme?.preference || "system";
   $("#sidebar").innerHTML =
     `<a class="brand" href="/?workspace=${workspace}" aria-label="Save2Ship home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
   <nav class="nav" aria-label="Main navigation">${[
@@ -167,7 +169,7 @@ function sidebar() {
         `<button data-view="${key}" class="${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? "active" : ""}" ${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? 'aria-current="page"' : ""} title="${label}">${icon(img)}<span class="nav-name">${label}</span>${key === "inbox" && reviewItems().length ? `<span class="count">${reviewItems().length}</span>` : ""}</button>`,
     )
     .join("")}</nav>
-  <div class="side-bottom"><button class="utility" data-action="import" aria-label="Import archive">${icon("upload")}<span>Import archive</span></button><button class="utility" data-action="settings" aria-label="Settings">${icon("lock")}<span>Settings</span></button><a class="utility" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${icon("leaf")}<span>${workspace === "demo" ? "My workspace" : "Try the demo"}</span></a><div class="local-label"><span class="dot"></span>Local workspace</div></div>`;
+  <div class="side-bottom"><button class="utility" data-action="import" aria-label="Import archive">${icon("upload")}<span>Import archive</span></button><button class="utility" data-action="settings" aria-label="Settings">${icon("lock")}<span>Settings</span></button><label class="utility theme-control" title="Appearance">${icon("moon")}<select id="theme-mode" aria-label="Appearance">${[["system","System theme"],["light","Light"],["dark","Dark"]].map(([mode,label]) => `<option value="${mode}" ${theme === mode ? "selected" : ""}>${label}</option>`).join("")}</select></label><a class="utility" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${icon("leaf")}<span>${workspace === "demo" ? "My workspace" : "Try the demo"}</span></a><div class="local-label"><span class="dot"></span>Local workspace</div></div>`;
 }
 function topbar() {
   return `<div class="topbar"><span>${workspace === "demo" ? "THE PLAYGROUND" : "A LITTLE LESS SAVING. A LITTLE MORE DOING."}</span><button class="quiet-link" data-action="export">${icon("download")}Export</button></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample ideas, separate from your workspace.</span><a href="/">My workspace ↗</a></div>' : ""}`;
@@ -689,6 +691,10 @@ document.addEventListener("input", (e) => {
   }
 });
 document.addEventListener("change", async (e) => {
+  if (e.target.id === "theme-mode") {
+    window.save2shipTheme.set(e.target.value);
+    return;
+  }
   if (e.target.dataset.moveId && e.target.value) {
     await moveTile(e.target.dataset.moveId, e.target.value);
     e.target.value = "";
