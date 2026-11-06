@@ -62,6 +62,8 @@ The reading spaces offer **To read**, **Reading**, **Read next**, **Read**, and 
 
 Opening a readable save starts its reading progress. Scrolling remembers your furthest position, and opening it again resumes near that point. Scrolling never marks a save complete. Use **Mark read** when finished, or **Mark as unread** to reset it. **Organize** changes the title, topic, or kind without a task form; **Your notes** stays separate from the source.
 
+Need another home for a save? Choose **+ New project…**, **+ New learning topic…**, or **+ New experience section…** inside its organizing dropdown. Name it in the same form, then save to create and assign it together. Other unsaved edits stay in place; cancelling creates nothing. Existing names are reused without duplicates.
+
 Reading progress is independent of project stages. Existing task states, notes, text, and group assignments are preserved. Older learning or experience saves marked In progress or Done initially appear as Reading or Read until you set their reading state. Existing groups act as reading topics, so no regrouping or re-import is needed.
 
 ## How it works

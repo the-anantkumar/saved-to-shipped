@@ -47,6 +47,8 @@ Saves presents one contextual next action: resolve a pending run, review project
 
 Reading routes retain topic, status, length, search, and reader ID in the fragment. Opening a save starts reading; debounced scroll updates persist the furthest position, capped below explicit completion. The client serializes mutations per item and flushes pending progress before navigation. A reload restores an approximate position in the saved text. `Mark read` completes the read and clears its queue flag. Notes and metadata use separate editors; reading never changes task `status`.
 
+Task review and reading organization share an assignment dropdown with inline section creation. Changing kind updates its project/topic/experience wording without redrawing the form. Selecting creation enables a name field; returning to an existing section excludes that draft name. `/api/item` accepts either `project_id` or `new_project_name` (nonblank, at most 100 characters). New names reuse case-insensitive matches. Creation, assignment, and the item edits validate in memory and save once, so a failed task check cannot leave an orphan group.
+
 The board has Review, To do, In progress, and Done lanes. Pointer dragging uses a handle, movement threshold, pointer capture, drop indicator, and cancellation outside a lane or on Escape. A native Move select provides a keyboard/touch alternative. `/api/move` validates status and destination, then atomically saves the status and explicit `board_order`. Existing task-readiness checks apply to dragging as well. The client reconciles with the server after saving or an uncertain response; it does not resubmit automatically. Notes, source content, task fields, and provider provenance are preserved during moves.
 
 ## Persistent state

@@ -319,3 +319,57 @@ test("a save opened from intake returns to its reading library", async () => {
   assert.equal(ui.context.location.hash, "#learning");
   assert.equal(ui.run("readerId"), "");
 });
+
+test("organizing dropdowns offer inline creation for each destination", () => {
+  const ui = app({items: [draft, article, experience], projects: collections});
+  for (const [id, label] of [["draft", "New project"], ["learn", "New learning topic"], ["experience", "New experience section"]]) {
+    ui.run(id === "draft" ? 'itemDialog("draft")' : `readingDialog("${id}")`);
+    const html = ui.node("#modal").innerHTML;
+    assert.match(html, new RegExp(`<option value="__new_section__"[^>]*>\\+ ${label}`));
+    assert.match(html, /name="new_project_name"[^>]*disabled/);
+    assert.doesNotMatch(html, /data-action="reading-new-topic"/);
+  }
+});
+
+test("inline creation preserves draft fields and follows kind changes", () => {
+  const ui = app();
+  const group = ui.node("#f-project_id");
+  group.id = "f-project_id";
+  const option = ui.node("new-option");
+  group.querySelector = () => option;
+  group.value = "__new_section__";
+  ui.node("#f-kind").value = "learning";
+  ui.node("#f-title").value = "My unsaved title";
+  ui.node("#f-new_project_name").value = "My unsaved topic";
+  ui.emit("change", {target: group});
+  assert.equal(ui.node("#new-section-field").classList.contains("hidden"), false);
+  assert.equal(ui.node("#f-new_project_name").disabled, false);
+  assert.equal(ui.node("#f-new_project_name").required, true);
+  assert.match(option.textContent, /New learning topic/);
+  ui.node("#f-kind").id = "f-kind";
+  ui.node("#f-kind").value = "experience";
+  ui.emit("change", {target: ui.node("#f-kind")});
+  assert.match(option.textContent, /New experience section/);
+  assert.equal(ui.node("#f-title").value, "My unsaved title");
+  assert.equal(ui.node("#f-new_project_name").value, "My unsaved topic");
+  group.id = "f-project_id";
+  group.value = "databases";
+  ui.emit("change", {target: group});
+  assert.equal(ui.node("#f-new_project_name").disabled, true);
+  assert.equal(ui.node("#f-new_project_name").required, false);
+  assert.equal(ui.node("#new-section-field").classList.contains("hidden"), true);
+});
+
+test("reading creation submits a single item edit without a temporary section ID", async () => {
+  const ui = app({items: [article]});
+  ui.run('let saveReading, calls=[]; bindForm = callback => saveReading = callback; api = async (route,payload) => { calls.push({route,payload}); }; readingDialog("learn");');
+  ui.context.form = new Map([["title", "My revised title"], ["kind", "learning"], ["project_id", "__new_section__"], ["new_project_name", "Query tuning"]]);
+  await ui.run("saveReading(form)");
+  assert.deepEqual(JSON.parse(ui.run("JSON.stringify(calls)")), [{route: "/api/item", payload: {id: "learn", title: "My revised title", kind: "learning", new_project_name: "Query tuning"}}]);
+});
+
+test("existing section choices ignore a previously entered new name", () => {
+  const ui = app();
+  ui.context.form = new Map([["project_id", "databases"], ["new_project_name", "An abandoned draft"]]);
+  assert.deepEqual(JSON.parse(ui.run("JSON.stringify(organizationPayload(form))")), {project_id: "databases"});
+});
