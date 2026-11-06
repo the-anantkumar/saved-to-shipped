@@ -46,6 +46,7 @@ let state = { items: [], projects: [], imports: [] },
   retrievalTimer,
   visibleLimit = 25,
   classificationCancelled = false;
+let initialLoad = true;
 const labels = {
   untriaged: "Needs context",
   project: "Build",
@@ -64,7 +65,7 @@ const retrievalLabels = {
   empty: "No usable text",
 };
 const statusLabels = {
-  inbox: "Inbox / review",
+  inbox: "To review",
   ready: "Ready",
   doing: "In progress",
   done: "Shipped",
@@ -93,6 +94,11 @@ async function api(route, data, query = "") {
 }
 async function refresh() {
   state = await api("/api/state");
+  if (initialLoad) {
+    restoreRoute();
+    filter = reviewItems().length ? "review" : "all";
+    initialLoad = false;
+  }
   render();
   scheduleRetrieval();
 }
@@ -110,7 +116,7 @@ function category(item) {
   if (!item.has_context && item.enrichment)
     return retrievalLabels[item.enrichment.status] || "Needs context";
   return item.kind === "untriaged" && item.has_context
-    ? "Ready to classify"
+    ? "Ready to organize"
     : labels[item.kind] || item.kind;
 }
 function dateLabel(raw) {
@@ -123,147 +129,95 @@ function dateLabel(raw) {
 function navigate(next, project = "") {
   view = next;
   projectFilter = project;
-  filter = "all";
+  filter = next === "inbox" && !project && reviewItems().length ? "review" : "all";
   search = "";
   visibleLimit = 25;
+  history.pushState(null, "", `#${next}${project ? "?project=" + encodeURIComponent(project) : ""}`);
   render();
   window.scrollTo({ top: 0 });
+  $("h1")?.focus({ preventScroll: true });
+}
+function restoreRoute() {
+  const [route, query = ""] = location.hash.slice(1).split("?");
+  view = ["inbox", "projects", "backlog", "week", "shipped"].includes(route) ? route : "inbox";
+  projectFilter = new URLSearchParams(query).get("project") || "";
+}
+window.addEventListener("popstate", () => {
+  restoreRoute();
+  filter = "all";
+  search = "";
+  render();
+});
+function reviewItems() {
+  return state.items.filter((item) => item.status === "inbox" && item.has_context && item.kind !== "untriaged");
 }
 function sidebar() {
   $("#sidebar").innerHTML =
-    `<a class="brand" href="/?workspace=${workspace}" aria-label="Saved to Shipped home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">saved<span> to </span>shipped<span class="brand-period">.</span></span></a>
-  <div class="eyebrow nav-label">Your workspace</div><nav class="nav" aria-label="Main navigation">${[
-    ["inbox", "inbox", "Saved inbox"],
+    `<a class="brand" href="/?workspace=${workspace}" aria-label="Save2Ship home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
+  <nav class="nav" aria-label="Main navigation">${[
+    ["inbox", "inbox", "Saves"],
     ["projects", "grid", "Projects"],
     ["backlog", "board", "Backlog"],
-    ["week", "calendar", "This week"],
-    ["shipped", "check", "Shipped"],
   ]
     .map(
       ([key, img, label]) =>
-        `<button data-view="${key}" class="${view === key ? "active" : ""}" ${view === key ? 'aria-current="page"' : ""} title="${label}">${icon(img)}<span class="nav-name">${label}</span>${key === "inbox" ? `<span class="count">${state.items.filter((i) => i.status === "inbox").length}</span>` : ""}</button>`,
+        `<button data-view="${key}" class="${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? "active" : ""}" ${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? 'aria-current="page"' : ""} title="${label}">${icon(img)}<span class="nav-name">${label}</span>${key === "inbox" && reviewItems().length ? `<span class="count">${reviewItems().length}</span>` : ""}</button>`,
     )
     .join("")}</nav>
-  <div class="side-projects"><div class="eyebrow nav-label">Your projects</div>${
-    state.projects
-      .slice(0, 5)
-      .map(
-        (p, i) =>
-          `<button class="project-nav" data-project="${p.id}"><span class="dot c${i % 3}"></span>${esc(p.name)}</button>`,
-      )
-      .join("") ||
-    '<div class="project-nav">Make room for your next idea.</div>'
-  }<button class="project-nav" data-action="project">${icon("plus")}New project</button></div>
-  <div class="side-bottom"><div class="local-label"><span class="dot"></span>Stored on this device</div><p>A little less collecting.<br>A little more creating.</p><a class="workspace-link" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${workspace === "demo" ? "Back to my workspace" : "Explore the sample workspace"} ${icon("arrow")}</a></div>`;
+  <div class="side-bottom"><button class="utility" data-action="import" aria-label="Import archive">${icon("upload")}<span>Import archive</span></button><button class="utility" data-action="settings" aria-label="Settings">${icon("lock")}<span>Settings</span></button><a class="utility" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${icon("leaf")}<span>${workspace === "demo" ? "My workspace" : "Try the demo"}</span></a><div class="local-label"><span class="dot"></span>Local workspace</div></div>`;
 }
 function topbar() {
-  return `<div class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong>${{ inbox: "Saved inbox", projects: "Projects", backlog: "Backlog", week: "This week", shipped: "Shipped" }[view]}</strong></div><div class="top-actions"><button class="button ghost small" data-action="settings">${icon("lock")}Settings</button><button class="button small" data-action="import">${icon("upload")}Import archive</button><div class="avatar" title="Personal workspace">${workspace === "demo" ? "D" : "ME"}</div></div></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample workspace · All posts are synthetic. Your personal saves stay separate.</span><a href="/">My workspace ↗</a></div>' : ""}`;
+  return `<div class="topbar"><span>${workspace === "demo" ? "THE PLAYGROUND" : "A LITTLE LESS SAVING. A LITTLE MORE DOING."}</span><button class="quiet-link" data-action="export">${icon("download")}Export</button></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample ideas, separate from your workspace.</span><a href="/">My workspace ↗</a></div>' : ""}`;
 }
 function heading(title, description, actions) {
-  return `<div class="heading"><div><h1>${title}</h1><p>${description}</p></div><div class="heading-actions">${actions || ""}</div></div>`;
+  return `<div class="heading"><div><h1 tabindex="-1">${title}</h1><p>${description}</p></div>${actions ? `<div class="heading-actions">${actions}</div>` : ""}</div>`;
 }
 function empty(title, description, actions = "") {
   return `<div class="empty"><div class="empty-icon">${icon("leaf")}</div><h3>${title}</h3><p>${description}</p>${actions}</div>`;
 }
-function stats() {
-  const vals = [
-    [state.items.length, "Saved ideas", "inbox", "collected"],
-    [state.projects.length, "Projects taking shape", "grid", "in motion"],
-    [
-      state.items.filter((i) => ["ready", "doing"].includes(i.status)).length,
-      "Ready to work on",
-      "board",
-      "next steps",
-    ],
-    [
-      state.items.filter((i) => i.status === "done").length,
-      "Ideas shipped",
-      "check",
-      "made real",
-    ],
-  ];
-  return `<div class="stats">${vals.map(([value, label, img, note]) => `<div class="stat"><div class="stat-top">${label}${icon(img)}</div><div class="stat-value">${value}<small>${note}</small></div></div>`).join("")}</div>`;
-}
+
 function row(item) {
-  return `<div class="save-row"><div class="save-main"><span class="source-mark" title="LinkedIn">in</span><div class="save-text"><button class="save-title" data-item="${item.id}">${esc(item.title || "A saved idea waiting for a title")}</button><div class="save-meta">${esc(item.author || "LinkedIn save")}<span>·</span>${esc(dateLabel(item.saved_at))}<span>·</span>${!item.has_context ? "Add post text or notes" : item.status === "inbox" ? "In your inbox" : esc(statusLabels[item.status])}</div></div></div><span class="pill ${esc(item.kind)}">${esc(category(item))}</span><span class="project-cell">${item.project_id ? `<span class="dot"></span>${esc(projectName(item.project_id))}` : "Unassigned"}</span><button class="row-arrow" data-item="${item.id}" aria-label="Review ${esc(item.title || "saved idea")}">${icon("arrow")}</button></div>`;
+  const title = item.title || "Saved LinkedIn post";
+  return `<button class="save-row" data-item="${item.id}" aria-label="Review ${esc(title)}"><span class="source-mark">${item.has_context ? icon(item.kind === "project" ? "spark" : "file") : "in"}</span><span class="save-text"><span class="save-title">${esc(title)}</span><span class="save-meta">${esc(item.author || "LinkedIn")}<span>·</span>${esc(dateLabel(item.saved_at))}${item.project_id ? `<span>·</span><span class="row-project">${esc(projectName(item.project_id))}</span>` : ""}</span></span><span class="pill ${esc(item.kind)}">${esc(category(item))}</span><span class="row-arrow">${icon("arrow")}</span></button>`;
 }
 function table(items) {
-  return `<div class="table"><div class="table-head"><span>Saved idea</span><span>Destination</span><span class="project-cell">Project</span><span></span></div>${items.length ? items.map(row).join("") : empty(state.items.length ? "A clean slate here" : "Your next project is hiding in your saves", state.items.length ? "Try another filter, or add a new save." : "Import your LinkedIn archive, capture a post with a note, or explore the sample workspace.", state.items.length ? "" : `<button class="button primary" data-action="import">${icon("upload")}Import LinkedIn archive</button><a class="button" href="/?workspace=demo">Try the demo ${icon("arrow")}</a>`)}</div>`;
+  return `<div class="save-list">${items.length ? items.map(row).join("") : empty("Nothing here yet", search ? "Try a different search." : "Your saves will appear here as they move through your workspace.")}</div>`;
 }
 function inbox() {
-  const candidates = state.items.filter(
-    (i) => i.kind === "untriaged" && i.has_context && i.status === "inbox",
+  const scope = state.items.filter(item => !projectFilter || item.project_id === projectFilter);
+  const reviews = reviewItems().filter(item => !projectFilter || item.project_id === projectFilter);
+  const waiting = scope.filter((item) => !item.has_context);
+  const items = scope.filter((item) =>
+    (filter === "all" || (filter === "review" && reviews.some((review) => review.id === item.id)) || (filter === "context" && !item.has_context)) &&
+    `${item.title} ${item.content} ${item.note} ${projectName(item.project_id)} ${(item.tags || []).join(" ")}`.toLowerCase().includes(search.toLowerCase())
   );
-  const items = state.items.filter(
-    (i) =>
-      (!projectFilter || i.project_id === projectFilter) &&
-      (filter === "all" ||
-        (filter === "context" && !i.has_context) ||
-        (filter === "review" && i.status === "inbox" && i.has_context) ||
-        (filter === "project" && i.kind === "project")) &&
-      `${i.title} ${i.content} ${i.note} ${(i.tags || []).join(" ")}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
-  return (
-    heading(
-      "Good saves. Great starting points.",
-      "A home for the ideas you want to do something with.",
-      `<button class="button" data-action="capture">${icon("plus")}Add a save</button><button class="button primary" data-action="retrieve">${icon("download")}Process saves</button>`,
-    ) +
-    `<section class="hero"><div class="hero-text"><div class="eyebrow">From “someday” to shipped</div><h2>You saved it for a reason.<br><span>Give it a next step.</span></h2><p>Turn the things that caught your eye into small projects,<br>useful experiments, and work you can point to.</p></div><div class="hero-art" aria-hidden="true"><div class="orbit"></div><div class="mini-card">${icon("inbox")}<div class="line"></div><div class="line short"></div></div><div class="mini-card front">${icon("check")}<div class="line"></div><div class="line short"></div></div><span class="spark">✧</span></div></section>` +
-    pipeline() +
-    stats() +
-    `<div class="section-head"><div class="section-title">Your saved ideas <small>${state.items.length} total</small></div><button class="button ghost small" data-action="export">${icon("download")}Export backlog</button></div>${projectFilter ? `<button class="project-filter" data-action="clear-project">${esc(projectName(projectFilter))} ${icon("close")}</button>` : ""}<div class="toolbar"><div class="tabs">${[
-      ["all", "All saves"],
-      ["review", "To review"],
-      ["context", "Needs context"],
-      ["project", "Build ideas"],
-    ]
-      .map(
-        ([key, label]) =>
-          `<button class="tab ${filter === key ? "selected" : ""}" data-filter="${key}">${label}</button>`,
-      )
-      .join(
-        "",
-      )}</div><label class="search">${icon("search")}<input id="search" placeholder="Find an idea…" aria-label="Search saved ideas" value="${esc(search)}"><kbd>/</kbd></label></div>${table(items.slice(0, visibleLimit))}${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25, items.length - visibleLimit)} more ideas</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "idea" : "ideas"}${search ? " matching your search" : ""}</span><span>${icon("lock")}Saved locally. AI is optional.</span></div>`
-  );
+  if (!state.items.length) return heading("Good ideas deserve a next step.", "A calmer home for the things you want to build and learn.") + `<div class="welcome"><div class="welcome-mark">${icon("inbox")}</div><h2>Start with your saved posts.</h2><p>Import your LinkedIn archive. Recover the useful bits.<br>Leave with a few things worth doing.</p><button class="button primary" data-action="import">${icon("upload")}Import LinkedIn archive</button><a class="quiet-link" href="/?workspace=demo">Take a look around first ${icon("arrow")}</a><div class="welcome-note">Your archive stays on your device.</div></div>`;
+  return heading(projectFilter ? esc(projectName(projectFilter)) : "Your saves, with somewhere to go.", projectFilter ? "Related ideas. One useful next step at a time." : `${state.items.length} saves · ${reviews.length} to review · ${waiting.length} waiting for content`, `<button class="button" data-action="capture">${icon("plus")}Add a link</button>`) +
+    (projectFilter ? `<button class="quiet-link back-link" data-view="projects">← All projects</button>` : pipeline()) +
+    `<div class="toolbar"><div class="tabs" aria-label="Filter saves">${[["review", "To review", reviews.length], ["all", "All saves", scope.length], ["context", "Waiting", waiting.length]].map(([key,label,count]) => `<button class="tab ${filter === key ? "selected" : ""}" data-filter="${key}" aria-pressed="${filter === key}">${label}<span>${count}</span></button>`).join("")}</div><label class="search">${icon("search")}<input id="search" placeholder="Search saves" aria-label="Search saves" value="${esc(search)}"><kbd>/</kbd></label></div>` + table(items.slice(0,visibleLimit)) + `${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25,items.length-visibleLimit)} more</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "save" : "saves"}${projectFilter ? " in this project" : ""}</span>${waiting.length && filter !== "context" && !projectFilter ? '<button class="quiet-link" data-action="retrieve">Process more saves ↗</button>' : ""}</div>`;
 }
 function projects() {
-  return (
-    heading(
-      "A place for every possibility.",
-      "Group related saves around something you want to make.",
-      `<button class="button primary" data-action="project">${icon("plus")}New project</button>`,
-    ) +
-    `<div class="project-grid">${
-      state.projects.length
-        ? state.projects
-            .map((p, index) => {
-              const items = state.items.filter((i) => i.project_id === p.id),
-                done = items.filter((i) => i.status === "done").length;
-              return `<button class="project-card" data-project="${p.id}"><div class="project-icon">${icon(index % 2 ? "folder" : "spark")}</div><h3>${esc(p.name)}</h3><p>${esc(p.description || "Related ideas, one small next step at a time.")}</p><div class="progress"><span data-progress="${items.length ? Math.round((done / items.length) * 100) : 0}"></span></div><footer><span>${items.length} saved ${items.length === 1 ? "idea" : "ideas"}</span><span>${done} shipped ${icon("arrow")}</span></footer></button>`;
-            })
-            .join("")
-        : empty(
-            "Start with one project",
-            "Create a project, then assign saves to it. Classification can also suggest groups for context-backed ideas.",
-            '<button class="button primary" data-action="project">Create a project</button>',
-          )
-    }</div>`
-  );
+  return heading("A little direction.", `${state.projects.length} projects bringing related ideas together.`, '<button class="button" data-action="project">'+icon("plus")+'New project</button>') + `<div class="project-grid">${state.projects.length ? state.projects.map((project,index) => {
+    const items = state.items.filter((item) => item.project_id === project.id);
+    const active = items.filter((item) => ["ready","doing"].includes(item.status)).length;
+    const done = items.filter((item) => item.status === "done").length;
+    return `<button class="project-card" data-project="${project.id}"><span class="project-icon c${index%3}">${icon("folder")}</span><h2>${esc(project.name)}</h2>${project.description ? `<p>${esc(project.description)}</p>` : ""}<footer><span>${items.length} saves${active ? ` · ${active} active` : ""}${done ? ` · ${done} shipped` : ""}</span>${icon("arrow")}</footer></button>`;
+  }).join("") : empty("Let a project take shape", "Organize your saves to find related ideas, or start a group of your own.", '<button class="button primary" data-view="inbox">Back to saves</button>')}</div>`;
 }
 function task(item) {
-  return `<article class="task"><span class="pill ${esc(item.kind)}">${esc(labels[item.kind])}</span><h3><button class="save-title" data-item="${item.id}">${esc(item.title)}</button></h3><p>${esc(item.next_action)}</p><footer><span class="task-meta">${icon("clock")}${esc(item.effort_hours)}h ${item.project_id ? " · " + esc(projectName(item.project_id)) : ""}</span><button data-item="${item.id}">Open ${item.status === "done" ? "result" : "task"} ↗</button></footer></article>`;
+  const action = item.status === "ready" ? ["doing","Start task"] : item.status === "doing" ? ["done","Mark shipped"] : null;
+  return `<article class="task"><div class="task-top"><span class="pill ${esc(item.kind)}">${esc(labels[item.kind])}</span><span>${item.effort_hours}h</span></div><h3><button class="save-title" data-item="${item.id}">${esc(item.title)}</button></h3><p>${esc(item.next_action)}</p><footer><span class="task-project">${esc(projectName(item.project_id) || "Personal task")}</span>${action ? `<button class="quiet-link" data-status="${action[0]}" data-id="${item.id}">${action[1]} ${icon("arrow")}</button>` : `<button class="quiet-link" data-item="${item.id}">View result ${icon("arrow")}</button>`}</footer></article>`;
+}
+function backlogTabs() {
+  return `<div class="tabs backlog-tabs" aria-label="Backlog views">${[["backlog","Board"],["week","This week"],["shipped","Shipped"]].map(([key,label]) => `<button class="tab ${view===key ? "selected" : ""}" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join("")}</div>`;
 }
 function backlog() {
   return (
     heading(
-      "Less backlog. More forward.",
-      "Small, reviewed next steps. Move one idea into motion.",
-      `<button class="button" data-action="export">${icon("download")}Export tasks</button>`,
+      "Make a little progress.",
+      "Your reviewed ideas, ready when you are.",
     ) +
-    `<div class="board">${[
+    backlogTabs() + `<div class="board">${[
       ["ready", "Ready to start"],
       ["doing", "In progress"],
       ["done", "Shipped"],
@@ -272,7 +226,7 @@ function backlog() {
         const items = state.items
           .filter((i) => i.status === key)
           .sort((a, b) => b.score - a.score);
-        return `<section class="column"><div class="column-title"><span class="dot ${key === "done" ? "c1" : ""}"></span>${label}<small>${items.length}</small></div>${items.length ? items.map(task).join("") : '<p class="helper">' + (key === "ready" ? "Review a classified idea and add it to your backlog." : key === "doing" ? "Open a ready task and change its status to In progress." : "Your finished ideas will live here.") + "</p>"}</section>`;
+        return `<section class="column"><div class="column-title"><span class="dot ${key === "done" ? "c1" : ""}"></span>${label}<small>${items.length}</small></div>${items.length ? items.map(task).join("") : '<p class="helper">' + (key === "ready" ? "Review a classified idea and add it to your backlog." : key === "doing" ? "Choose Start task on a ready idea." : "Your finished ideas will live here.") + "</p>"}</section>`;
       })
       .join(
         "",
@@ -302,7 +256,7 @@ function week() {
       "Pick a realistic slice of work for the time you actually have.",
       `<label class="budget">This week <input id="hours" type="number" min="0.25" max="168" step="0.25" value="${hours}" aria-label="Weekly time budget">hours</label>`,
     ) +
-    `<div class="week-note">${selected.length ? `${selected.length} small build ${selected.length === 1 ? "task" : "tasks"} · ${Math.round((hours - remaining) * 100) / 100}h planned · ${Math.round(remaining * 100) / 100}h breathing room` : "No reviewed build tasks fit this budget yet."}<br>A maximum of two build tasks. Leave yourself room to finish.</div><div class="board">${selected.length ? selected.map(task).join("") : empty("Make space for one good idea", "Review a build idea, set a next action, then add it to your backlog.", '<button class="button primary" data-view="inbox">Review saved ideas</button>')}</div><div class="heading-actions heading"><button class="button" data-action="export">${icon("download")}Download sprint & issue drafts</button></div>`
+    backlogTabs() + `<div class="week-note">${selected.length ? `${selected.length} small build ${selected.length === 1 ? "task" : "tasks"} · ${Math.round((hours - remaining) * 100) / 100}h planned · ${Math.round(remaining * 100) / 100}h breathing room` : "No reviewed build tasks fit this budget yet."}<br>A maximum of two build tasks. Leave yourself room to finish.</div><div class="board">${selected.length ? selected.map(task).join("") : empty("Make space for one good idea", "Review a build idea, set a next action, then add it to your backlog.", '<button class="button primary" data-view="inbox">Review saved ideas</button>')}</div>`
   );
 }
 function render() {
@@ -316,14 +270,10 @@ function render() {
       week,
       shipped: () =>
         heading(
-          "From saved to something real.",
+          "Look what you made.",
           "A small collection of things you followed through on.",
-        ) + table(state.items.filter((i) => i.status === "done")),
-    }[view]() +
-    '<div class="footer-note">Collect with curiosity. Build with intention.</div>';
-  document
-    .querySelectorAll("[data-progress]")
-    .forEach((el) => (el.style.width = el.dataset.progress + "%"));
+        ) + backlogTabs() + table(state.items.filter((i) => i.status === "done")),
+    }[view]();
 }
 function modal(
   title,
@@ -332,6 +282,7 @@ function modal(
   form = false,
 ) {
   const dialog = $("#modal");
+  dialog.classList.toggle("review-dialog", body.includes('class="review-layout"'));
   dialog.innerHTML = `${form ? '<form id="dialog-form">' : ""}<div class="dialog-head"><h2 id="dialog-title">${title}</h2><button type="button" class="close" data-action="close" aria-label="Close dialog">${icon("close")}</button></div><div class="dialog-body"><div id="form-error" class="error-message hidden" role="alert"></div>${body}</div><div class="dialog-footer">${footer}</div>${form ? "</form>" : ""}`;
   if (!dialog.open) dialog.showModal();
 }
@@ -344,19 +295,22 @@ function select(label, name, options, value) {
 function bindForm(callback) {
   $("#dialog-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const button = $("[type=submit]", $("#dialog-form"));
-    button.disabled = true;
+    const buttons = [...$("#dialog-form").querySelectorAll("[type=submit]")];
+    buttons.forEach(button => button.disabled = true);
     $("#form-error").classList.add("hidden");
     try {
-      await callback(new FormData(e.currentTarget), e.submitter);
+      const next = await callback(new FormData(e.currentTarget), e.submitter);
       $("#modal").close();
       await refresh();
+      if (next?.nextItem) itemDialog(next.nextItem);
+      if (next?.completedReview) navigate("backlog");
+      if (next?.afterRefresh) next.afterRefresh();
     } catch (error) {
       $("#form-error").textContent = error.message;
       $("#form-error").classList.remove("hidden");
       $("#form-error").scrollIntoView({ block: "nearest" });
     } finally {
-      button.disabled = false;
+      buttons.forEach(button => button.disabled = false);
     }
   });
 }
@@ -397,47 +351,42 @@ function projectDialog() {
     toast("Project created. Assign ideas from their review panel.");
   });
 }
+function effortChoices(current) {
+  const values = [0.25,0.5,0.75,1,1.25,1.5,1.75,2];
+  if (!values.includes(current)) values.push(current);
+  return values.sort((a,b) => a-b).map(value => [String(value), value < 1 ? `${value * 60} minutes` : `${value} ${value === 1 ? "hour" : "hours"}`]);
+}
 function itemDialog(id) {
   const item = state.items.find((i) => i.id === id);
   if (!item) return;
+  const draft = item.status === "inbox" && item.kind !== "untriaged";
+  const queue = reviewItems().filter(candidate => !projectFilter || candidate.project_id === projectFilter);
+  const coverage = item.enrichment;
+  const compact = window.matchMedia("(max-width: 800px)").matches;
   modal(
-    "Give this idea a next step",
-    `${item.metadata?.synthetic ? '<div class="callout">Synthetic demo content. This example does not point to a real post.</div>' : `<a class="source-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Open original LinkedIn save ${icon("external")}</a>`}${
-      item.enrichment
-        ? `<div class="callout">Retrieval: ${esc(retrievalLabels[item.enrichment.status] || item.enrichment.status)}. ${esc(item.enrichment.coverage || "No readable post text was returned.")}${item.enrichment.content_truncated ? " The stored text was shortened to 20,000 characters." : ""}${(
-            item.enrichment.links || []
-          )
-            .slice(0, 5)
-            .map(
-              (link) =>
-                `<br><a class="inline-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)}</a>`,
-            )
-            .join("")}</div>`
-        : ""
-    }${field("Title", "title", item.title, "input", 'maxlength="300"')}${field("Post text", "content", item.content, "textarea")}${field("Your note / why you saved it", "note", item.note, "textarea")}${item.classification_method ? `<div class="callout">Suggested using ${esc(item.classification_method)} · ${esc(item.confidence)} confidence. ${esc(item.why)}</div>` : ""}<div class="details-section">Shape the next step</div><div class="field-row">${select(
-      "Destination",
-      "kind",
-      Object.entries(labels).map(([key, label]) => [
-        key,
-        key === "untriaged" ? "Not classified" : label,
-      ]),
-      item.kind,
-    )}${select("Project", "project_id", [["", "Unassigned"], ...state.projects.map((p) => [p.id, p.name])], item.project_id || "")}</div>${field("First action", "next_action", item.next_action, "textarea", 'placeholder="A concrete task you could finish in two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="How will you know this first step worked?"')}<div class="field-row">${field("First-action estimate (hours)", "effort_hours", item.effort_hours || 1, "input", 'type="number" min="0.25" max="2" step="0.25" required')}${select("Status", "status", Object.entries(statusLabels), item.status)}</div>${field("Result / commit / PR link (optional)", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}`,
-    '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save changes</button>',
+    draft ? "One idea. One next step." : "Your saved idea",
+    `<div class="review-layout"><section class="source-panel"><div class="eyebrow">THE INSPIRATION</div><h2>${esc(item.title || "Saved LinkedIn post")}</h2><div class="source-byline">${esc(item.author || "LinkedIn")} · ${esc(dateLabel(item.saved_at))}<a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original ${icon("external")}</a></div>${item.metadata?.synthetic ? '<div class="coverage-note">Synthetic sample content.</div>' : ""}${coverage ? `<div class="coverage-note ${coverage.status === "partial" ? "partial" : ""}">${icon(coverage.status === "partial" ? "file" : "check")}${esc(retrievalLabels[coverage.status] || coverage.status)} · ${esc(coverage.coverage || "No readable text returned")}${coverage.content_truncated ? ". Text shortened to 20,000 characters." : ""}</div>` : ""}<details class="read-source" ${compact ? "" : "open"}><summary>Read post text</summary><div class="post-text">${esc(item.content || "The archive contains this post's link. Retrieve its text or add your own context below.")}</div></details>${coverage?.links?.length ? `<details class="source-links"><summary>${coverage.links.length} links from this post</summary>${coverage.links.slice(0,30).map(link => `<a class="quiet-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)} ${icon("external")}</a>`).join("")}</details>` : ""}<details ${!item.has_context ? "open" : ""}><summary>${item.note ? "Your personal context" : "Add personal context"}</summary>${field("Your note", "note", item.note, "textarea", 'placeholder="What would make this useful to you?"')}</details><details ${!item.has_context ? "open" : ""}><summary>Edit source text</summary>${field("Post text", "content", item.content, "textarea")}</details></section><section class="action-panel"><div class="eyebrow">MAKE IT USEFUL</div>${item.classification_method ? `<p class="suggestion-note">Draft from ${esc(item.classification_method)} · ${esc(item.confidence)} confidence</p>` : '<p class="suggestion-note">Add context, then organize this save or shape a task yourself.</p>'}${field("Working title", "title", item.title, "input", 'maxlength="300" placeholder="Give the idea a short name"')}${field("Next action", "next_action", item.next_action, "textarea", 'placeholder="One small thing you can do in under two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="A result you can point to."')}<div class="field-row">${select("Project", "project_id", [["", "No project"], ...state.projects.map(p => [p.id,p.name])], item.project_id || "")}${select("Time to make a start", "effort_hours", effortChoices(item.effort_hours || 1), String(item.effort_hours || 1))}</div><details><summary>More details</summary>${select("Kind of idea", "kind", Object.entries(labels).map(([key,label]) => [key,key === "untriaged" ? "Not organized yet" : label]),item.kind)}${select("Status", "status", Object.entries(statusLabels),item.status)}${item.why ? `<p>${esc(item.why)}</p>` : ""}${field("Result / commit / PR link", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}</details></section></div>`,
+    `${draft ? `<span class="review-count">${queue.length} ${queue.length === 1 ? "idea" : "ideas"} left to review</span><button class="button ghost" type="submit" name="decision" value="parked">Park for later</button>` : ""}<button class="button" type="submit" name="decision" value="save">${draft ? "Save draft" : "Save changes"}</button>${draft ? '<button class="button primary" type="submit" name="decision" value="ready">Add to backlog '+icon("arrow")+'</button>' : ""}`,
     true,
   );
-  bindForm(async (form) => {
+  bindForm(async (form, submitter) => {
     const payload = Object.fromEntries(form);
     payload.id = id;
     payload.effort_hours = Number(payload.effort_hours);
+    const decision = submitter?.value;
+    if (["ready","parked"].includes(decision)) payload.status = decision;
     await api("/api/item", payload);
-    toast("Idea updated. One step closer.");
+    toast(decision === "ready" ? "Added to your backlog." : decision === "parked" ? "Parked. Come back when it feels useful." : "Changes saved.");
+    if (draft && ["ready","parked"].includes(decision)) {
+      const next = queue.find(candidate => candidate.id !== id);
+      return next ? { nextItem: next.id } : { completedReview: true };
+    }
   });
 }
 function importDialog() {
   modal(
-    "Bring your saves home",
-    `<div class="callout">LinkedIn exports saved dates and URLs. Post text stays on LinkedIn: add it or a personal note after importing. Only the Saved Items CSV is read from your archive.</div><label class="dropzone" id="dropzone" for="archive-file">${icon("upload")}<strong>Drop your LinkedIn archive here</strong>or choose a ZIP / Saved Items CSV (up to 128 MiB)<input id="archive-file" type="file" accept=".zip,.csv" required></label><p class="helper">Re-import any time. Duplicate saves are skipped and your notes stay intact.</p><p>Waiting for your archive? <a class="inline-link" href="${apiURL("/api/sample")}">Download a synthetic test ZIP</a> or <a class="inline-link" href="/?workspace=demo">explore the demo</a>.</p><p class="helper"><a href="https://www.linkedin.com/help/linkedin/answer/a1341346" target="_blank" rel="noopener noreferrer">How to request your Saved Items archive ↗</a></p>${state.imports.length ? `<div class="history"><strong>Last import</strong><br>${esc(state.imports[0].filename)} · ${state.imports[0].added} new · ${state.imports[0].duplicates} duplicates</div>` : ""}`,
+    "Bring your saves in.",
+    `<p>Choose your LinkedIn data export. We’ll find the saved posts and keep your existing notes intact.</p><label class="dropzone" id="dropzone" for="archive-file">${icon("upload")}<strong>Drop your LinkedIn archive here</strong>or choose a ZIP / Saved Items CSV (up to 128 MiB)<input id="archive-file" type="file" accept=".zip,.csv" required></label><p class="helper">Re-import any time. Duplicate saves are skipped and your notes stay intact.</p><p>Need a test file? <a class="inline-link" href="${apiURL("/api/sample")}">Download a synthetic test ZIP</a> or <a class="inline-link" href="/?workspace=demo">explore the demo</a>.</p><p class="helper"><a href="https://www.linkedin.com/help/linkedin/answer/a1341346" target="_blank" rel="noopener noreferrer">How to request your Saved Items archive ↗</a></p>${state.imports.length ? `<div class="history"><strong>Last import</strong><br>${esc(state.imports[0].filename)} · ${state.imports[0].added} new · ${state.imports[0].duplicates} duplicates</div>` : ""}`,
     '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Import saves</button>',
     true,
   );
@@ -464,26 +413,29 @@ function importDialog() {
     );
     const result = await response.json();
     if (!response.ok) throw new Error(result.error);
-    toast(
-      `${result.added} new saves imported. ${result.duplicates} duplicates skipped.`,
-    );
+    navigate("inbox");
+    toast(`${result.added} saves added. ${result.duplicates} duplicates skipped.`);
   });
 }
 function classifyDialog() {
-  const eligible = state.items.filter(
-    (i) => i.kind === "untriaged" && i.has_context && i.status === "inbox",
-  ).length;
-  modal(
-    "Find a direction for your ideas",
-    `<div class="summary"><strong>${eligible} ${eligible === 1 ? "idea has" : "ideas have"} context and can be classified.</strong><br>${state.items.filter((i) => !i.has_context && i.kind === "untriaged").length} still need retrieved text or a useful note.</div><p><strong>Local suggestions</strong><br>A simple keyword classifier groups related ideas, suggests a destination, and drafts a small next step. It runs offline and labels suggestions as low confidence. Review them before adding to your backlog.</p><button class="button primary" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Suggest directions locally</button><div class="details-section">Optional AI classification</div><p>${state.ai?.available ? `Use ${esc(state.ai.model)} to classify up to 20 unclassified ideas with context. Clicking below sends their titles, post text, notes, and existing project names to OpenAI. API usage is billed to your key.` : "Add an optional OpenAI key in Settings to enable direct AI classification. No key is needed for local suggestions or the copy/paste route below."}</p>${state.ai?.available ? `<button class="button" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Send batch to OpenAI</button><label class="checkbox"><input id="classify-all" type="checkbox"> Continue through all eligible ideas in batches (additional API usage)</label>` : ""}<div class="details-section">Use ChatGPT with copy & paste</div><p>Download a context-only prompt, use it in ChatGPT, then paste the JSON response here. Your archive is never uploaded by this app.</p><a class="button small" href="${apiURL("/api/prompt")}">${icon("download")}Download ChatGPT prompt</a><div class="field triage-input"><label for="triage-json">Paste triage JSON</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button small" data-action="apply-triage">Apply ChatGPT response</button>`,
-  );
+  const eligible = state.items.filter(i => i.kind === "untriaged" && i.has_context && i.status === "inbox").length;
+  const ai = state.ai?.available;
+  modal("Find the useful next steps.",
+    `<div class="dialog-intro"><span class="intro-number">${eligible}</span><p>readable saves ready to organize.<br>Related ideas become projects, with small next steps to review.</p></div>${ai ? `<p>Use your OpenAI key to organize up to 20 saves per batch. Selected post text, notes, and goals are sent to OpenAI. API charges apply.</p><button class="button primary wide" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Organize ${Math.min(20,eligible)} ${eligible === 1 ? "save" : "saves"}</button><details><summary>Batch options</summary><label class="checkbox"><input id="classify-all" type="checkbox"> Continue through all ${eligible} readable saves (additional API usage)</label></details>` : `<p>Start with offline suggestions, or connect OpenAI for more specific actions and groups.</p><button class="button primary wide" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Organize with local rules</button><button class="quiet-link" data-action="settings">Connect OpenAI in Settings ↗</button>`}<details><summary>${ai ? "Other ways to organize" : "Use ChatGPT instead"}</summary>${ai ? `<p>Local rules use keywords and run offline. Suggestions are marked low confidence.</p><button class="button" data-action="run-classify" ${eligible ? "" : "disabled"}>Use local rules</button>` : ""}<p>Download a prompt, use it in ChatGPT, then paste the JSON response.</p><a class="quiet-link" href="${apiURL("/api/prompt")}">${icon("download")}Download prompt</a><div class="field"><label for="triage-json">ChatGPT response</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button" data-action="apply-triage">Apply response</button></details>`);
 }
 document.addEventListener("click", async (e) => {
   const button = e.target.closest(
-    "[data-view],[data-item],[data-project],[data-filter],[data-action]",
+    "[data-view],[data-item],[data-project],[data-filter],[data-action],[data-status]",
   );
   if (!button) return;
   try {
+    if (button.dataset.status) {
+      button.disabled = true;
+      await api("/api/item", { id: button.dataset.id, status: button.dataset.status });
+      await refresh();
+      toast(button.dataset.status === "done" ? "One idea, shipped." : "Task started.");
+      return;
+    }
     if (button.dataset.view) return navigate(button.dataset.view);
     if (button.dataset.item) return itemDialog(button.dataset.item);
     if (button.dataset.project)
@@ -494,6 +446,9 @@ document.addEventListener("click", async (e) => {
       return render();
     }
     switch (button.dataset.action) {
+      case "review-next":
+        if (reviewItems().length) itemDialog(reviewItems()[0].id);
+        break;
       case "settings":
         settingsDialog();
         break;
@@ -542,6 +497,7 @@ document.addEventListener("click", async (e) => {
       case "run-classify": {
         button.disabled = true;
         const result = await api("/api/classify", {});
+        filter = "review";
         $("#modal").close();
         await refresh();
         toast(
@@ -558,6 +514,7 @@ document.addEventListener("click", async (e) => {
           button.textContent = `Classifying… ${total} done`;
           const result = await api("/api/classify-ai", {});
           total += result.classified;
+          filter = "review";
           await refresh();
           if (!result.classified) break;
         } while (

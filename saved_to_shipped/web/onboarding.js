@@ -11,20 +11,35 @@ function latestRetrieval() {
 }
 
 function pipeline() {
-  const recovered = state.items.filter((item) => item.content?.trim()).length;
-  const eligible = state.items.filter(
-    (item) =>
-      item.has_context && item.kind === "untriaged" && item.status === "inbox",
-  ).length;
-  const job = latestRetrieval();
-  return `<section class="pipeline" aria-label="Process your saved archive">
-    <div class="pipeline-step"><span class="step-number">1</span><div><strong>Bring your saves</strong><p>${state.items.length ? `${state.items.length} ideas imported` : "Start with your LinkedIn archive ZIP"}</p><button data-action="import">${state.items.length ? "Import another archive" : "Import archive"} ↗</button></div></div>
-    <div class="pipeline-step"><span class="step-number">2</span><div><strong>Recover the content</strong><p>${recovered} ${recovered === 1 ? "save has" : "saves have"} post text${job ? ` · ${esc(job.status.toLowerCase().replaceAll("_", " "))}` : ""}</p><button data-action="retrieve">${state.settings?.extractor_available ? "Retrieve posts" : "Set up hosted retrieval"} ↗</button></div></div>
-    <div class="pipeline-step"><span class="step-number">3</span><div><strong>Find your next project</strong><p>${eligible} ${eligible === 1 ? "idea is" : "ideas are"} ready for classification</p><button data-action="classify">Review classification options ↗</button></div></div>
-  </section>${job?.error ? `<div class="callout retrieval-notice">${esc(job.error)} <button class="inline-link" data-action="retrieve">View run</button></div>` : ""}`;
+  const reviews = reviewItems().length;
+  const eligible = state.items.filter(item => item.has_context && item.kind === "untriaged" && item.status === "inbox").length;
+  const missing = state.items.filter(item => !item.has_context && !["done","parked"].includes(item.status)).length;
+  const job = pendingRetrieval() || latestRetrieval();
+  let title, description, action, label, image = "arrow";
+  if (job && (["STARTING","UNCERTAIN"].includes(job.status) || pendingRetrieval())) {
+    title = job.status === "UNCERTAIN" ? "Your last run needs a look." : "Your saves are on their way.";
+    description = job.error || `${job.total} selected saves. You can keep browsing while we check for results.`;
+    action = 'data-action="retrieve"'; label = "Check run"; image = "clock";
+  } else if (reviews) {
+    title = `${reviews} ${reviews === 1 ? "idea, ready for a decision." : "ideas, ready for a decision."}`;
+    description = "Keep a useful next step. Park the rest. Make room to begin.";
+    action = 'data-action="review-next"'; label = "Start reviewing";
+  } else if (eligible) {
+    title = `${eligible} readable ${eligible === 1 ? "save. Let’s find its next step." : "saves. Let’s find their next steps."}`;
+    description = "Turn the useful bits into project groups and small actions.";
+    action = 'data-action="classify"'; label = "Organize saves"; image = "spark";
+  } else if (missing) {
+    title = "There’s something in your saves.";
+    description = `${missing} links are waiting for content. Start with a small batch.`;
+    action = 'data-action="retrieve"'; label = `Process ${Math.min(10, missing)} ${missing === 1 ? "save" : "saves"}`; image = "download";
+  } else {
+    title = "A little space to make something.";
+    description = "Your reviewed next steps are waiting in the backlog.";
+    action = 'data-view="backlog"'; label = "Open backlog"; image = "check";
+  }
+  return `<section class="next-step" aria-label="Your next step"><div class="next-symbol" aria-hidden="true">✳</div><div class="next-copy"><span class="eyebrow">UP NEXT</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div><button class="button primary" ${action}>${label}${icon(image)}</button></section>`;
 }
-
-function settingsDialog() {
+function settingsDialog(afterSave) {
   if (workspace === "demo") {
     modal(
       "Your provider settings",
@@ -34,16 +49,14 @@ function settingsDialog() {
   }
   const settings = state.settings || {};
   modal(
-    "Set up your workspace",
-    `<p>Bring your own hosted extractor key. Your ZIP stays on this computer; retrieval sends selected post URLs to Apify when you start a run.</p>
-    <div class="callout">Keys are saved in a private local settings file, separate from your saves and exports. Environment variables take precedence over saved settings.</div>
+    "Make yourself at home.",
+    `<p>Connect your tools once. Your keys stay in a separate local settings file.</p><div class="provider-label">Post retrieval <span>${settings.extractor_available ? "Connected" : "Not connected"}</span></div>
     ${field("Apify API token", "apify_token", "", "input", `type="password" autocomplete="off" placeholder="${settings.extractor_available ? "Configured. Leave blank to keep it." : "Paste your Apify token"}"`)}
     <p class="helper"><a class="inline-link" href="https://console.apify.com/" target="_blank" rel="noopener noreferrer">Open Apify Console ↗</a> · Retrieval uses <a class="inline-link" href="https://apify.com/${esc(settings.actor || "data_minds/linkedin-post-scraper")}" target="_blank" rel="noopener noreferrer">${esc(settings.actor || "data_minds/linkedin-post-scraper")}</a>. Provider charges and plan limits apply.</p>
-    <div class="details-section">Optional AI classification</div>
+    <div class="provider-label">Idea organization <span>${settings.ai_available ? "Connected" : "Optional"}</span></div>
     ${field("OpenAI API key", "openai_key", "", "input", `type="password" autocomplete="off" placeholder="${settings.ai_available ? "Configured. Leave blank to keep it." : "Optional: enable AI project suggestions"}"`)}
-    ${field("Model", "model", settings.model || "gpt-4.1-mini", "input", 'maxlength="100"')}
     ${field("What would you like to build or learn?", "goals", state.goals || "", "textarea", 'maxlength="2000" placeholder="Optional: e.g. practical developer tools and small experiments with Rust."')}
-    <details><summary>Remove saved keys</summary><label class="checkbox"><input name="clear_apify_token" type="checkbox"> Remove the saved Apify key</label><label class="checkbox"><input name="clear_openai_key" type="checkbox"> Remove the saved OpenAI key</label><p class="helper">This does not unset keys provided through environment variables.</p></details>`,
+    <details><summary>Advanced settings</summary>${field("Model", "model", settings.model || "gpt-4.1-mini", "input", 'maxlength="100"')}<label class="checkbox"><input name="clear_apify_token" type="checkbox"> Remove the saved Apify key</label><label class="checkbox"><input name="clear_openai_key" type="checkbox"> Remove the saved OpenAI key</label><p class="helper">This does not unset keys provided through environment variables.</p></details>`,
     '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save settings</button>',
     true,
   );
@@ -52,7 +65,8 @@ function settingsDialog() {
     payload.clear_apify_token = form.has("clear_apify_token");
     payload.clear_openai_key = form.has("clear_openai_key");
     await api("/api/settings", payload);
-    toast("Settings saved. Import your archive, then choose Process saves.");
+    toast("Settings saved.");
+    if (typeof afterSave === "function") return { afterRefresh: afterSave };
   });
 }
 
@@ -64,7 +78,7 @@ function retrievalDialog() {
     );
     return;
   }
-  if (!state.settings?.extractor_available) return settingsDialog();
+  if (!state.settings?.extractor_available) return settingsDialog(retrievalDialog);
   const job = pendingRetrieval() || latestRetrieval();
   if (job && (job.status === "STARTING" || job.status === "UNCERTAIN")) {
     modal(
@@ -93,23 +107,22 @@ function retrievalDialog() {
   ).length;
   const unavailable = missing.length - fresh;
   modal(
-    "Recover your saved post content",
-    `<div class="summary"><strong>${fresh} saves have not been retrieved.</strong><br>${unavailable} saves have unavailable or incomplete results and can be retried explicitly.</div>
-    <p>This sends selected LinkedIn post URLs to Apify. It does not send your ZIP, notes, messages, or model API key. Private, removed, and inaccessible posts may remain unavailable.</p>
+    "Find what’s worth keeping.",
+    `<p><strong>${fresh} saves are waiting for content.</strong> Recover the post text first, then organize the ideas.</p>
+    <p class="helper">Selected URLs go to Apify. Provider charges apply. Your archive stays local.</p>
     <div class="field-row">${select(
       "Run size",
       "limit",
       [
-        ["10", "First 10 saves"],
-        ["50", "Up to 50 saves"],
+        ["10", "10 saves"],
+        ["50", "50 saves"],
         ["1000", "All eligible saves (up to 1000)"],
       ],
       "10",
-    )}${field("Maximum provider charge for this run (USD)", "max_charge", 1, "input", 'type="number" min="0.01" max="20" step="0.01" required')}</div>
-    <label class="checkbox"><input name="retry" type="checkbox"> Retry unavailable saves instead of new ones</label>
-    <p class="helper">The charge cap is sent to Apify. Account plans can limit returned results. We recommend starting with 10. Successful content is cached and skipped on later runs.</p>
+    )}${field("Maximum Apify charge (USD)", "max_charge", 1, "input", 'type="number" min="0.01" max="20" step="0.01" required')}</div>
+    <details><summary>Retrieval options & coverage</summary><label class="checkbox"><input name="retry" type="checkbox"> Retry ${unavailable} unavailable saves instead of new ones</label><p>Cached content is kept. Private or deleted posts may be unavailable; images and documents may have partial coverage. The charge cap is sent to Apify. Provider plan limits apply.</p></details>
     ${job?.counts ? `<div class="callout">Last run: ${job.counts.extracted} extracted, ${job.counts.partial} partial, ${job.counts.gated} gated, ${job.counts.deleted} deleted, ${job.counts.missing + job.counts.empty + job.counts.error} without usable content.</div>` : ""}`,
-    '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Start hosted retrieval</button>',
+    '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Retrieve post content '+icon("arrow")+'</button>',
     true,
   );
   bindForm(async (form) => {
@@ -118,7 +131,7 @@ function retrievalDialog() {
       max_charge: Number(form.get("max_charge")),
       retry: form.has("retry"),
     });
-    toast("Hosted retrieval started. Results will be checked automatically.");
+    toast("Retrieving your saves. You can keep browsing.");
   });
 }
 
