@@ -7,13 +7,23 @@ import vm from "node:vm";
 function app(data = {}) {
   const nodes = new Map();
   const events = {};
+  const classes = () => {
+    const values = new Set();
+    return {
+      add(value) { values.add(value); }, remove(value) { values.delete(value); },
+      contains(value) { return values.has(value); },
+      toggle(value, enabled) { if (enabled) values.add(value); else values.delete(value); },
+    };
+  };
+  const root = { classList: classes() };
+  const selection = { clears: 0, removeAllRanges() { this.clears++; } };
   const node = (name) => {
     if (!nodes.has(name)) nodes.set(name, {
       innerHTML: "", open: false, disabled: false,
-      classList: { toggle() {}, add() {}, remove() {} },
+      classList: classes(), style: {},
       addEventListener(type, callback) { events[name + ":" + type] = callback; },
       querySelectorAll() { return []; },
-      setAttribute() {}, remove() {},
+      setAttribute() {}, removeAttribute() {}, remove() {},
       showModal() { this.open = true; }, close() { this.open = false; },
       focus() {},
     });
@@ -23,8 +33,12 @@ function app(data = {}) {
     URLSearchParams, console,
     location: { search: "", hash: "" },
     history: { pushState(_state, _unused, hash) { context.location.hash = hash; } },
-    window: { matchMedia: () => ({ matches: false }), scrollTo() {}, addEventListener(type, callback) { events[type] = callback; } },
-    document: { querySelector: node, querySelectorAll: () => [], addEventListener() {} },
+    window: { matchMedia: () => ({ matches: false }), getSelection: () => selection, scrollTo() {}, addEventListener(type, callback) { events[type] = callback; } },
+    document: {
+      documentElement: root, body: { appendChild() {} }, elementFromPoint: () => null,
+      querySelector: node, querySelectorAll: () => [],
+      addEventListener(type, callback) { (events["document:" + type] ||= []).push(callback); },
+    },
     fetch: () => new Promise(() => {}),
     setTimeout: () => 1, clearTimeout() {},
   });
@@ -32,7 +46,8 @@ function app(data = {}) {
   vm.runInContext(readFileSync("saved_to_shipped/web/app.js", "utf8"), context);
   context.fixture = { items: [], projects: [], settings: {}, imports: [], ...data };
   vm.runInContext("state = fixture", context);
-  return { run: (code) => vm.runInContext(code, context), node, events, context };
+  return { run: (code) => vm.runInContext(code, context), node, events, context, root, selection,
+    emit(type, event) { for (const callback of events["document:" + type] || []) callback(event); } };
 }
 
 const draft = { id: "draft", title: "Practice query plans", content: "Compare an index", note: "For my app", kind: "learning", status: "inbox", has_context: true, saved_at: "2026-11-01", url: "https://linkedin.com/posts/example", next_action: "Compare one query", definition_of_done: "Two plans saved", effort_hours: 1 };
@@ -105,6 +120,63 @@ test("drop position chooses the next tile and excludes the tile being dragged", 
   assert.equal(ui.run("dropDestination(column, 150).before_id"), "first");
   assert.equal(ui.run("dropDestination(column, 200).before_id"), "second");
   assert.equal(ui.run("dropDestination(column, 350).before_id"), null);
+});
+
+function dragGesture(ui) {
+  const tile = ui.node("tile");
+  tile.dataset = { tileId: "draft" };
+  tile.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200 });
+  tile.setPointerCapture = () => { tile.captured = true; };
+  tile.hasPointerCapture = () => tile.captured;
+  tile.releasePointerCapture = () => { tile.captured = false; };
+  tile.cloneNode = () => ui.node("#drag-preview");
+  const event = {
+    target: { closest: selector => selector === '[data-draggable="true"]' ? tile : null },
+    pointerId: 7, button: 0, pointerType: "mouse", clientX: 5, clientY: 5,
+    prevented: false, preventDefault() { this.prevented = true; },
+  };
+  ui.emit("pointerdown", event);
+  return event;
+}
+
+test("dragging prevents page selection and releases it after an outside drop", () => {
+  const ui = app({ items: [draft] });
+  const down = dragGesture(ui);
+  assert.equal(down.prevented, true);
+  assert.equal(ui.root.classList.contains("tile-dragging"), true);
+  let blocked = false;
+  ui.emit("selectstart", { preventDefault() { blocked = true; } });
+  assert.equal(blocked, true);
+  ui.emit("pointermove", { ...down, clientX: 40 });
+  assert.equal(ui.selection.clears, 1);
+  ui.emit("pointerup", down);
+  assert.equal(ui.root.classList.contains("tile-dragging"), false);
+  blocked = false;
+  ui.emit("selectstart", { preventDefault() { blocked = true; } });
+  assert.equal(blocked, false);
+});
+
+test("cancel, lost capture, Escape, and window blur restore selection", () => {
+  for (const end of ["pointercancel", "lostpointercapture", "Escape", "blur"]) {
+    const ui = app({ items: [draft] });
+    dragGesture(ui);
+    if (end === "blur") ui.events.blur();
+    else if (end === "Escape") ui.emit("keydown", { key: "Escape", preventDefault() {} });
+    else ui.emit(end, { pointerId: 7 });
+    assert.equal(ui.root.classList.contains("tile-dragging"), false, end);
+    assert.equal(ui.run("pointerDrag"), null, end);
+  }
+});
+
+test("editor controls do not activate the page selection lock", () => {
+  const ui = app();
+  let prevented = false;
+  ui.emit("pointerdown", {
+    target: { closest: () => ({}) },
+    button: 0, preventDefault() { prevented = true; },
+  });
+  assert.equal(prevented, false);
+  assert.equal(ui.root.classList.contains("tile-dragging"), false);
 });
 
 test("a rejected move keeps the original lane and never resubmits automatically", async () => {
