@@ -181,6 +181,9 @@ class Handler(BaseHTTPRequestHandler):
                 elif route == "/api/item":
                     work.update_item(state_path, work.text(payload.get("id", ""), "ID", 50), payload)
                     self.json({"ok": True})
+                elif route == "/api/move":
+                    work.move_item(state_path, payload)
+                    self.json({"ok": True})
                 elif route == "/api/project":
                     self.json({"id": work.save_project(state_path, payload)})
                 elif route == "/api/classify":

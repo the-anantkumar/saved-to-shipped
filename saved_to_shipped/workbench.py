@@ -105,6 +105,12 @@ def save_project(path: Path, payload: dict) -> str:
 
 def update_item(path: Path, ident: str, payload: dict) -> None:
     state = read(path)
+    _update_item(state, ident, payload)
+    save_state(path, state)
+
+
+def _update_item(state: dict, ident: str, payload: dict) -> None:
+    """Validate changes in memory so compound board moves save atomically."""
     item = select_item(state, ident)
     for key in ("title", "content", "note", "why", "next_action", "definition_of_done", "outcome_url"):
         if key in payload:
@@ -138,6 +144,36 @@ def update_item(path: Path, ident: str, payload: dict) -> None:
         if not 0.25 <= item.get("effort_hours", 0) <= 2:
             raise ValueError("Set a first-action estimate between 0.25 and 2 hours")
     item["updated_at"] = now()
+
+
+def move_item(path: Path, payload: dict) -> None:
+    ident = text(payload.get("id", ""), "ID", 50)
+    status = text(payload.get("status", ""), "Status", 20)
+    before = payload.get("before_id")
+    if before is not None:
+        before = text(before, "Next tile ID", 50)
+    state = read(path)
+    ident = select_item(state, ident)["id"]
+    _update_item(state, ident, {"status": status})
+    if before:
+        anchor = select_item(state, before)
+        before = anchor["id"]
+        if before == ident or anchor["status"] != status:
+            raise ValueError("The destination tile changed. Refresh the board and try again.")
+
+    # User order wins; previously unranked saves retain their score-based order.
+    stored = state.get("board_order", [])
+    stored = stored if isinstance(stored, list) else []
+    positions = {value: index for index, value in enumerate(stored) if isinstance(value, str)}
+    items = sorted(state["items"], key=lambda item: (positions.get(item["id"], math.inf), -score(item)))
+    order = [item["id"] for item in items if item["id"] != ident]
+    if before:
+        index = order.index(before)
+    else:
+        lane = {item["id"] for item in items if item["status"] == status and item["id"] != ident}
+        index = max((index + 1 for index, value in enumerate(order) if value in lane), default=len(order))
+    order.insert(index, ident)
+    state["board_order"] = order
     save_state(path, state)
 
 

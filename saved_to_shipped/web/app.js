@@ -29,6 +29,8 @@ const shapes = {
   clock: "M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0 M12 7v5l3 2",
   leaf: "M20 3C8 1 1 9 6 16s15 2 14-13z M5 21 16 9",
   file: "M5 3h9l5 5v13H5z M14 3v6h5 M8 13h8 M8 17h6",
+  note: "M4 4h16v12l-4 4H4z M8 8h8 M8 12h6 M15 20v-5h5",
+  grip: "M9 5h.01 M15 5h.01 M9 12h.01 M15 12h.01 M9 19h.01 M15 19h.01",
 };
 const icon = (name) =>
   `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${shapes[name] || shapes.file}"/></svg>`;
@@ -47,6 +49,7 @@ let state = { items: [], projects: [], imports: [] },
   visibleLimit = 25,
   classificationCancelled = false;
 let initialLoad = true;
+let draggedTile = "", movingTile = false, suppressTileClick = false, pointerDrag = null;
 const labels = {
   untriaged: "Needs context",
   project: "Build",
@@ -66,9 +69,9 @@ const retrievalLabels = {
 };
 const statusLabels = {
   inbox: "To review",
-  ready: "Ready",
+  ready: "To do",
   doing: "In progress",
-  done: "Shipped",
+  done: "Done",
   parked: "Parked",
 };
 const apiURL = (route, query = "") =>
@@ -99,7 +102,7 @@ async function refresh() {
     filter = reviewItems().length ? "review" : "all";
     initialLoad = false;
   }
-  render();
+  if (!draggedTile) render();
   scheduleRetrieval();
 }
 function toast(message) {
@@ -139,7 +142,7 @@ function navigate(next, project = "") {
 }
 function restoreRoute() {
   const [route, query = ""] = location.hash.slice(1).split("?");
-  view = ["inbox", "projects", "backlog", "week", "shipped"].includes(route) ? route : "inbox";
+  view = ["inbox", "projects", "backlog", "week", "shipped"].includes(route) ? route : state.items.some(item => item.kind !== "untriaged") ? "backlog" : "inbox";
   projectFilter = new URLSearchParams(query).get("project") || "";
 }
 window.addEventListener("popstate", () => {
@@ -157,7 +160,7 @@ function sidebar() {
   <nav class="nav" aria-label="Main navigation">${[
     ["inbox", "inbox", "Saves"],
     ["projects", "grid", "Projects"],
-    ["backlog", "board", "Backlog"],
+    ["backlog", "board", "Board"],
   ]
     .map(
       ([key, img, label]) =>
@@ -178,7 +181,7 @@ function empty(title, description, actions = "") {
 
 function row(item) {
   const title = item.title || "Saved LinkedIn post";
-  return `<button class="save-row" data-item="${item.id}" aria-label="Review ${esc(title)}"><span class="source-mark">${item.has_context ? icon(item.kind === "project" ? "spark" : "file") : "in"}</span><span class="save-text"><span class="save-title">${esc(title)}</span><span class="save-meta">${esc(item.author || "LinkedIn")}<span>·</span>${esc(dateLabel(item.saved_at))}${item.project_id ? `<span>·</span><span class="row-project">${esc(projectName(item.project_id))}</span>` : ""}</span></span><span class="pill ${esc(item.kind)}">${esc(category(item))}</span><span class="row-arrow">${icon("arrow")}</span></button>`;
+  return `<div class="save-row"><button class="save-open" data-item="${item.id}" aria-label="${item.has_context ? "Review" : "Add context to"} ${esc(title)}"><span class="source-mark">${item.has_context ? icon(item.kind === "project" ? "spark" : "file") : "in"}</span><span class="save-text"><span class="save-title">${esc(title)}</span><span class="save-meta">${esc(item.author || "LinkedIn")}<span>·</span>${esc(dateLabel(item.saved_at))}${item.project_id ? `<span>·</span><span class="row-project">${esc(projectName(item.project_id))}</span>` : ""}</span></span><span class="pill ${esc(item.kind)}">${esc(category(item))}</span></button><button class="notes-button ${item.note ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${item.note ? "Edit your notes" : "Add notes"}">${icon("note")}</button></div>`;
 }
 function table(items) {
   return `<div class="save-list">${items.length ? items.map(row).join("") : empty("Nothing here yet", search ? "Try a different search." : "Your saves will appear here as they move through your workspace.")}</div>`;
@@ -204,34 +207,25 @@ function projects() {
     return `<button class="project-card" data-project="${project.id}"><span class="project-icon c${index%3}">${icon("folder")}</span><h2>${esc(project.name)}</h2>${project.description ? `<p>${esc(project.description)}</p>` : ""}<footer><span>${items.length} saves${active ? ` · ${active} active` : ""}${done ? ` · ${done} shipped` : ""}</span>${icon("arrow")}</footer></button>`;
   }).join("") : empty("Let a project take shape", "Organize your saves to find related ideas, or start a group of your own.", '<button class="button primary" data-view="inbox">Back to saves</button>')}</div>`;
 }
-function task(item) {
-  const action = item.status === "ready" ? ["doing","Start task"] : item.status === "doing" ? ["done","Mark shipped"] : null;
-  return `<article class="task"><div class="task-top"><span class="pill ${esc(item.kind)}">${esc(labels[item.kind])}</span><span>${item.effort_hours}h</span></div><h3><button class="save-title" data-item="${item.id}">${esc(item.title)}</button></h3><p>${esc(item.next_action)}</p><footer><span class="task-project">${esc(projectName(item.project_id) || "Personal task")}</span>${action ? `<button class="quiet-link" data-status="${action[0]}" data-id="${item.id}">${action[1]} ${icon("arrow")}</button>` : `<button class="quiet-link" data-item="${item.id}">View result ${icon("arrow")}</button>`}</footer></article>`;
+function orderedTiles(items) {
+  const rank = new Map((state.board_order || []).map((id,index) => [id,index]));
+  return [...items].sort((a,b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) || (b.score || 0) - (a.score || 0));
+}
+function task(item, draggable = false) {
+  const title = item.title || "Untitled idea";
+  return `<article class="task tile" data-tile-id="${item.id}" draggable="false" ${draggable ? 'data-draggable="true"' : ""} aria-label="${esc(title)}"><div class="tile-top"><span class="tile-kind ${esc(item.kind)}"><span></span>${esc(labels[item.kind])}</span>${draggable ? `<span class="drag-handle" aria-hidden="true" title="Drag to move">${icon("grip")}</span>` : ""}</div><h3><button class="save-title" data-item="${item.id}" draggable="false">${esc(title)}</button></h3><p class="task-preview">${esc(item.next_action)}</p><div class="tile-meta"><span class="task-project">${esc(projectName(item.project_id) || "Personal")}</span><span>${item.effort_hours}h</span></div><footer><button class="notes-button ${item.note ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${item.note ? "Edit notes" : "Add notes"}">${icon("note")}<span>Notes</span></button><select class="move-select" data-move-id="${item.id}" aria-label="Move ${esc(title)}"><option value="">Move…</option>${Object.entries(statusLabels).filter(([key]) => key !== item.status).map(([key,label]) => `<option value="${key}">${label}</option>`).join("")}</select></footer></article>`;
 }
 function backlogTabs() {
-  return `<div class="tabs backlog-tabs" aria-label="Backlog views">${[["backlog","Board"],["week","This week"],["shipped","Shipped"]].map(([key,label]) => `<button class="tab ${view===key ? "selected" : ""}" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join("")}</div>`;
+  return `<div class="tabs backlog-tabs" aria-label="Board views">${[["backlog","Board"],["week","This week"],["shipped","Done"]].map(([key,label]) => `<button class="tab ${view===key ? "selected" : ""}" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join("")}</div>`;
 }
 function backlog() {
-  return (
-    heading(
-      "Make a little progress.",
-      "Your reviewed ideas, ready when you are.",
-    ) +
-    backlogTabs() + `<div class="board">${[
-      ["ready", "Ready to start"],
-      ["doing", "In progress"],
-      ["done", "Shipped"],
-    ]
-      .map(([key, label]) => {
-        const items = state.items
-          .filter((i) => i.status === key)
-          .sort((a, b) => b.score - a.score);
-        return `<section class="column"><div class="column-title"><span class="dot ${key === "done" ? "c1" : ""}"></span>${label}<small>${items.length}</small></div>${items.length ? items.map(task).join("") : '<p class="helper">' + (key === "ready" ? "Review a classified idea and add it to your backlog." : key === "doing" ? "Choose Start task on a ready idea." : "Your finished ideas will live here.") + "</p>"}</section>`;
-      })
-      .join(
-        "",
-      )}</div>${state.items.some((i) => i.status === "parked") ? `<div class="section-head heading"><div class="section-title">Parked ideas</div></div>${table(state.items.filter((i) => i.status === "parked"))}` : ""}`
-  );
+  const items = state.items.filter(item => !projectFilter || item.project_id === projectFilter);
+  return heading("Your board.", "Drag ideas between stages. Arrange what comes next.", reviewItems().length ? '<button class="button" data-action="review-next">Review next '+icon("arrow")+'</button>' : "") +
+    `<div class="board-toolbar">${backlogTabs()}<label class="board-filter"><span class="sr-only">Filter board by project</span><select id="board-project" aria-label="Filter board by project"><option value="">All projects</option>${state.projects.map(project => `<option value="${project.id}" ${projectFilter===project.id ? "selected" : ""}>${esc(project.name)}</option>`).join("")}</select></label></div>` +
+    `<div class="board-scroll"><div class="board kanban" aria-label="Idea board" aria-busy="${movingTile}">${[["inbox","Review"],["ready","To do"],["doing","In progress"],["done","Done"]].map(([key,label]) => {
+      const lane = orderedTiles(items.filter(item => item.status === key && item.kind !== "untriaged" && item.has_context));
+      return `<section class="column" data-drop-status="${key}" aria-label="${label}"><div class="column-title"><span class="stage-dot ${key}"></span><h2>${label}</h2><small>${lane.length}</small></div><div class="lane-body">${lane.map(item => task(item,true)).join("")}<p class="lane-placeholder">${key === "inbox" ? "Organized ideas land here." : key === "ready" ? "Drop an idea to line it up." : key === "doing" ? "Make a little room to begin." : "A place for finished work."}</p></div></section>`;
+    }).join("")}</div></div>${items.some(item => item.status === "parked") ? `<details class="parked-list"><summary>Parked · ${items.filter(item => item.status === "parked").length}</summary>${table(items.filter(item => item.status === "parked"))}</details>` : ""}`;
 }
 function week() {
   let remaining = hours;
@@ -256,11 +250,12 @@ function week() {
       "Pick a realistic slice of work for the time you actually have.",
       `<label class="budget">This week <input id="hours" type="number" min="0.25" max="168" step="0.25" value="${hours}" aria-label="Weekly time budget">hours</label>`,
     ) +
-    backlogTabs() + `<div class="week-note">${selected.length ? `${selected.length} small build ${selected.length === 1 ? "task" : "tasks"} · ${Math.round((hours - remaining) * 100) / 100}h planned · ${Math.round(remaining * 100) / 100}h breathing room` : "No reviewed build tasks fit this budget yet."}<br>A maximum of two build tasks. Leave yourself room to finish.</div><div class="board">${selected.length ? selected.map(task).join("") : empty("Make space for one good idea", "Review a build idea, set a next action, then add it to your backlog.", '<button class="button primary" data-view="inbox">Review saved ideas</button>')}</div>`
+    backlogTabs() + `<div class="week-note">${selected.length ? `${selected.length} small build ${selected.length === 1 ? "task" : "tasks"} · ${Math.round((hours - remaining) * 100) / 100}h planned · ${Math.round(remaining * 100) / 100}h breathing room` : "No reviewed build tasks fit this budget yet."}<br>A maximum of two build tasks. Leave yourself room to finish.</div><div class="board">${selected.length ? selected.map(item => task(item)).join("") : empty("Make space for one good idea", "Review a build idea, set a next action, then add it to your backlog.", '<button class="button primary" data-view="inbox">Review saved ideas</button>')}</div>`
   );
 }
 function render() {
   sidebar();
+  $("#main").classList.toggle("board-page", view === "backlog");
   $("#main").innerHTML =
     topbar() +
     {
@@ -356,6 +351,21 @@ function effortChoices(current) {
   if (!values.includes(current)) values.push(current);
   return values.sort((a,b) => a-b).map(value => [String(value), value < 1 ? `${value * 60} minutes` : `${value} ${value === 1 ? "hour" : "hours"}`]);
 }
+function contextDialog(id) {
+  const item = state.items.find(candidate => candidate.id === id);
+  if (!item) return;
+  modal("A little context, on your terms.",
+    `<div class="context-header"><h3>${esc(item.title || "Saved LinkedIn post")}</h3><a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original post ${icon("external")}</a></div><p>A place for why you saved this, a question, or something you want to try.</p>${field("Your notes", "note", item.note, "textarea", 'rows="7" maxlength="20000" placeholder="What makes this interesting to you?"')}<details><summary>Post text</summary><p class="helper">Paste or correct the source text here. Your notes stay separate.</p>${field("Source text", "content", item.content, "textarea", 'rows="8" maxlength="20000" placeholder="Paste the post text…"')}</details>`,
+    '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save context</button>', true);
+  bindForm(async form => {
+    const payload = {id};
+    for (const key of ["note", "content"]) {
+      if (form.get(key) !== (item[key] || "")) payload[key] = form.get(key);
+    }
+    if (Object.keys(payload).length > 1) await api("/api/item", payload);
+    toast("Context saved.");
+  });
+}
 function itemDialog(id) {
   const item = state.items.find((i) => i.id === id);
   if (!item) return;
@@ -365,7 +375,7 @@ function itemDialog(id) {
   const compact = window.matchMedia("(max-width: 800px)").matches;
   modal(
     draft ? "One idea. One next step." : "Your saved idea",
-    `<div class="review-layout"><section class="source-panel"><div class="eyebrow">THE INSPIRATION</div><h2>${esc(item.title || "Saved LinkedIn post")}</h2><div class="source-byline">${esc(item.author || "LinkedIn")} · ${esc(dateLabel(item.saved_at))}<a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original ${icon("external")}</a></div>${item.metadata?.synthetic ? '<div class="coverage-note">Synthetic sample content.</div>' : ""}${coverage ? `<div class="coverage-note ${coverage.status === "partial" ? "partial" : ""}">${icon(coverage.status === "partial" ? "file" : "check")}${esc(retrievalLabels[coverage.status] || coverage.status)} · ${esc(coverage.coverage || "No readable text returned")}${coverage.content_truncated ? ". Text shortened to 20,000 characters." : ""}</div>` : ""}<details class="read-source" ${compact ? "" : "open"}><summary>Read post text</summary><div class="post-text">${esc(item.content || "The archive contains this post's link. Retrieve its text or add your own context below.")}</div></details>${coverage?.links?.length ? `<details class="source-links"><summary>${coverage.links.length} links from this post</summary>${coverage.links.slice(0,30).map(link => `<a class="quiet-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)} ${icon("external")}</a>`).join("")}</details>` : ""}<details ${!item.has_context ? "open" : ""}><summary>${item.note ? "Your personal context" : "Add personal context"}</summary>${field("Your note", "note", item.note, "textarea", 'placeholder="What would make this useful to you?"')}</details><details ${!item.has_context ? "open" : ""}><summary>Edit source text</summary>${field("Post text", "content", item.content, "textarea")}</details></section><section class="action-panel"><div class="eyebrow">MAKE IT USEFUL</div>${item.classification_method ? `<p class="suggestion-note">Draft from ${esc(item.classification_method)} · ${esc(item.confidence)} confidence</p>` : '<p class="suggestion-note">Add context, then organize this save or shape a task yourself.</p>'}${field("Working title", "title", item.title, "input", 'maxlength="300" placeholder="Give the idea a short name"')}${field("Next action", "next_action", item.next_action, "textarea", 'placeholder="One small thing you can do in under two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="A result you can point to."')}<div class="field-row">${select("Project", "project_id", [["", "No project"], ...state.projects.map(p => [p.id,p.name])], item.project_id || "")}${select("Time to make a start", "effort_hours", effortChoices(item.effort_hours || 1), String(item.effort_hours || 1))}</div><details><summary>More details</summary>${select("Kind of idea", "kind", Object.entries(labels).map(([key,label]) => [key,key === "untriaged" ? "Not organized yet" : label]),item.kind)}${select("Status", "status", Object.entries(statusLabels),item.status)}${item.why ? `<p>${esc(item.why)}</p>` : ""}${field("Result / commit / PR link", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}</details></section></div>`,
+    `<div class="review-layout"><section class="source-panel"><div class="eyebrow">THE INSPIRATION</div><h2>${esc(item.title || "Saved LinkedIn post")}</h2><div class="source-byline">${esc(item.author || "LinkedIn")} · ${esc(dateLabel(item.saved_at))}<a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original ${icon("external")}</a></div>${item.metadata?.synthetic ? '<div class="coverage-note">Synthetic sample content.</div>' : ""}${coverage ? `<div class="coverage-note ${coverage.status === "partial" ? "partial" : ""}">${icon(coverage.status === "partial" ? "file" : "check")}${esc(retrievalLabels[coverage.status] || coverage.status)} · ${esc(coverage.coverage || "No readable text returned")}${coverage.content_truncated ? ". Text shortened to 20,000 characters." : ""}</div>` : ""}<details class="read-source" ${compact ? "" : "open"}><summary>${item.content ? "Read post text" : "Read saved context"}</summary><div class="post-text">${esc(item.content || item.note || "The archive contains this post's link. Use Notes on the save to add context, or retrieve its text.")}</div></details>${coverage?.links?.length ? `<details class="source-links"><summary>${coverage.links.length} links from this post</summary>${coverage.links.slice(0,30).map(link => `<a class="quiet-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)} ${icon("external")}</a>`).join("")}</details>` : ""}</section><section class="action-panel"><div class="eyebrow">MAKE IT USEFUL</div>${item.classification_method ? `<p class="suggestion-note">Draft from ${esc(item.classification_method)} · ${esc(item.confidence)} confidence</p>` : '<p class="suggestion-note">Add context, then organize this save or shape a task yourself.</p>'}${field("Working title", "title", item.title, "input", 'maxlength="300" placeholder="Give the idea a short name"')}${field("Next action", "next_action", item.next_action, "textarea", 'placeholder="One small thing you can do in under two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="A result you can point to."')}<div class="field-row">${select("Project", "project_id", [["", "No project"], ...state.projects.map(p => [p.id,p.name])], item.project_id || "")}${select("Time to make a start", "effort_hours", effortChoices(item.effort_hours || 1), String(item.effort_hours || 1))}</div><details><summary>More details</summary>${select("Kind of idea", "kind", Object.entries(labels).map(([key,label]) => [key,key === "untriaged" ? "Not organized yet" : label]),item.kind)}${select("Status", "status", Object.entries(statusLabels),item.status)}${item.why ? `<p>${esc(item.why)}</p>` : ""}${field("Result / commit / PR link", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}</details></section></div>`,
     `${draft ? `<span class="review-count">${queue.length} ${queue.length === 1 ? "idea" : "ideas"} left to review</span><button class="button ghost" type="submit" name="decision" value="parked">Park for later</button>` : ""}<button class="button" type="submit" name="decision" value="save">${draft ? "Save draft" : "Save changes"}</button>${draft ? '<button class="button primary" type="submit" name="decision" value="ready">Add to backlog '+icon("arrow")+'</button>' : ""}`,
     true,
   );
@@ -437,7 +447,11 @@ document.addEventListener("click", async (e) => {
       return;
     }
     if (button.dataset.view) return navigate(button.dataset.view);
-    if (button.dataset.item) return itemDialog(button.dataset.item);
+    if (suppressTileClick) return;
+    if (button.dataset.item) {
+      const item = state.items.find(candidate => candidate.id === button.dataset.item);
+      return item && !item.has_context ? contextDialog(item.id) : itemDialog(button.dataset.item);
+    }
     if (button.dataset.project)
       return navigate("inbox", button.dataset.project);
     if (button.dataset.filter) {
@@ -446,6 +460,9 @@ document.addEventListener("click", async (e) => {
       return render();
     }
     switch (button.dataset.action) {
+      case "notes":
+        contextDialog(button.dataset.id);
+        break;
       case "review-next":
         if (reviewItems().length) itemDialog(reviewItems()[0].id);
         break;
@@ -550,6 +567,117 @@ document.addEventListener("click", async (e) => {
     } else toast(error.message);
   }
 });
+function dropDestination(column, y) {
+  const tiles = [...column.querySelectorAll("[data-tile-id]")].filter(tile => tile.dataset.tileId !== draggedTile);
+  const before = tiles.find(tile => {
+    const rect = tile.getBoundingClientRect();
+    return y < rect.top + rect.height / 2;
+  });
+  return { status: column.dataset.dropStatus, before_id: before?.dataset.tileId || null };
+}
+function clearDropMarker() {
+  document.querySelectorAll(".column.drop-active").forEach(column => column.classList.remove("drop-active"));
+  $("#drop-marker")?.remove();
+}
+async function moveTile(id, status, before = null) {
+  if (movingTile) return false;
+  movingTile = true;
+  $(".kanban")?.setAttribute("aria-busy", "true");
+  document.querySelectorAll("[data-move-id]").forEach(select => select.disabled = true);
+  try {
+    await api("/api/move", { id, status, before_id: before });
+    await refresh();
+    toast(`Moved to ${statusLabels[status].toLowerCase()}.`);
+    $(`[data-tile-id="${id}"] .save-title`)?.focus({ preventScroll: true });
+    return true;
+  } catch (error) {
+    // A timed-out response may have saved. Reconcile instead of guessing or resubmitting.
+    await refresh().catch(() => {});
+    toast(error.message);
+    return false;
+  } finally {
+    movingTile = false;
+    $(".kanban")?.setAttribute("aria-busy", "false");
+    document.querySelectorAll("[data-move-id]").forEach(select => select.disabled = false);
+  }
+}
+function showDropTarget(column, y) {
+  const destination = dropDestination(column, y);
+  clearDropMarker();
+  column.classList.add("drop-active");
+  const marker = document.createElement("div");
+  marker.id = "drop-marker";
+  marker.setAttribute("aria-hidden", "true");
+  const anchor = destination.before_id ? column.querySelector(`[data-tile-id="${destination.before_id}"]`) : null;
+  column.querySelector(".lane-body").insertBefore(marker, anchor);
+}
+function finishPointerDrag(destination = null) {
+  const active = pointerDrag;
+  const id = draggedTile;
+  pointerDrag = null;
+  draggedTile = "";
+  clearDropMarker();
+  $("#drag-preview")?.remove();
+  if (active) {
+    active.tile.classList.remove("dragging");
+    if (active.tile.hasPointerCapture(active.pointerId)) active.tile.releasePointerCapture(active.pointerId);
+  }
+  if (id) {
+    setTimeout(() => suppressTileClick = false, 150);
+    if (destination) void moveTile(id, destination.status, destination.before_id);
+    else render();
+  }
+}
+document.addEventListener("pointerdown", event => {
+  const tile = event.target.closest('[data-draggable="true"]');
+  if (!tile || movingTile || event.button !== 0 || event.target.closest("button,input,select,textarea,a")) return;
+  if (event.pointerType === "touch" && !event.target.closest(".drag-handle")) return;
+  const rect = tile.getBoundingClientRect();
+  pointerDrag = {tile, pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+                 offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, width: rect.width};
+  tile.setPointerCapture(event.pointerId);
+  if (event.target.closest(".drag-handle")) event.preventDefault();
+});
+document.addEventListener("pointermove", event => {
+  if (!pointerDrag || event.pointerId !== pointerDrag.pointerId) return;
+  if (!draggedTile) {
+    if (Math.hypot(event.clientX - pointerDrag.x, event.clientY - pointerDrag.y) < 6) return;
+    draggedTile = pointerDrag.tile.dataset.tileId;
+    suppressTileClick = true;
+    pointerDrag.tile.classList.add("dragging");
+    const preview = pointerDrag.tile.cloneNode(true);
+    preview.id = "drag-preview";
+    preview.classList.remove("dragging");
+    preview.removeAttribute("data-tile-id");
+    preview.removeAttribute("data-draggable");
+    preview.setAttribute("aria-hidden", "true");
+    preview.inert = true;
+    preview.style.width = pointerDrag.width + "px";
+    document.body.appendChild(preview);
+  }
+  event.preventDefault();
+  const preview = $("#drag-preview");
+  preview.style.left = (event.clientX - pointerDrag.offsetX) + "px";
+  preview.style.top = (event.clientY - pointerDrag.offsetY) + "px";
+  const column = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-drop-status]");
+  if (column) showDropTarget(column, event.clientY);
+  else clearDropMarker();
+});
+document.addEventListener("pointerup", event => {
+  if (!pointerDrag || event.pointerId !== pointerDrag.pointerId) return;
+  const column = document.elementFromPoint(event.clientX, event.clientY)?.closest("[data-drop-status]");
+  finishPointerDrag(draggedTile && column ? dropDestination(column, event.clientY) : null);
+});
+document.addEventListener("pointercancel", () => finishPointerDrag());
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && pointerDrag) {
+    event.preventDefault();
+    finishPointerDrag();
+  }
+});
+document.addEventListener("dragstart", event => {
+  if (event.target.closest('[data-draggable="true"]')) event.preventDefault();
+});
 document.addEventListener("input", (e) => {
   if (e.target.id === "search") {
     const cursor = e.target.selectionStart;
@@ -560,7 +688,17 @@ document.addEventListener("input", (e) => {
     $("#search").setSelectionRange(cursor, cursor);
   }
 });
-document.addEventListener("change", (e) => {
+document.addEventListener("change", async (e) => {
+  if (e.target.dataset.moveId && e.target.value) {
+    await moveTile(e.target.dataset.moveId, e.target.value);
+    e.target.value = "";
+    return;
+  }
+  if (e.target.id === "board-project") {
+    projectFilter = e.target.value;
+    history.replaceState(null, "", `#backlog${projectFilter ? "?project=" + encodeURIComponent(projectFilter) : ""}`);
+    return render();
+  }
   if (e.target.id === "hours") {
     const value = Number(e.target.value);
     if (!Number.isFinite(value) || value <= 0 || value > 168) {
