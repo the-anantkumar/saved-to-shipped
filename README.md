@@ -39,8 +39,8 @@ saved-to-shipped
 2. **Open Settings.** Paste your Apify API token. An OpenAI key and your build/learning goals are optional. Blank key fields keep existing keys.
 3. **Process saves.** Follow the next-step panel on Saves. Start with 10 posts and choose a maximum provider charge. The app submits one hosted run and checks it automatically. First-time key setup returns you directly to retrieval.
 4. **Review the recovered content.** Readable posts receive text, a title or excerpt, author, source provenance, and available external links. Missing, gated, deleted, and partial results remain visible.
-5. **Organize and review.** Choose **Organize saves**, then **Start reviewing**. Read the source beside its proposed next action. **Add to backlog** approves a draft and opens the next one; **Park for later** moves it aside. Alternative classification methods and batch options stay available under details.
-6. **Ship a small step.** Use **Start task** and **Mark shipped** on the backlog. The **This week** tab provides a weekly build-task budget. Open a task to attach the result, commit, or PR link. **Export** stays in the top bar.
+5. **Organize and review.** Choose **Organize saves**, then review the proposed next actions. Organized drafts also appear in the board's Review lane. **Add to backlog** approves a draft and opens the next one; **Park for later** moves it aside. Personal notes and pasted source text have a separate **Notes** editor on each save and tile. Alternative classification methods and batch options stay available under details.
+6. **Move work forward.** Open **Board** and drag tiles through Review, To do, In progress, and Done. Arrange tiles within a lane to save their order. Each tile also has a keyboard/touch-friendly **Move…** control. The **This week** tab provides a weekly build-task budget. Open a task to attach the result, commit, or PR link. **Export** stays in the top bar.
 
 You do not need to manually annotate every link. Manual text and notes remain available for inaccessible posts or extra personal context.
 

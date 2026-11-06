@@ -66,6 +66,10 @@ class HostedPipelineTests(unittest.TestCase):
         self.assertEqual("2026-11-01 12:00:00", item["saved_at"])
         self.assertEqual(1, self.request("/api/classify", {})[1]["classified"])
         self.assertEqual(200, self.request("/api/item", {"id": item["id"], "status": "ready"})[0])
+        self.assertEqual(403, self.request_without_token("/api/move", {"id": item["id"], "status": "doing"}))
+        self.assertEqual(200, self.request("/api/move", {"id": item["id"], "status": "doing"})[0])
+        self.assertEqual("doing", self.request("/api/state")[1]["items"][0]["status"])
+        self.assertEqual(200, self.request("/api/move", {"id": item["id"], "status": "ready"})[0])
         _, bundle = self.request("/api/export", raw=True)
         with ZipFile(io.BytesIO(bundle)) as archive:
             state = json.loads(archive.read("backlog.json"))
@@ -74,6 +78,15 @@ class HostedPipelineTests(unittest.TestCase):
             self.assertTrue(any(name.startswith("issues/") for name in archive.namelist()))
             self.assertNotIn("settings.json", archive.namelist())
             self.assertNotIn("private-fixture-token", archive.read("backlog.json").decode())
+
+    def request_without_token(self, route, payload):
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.server_port, timeout=5)
+        connection.request("POST", route, body=json.dumps(payload))
+        response = connection.getresponse()
+        status = response.status
+        response.read()
+        connection.close()
+        return status
 
     def test_demo_cannot_change_real_keys_or_start_paid_runs(self):
         with patch("saved_to_shipped.enrichment.urlopen") as provider:

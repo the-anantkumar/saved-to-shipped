@@ -13,6 +13,7 @@ function app(data = {}) {
       classList: { toggle() {}, add() {}, remove() {} },
       addEventListener(type, callback) { events[name + ":" + type] = callback; },
       querySelectorAll() { return []; },
+      setAttribute() {}, remove() {},
       showModal() { this.open = true; }, close() { this.open = false; },
       focus() {},
     });
@@ -60,17 +61,59 @@ test("dismissed submissions stop masking the useful next action", () => {
   assert.doesNotMatch(panel, /Old failure|Check run/);
 });
 
-test("review retains editable source fields and escapes untrusted text", () => {
+test("review keeps context read-only and escapes untrusted text", () => {
   const ui = app({ items: [{ ...draft, title: '<img src=x onerror="bad()">', effort_hours: 1.2, content: "<script>bad()</script>", enrichment: { status: "partial", coverage: "post text only" } }] });
   ui.run('itemDialog("draft")');
   const html = ui.node("#modal").innerHTML;
   assert.match(html, /Partial content/);
-  assert.match(html, /name="content"/);
-  assert.match(html, /name="note"/);
+  assert.doesNotMatch(html, /name="content"|name="note"/);
   assert.match(html, /value="1.2" selected/);
   assert.match(html, /Add to backlog/);
   assert.match(html, /&lt;script&gt;/);
   assert.doesNotMatch(html, /<script>|<img/);
+});
+
+test("personal context has a separate editor without task or review fields", () => {
+  const ui = app({ items: [draft] });
+  ui.run('contextDialog("draft")');
+  const html = ui.node("#modal").innerHTML;
+  assert.match(html, /name="note"/);
+  assert.match(html, /name="content"/);
+  assert.match(html, /For my app/);
+  assert.doesNotMatch(html, /name="next_action"|name="status"|Add to backlog/);
+});
+
+test("editing a note does not resubmit an unchanged source or task", async () => {
+  const ui = app({ items: [draft] });
+  ui.run('let saveContext, sent; bindForm = callback => saveContext = callback; api = async (_route, payload) => { sent = payload; }; contextDialog("draft");');
+  ui.context.form = new Map([["note", "My revised note"], ["content", draft.content]]);
+  await ui.run("saveContext(form)");
+  assert.deepEqual(JSON.parse(ui.run("JSON.stringify(sent)")), { id: "draft", note: "My revised note" });
+});
+
+test("drop position chooses the next tile and excludes the tile being dragged", () => {
+  const ui = app();
+  ui.context.column = {
+    dataset: { dropStatus: "ready" },
+    querySelectorAll: () => [
+      { dataset: { tileId: "dragged" }, getBoundingClientRect: () => ({ top: 0, height: 100 }) },
+      { dataset: { tileId: "first" }, getBoundingClientRect: () => ({ top: 110, height: 100 }) },
+      { dataset: { tileId: "second" }, getBoundingClientRect: () => ({ top: 220, height: 100 }) },
+    ],
+  };
+  ui.run('draggedTile = "dragged"');
+  assert.equal(ui.run("dropDestination(column, 150).before_id"), "first");
+  assert.equal(ui.run("dropDestination(column, 200).before_id"), "second");
+  assert.equal(ui.run("dropDestination(column, 350).before_id"), null);
+});
+
+test("a rejected move keeps the original lane and never resubmits automatically", async () => {
+  const ui = app({ items: [draft] });
+  ui.run('let attempts = 0; api = async () => { attempts++; throw new Error("Invalid move"); }; refresh = async () => {};');
+  assert.equal(await ui.run('moveTile("draft", "ready")'), false);
+  assert.equal(ui.run("attempts"), 1);
+  assert.equal(ui.run("state.items[0].status"), "inbox");
+  assert.equal(ui.run("movingTile"), false);
 });
 
 test("project navigation survives reload and browser back", () => {

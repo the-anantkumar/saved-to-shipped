@@ -34,7 +34,9 @@ flowchart TD
 
 Root `server.py` and `saved_to_shipped.py` preserve earlier source commands. The package ships its own HTML/CSS/JS. Installed tests use isolated imports and a different working directory, so a missing wheel asset cannot be hidden by the checkout.
 
-The browser has three primary destinations: Saves, Projects, and Backlog. Weekly planning and shipped items are backlog subviews. URL fragments retain the view and project filter across refresh and browser history. Saves presents one contextual next action: resolve a pending run, review drafts, classify readable content, or retrieve missing content. Review separates the source from the editable task, advances through drafts after approval/parking, and opens the backlog when the queue is finished. Compact layouts collapse source reading; provider options and less frequent editing controls use details disclosures.
+The browser has three primary destinations: Saves, Projects, and Board. Weekly planning and completed items are board subviews. The board becomes the landing view once organized ideas exist. URL fragments retain the view and project filter across refresh and browser history. Saves presents one contextual next action: resolve a pending run, review drafts, classify readable content, or retrieve missing content. Review keeps source context read-only and advances through drafts after approval/parking. A separate Notes editor changes personal context or pasted post text, submitting only changed fields. Compact layouts collapse source reading; provider options and less frequent editing controls use details disclosures.
+
+The board has Review, To do, In progress, and Done lanes. Pointer dragging uses a handle, movement threshold, pointer capture, drop indicator, and cancellation outside a lane or on Escape. A native Move select provides a keyboard/touch alternative. `/api/move` validates status and destination, then atomically saves the status and explicit `board_order`. Existing task-readiness checks apply to dragging as well. The client reconciles with the server after saving or an uncertain response; it does not resubmit automatically. Notes, source content, task fields, and provider provenance are preserved during moves.
 
 ## Persistent state
 
@@ -45,6 +47,7 @@ The version-1 workspace format remains compatible with earlier saves. Items reta
 - `retrieval_jobs`: selected item IDs, provider/actor, run and dataset references, status, charge cap, counts, timestamps, and safe errors.
 - Item `enrichment`: retrieval provenance, coverage, source links, status, and truncation information.
 - `goals`: optional personal direction used during triage.
+- `board_order`: stable item IDs in the user's explicit tile order. Unranked items use score order until arranged. Included in workspace backups.
 
 Provider credentials live in a separate `settings.json`. Exports serialize the workspace, never the settings file. Temporary-file replacement gives settings owner-only file permissions on supported systems. Environment variables override stored values; public configuration exposes only availability flags and nonsecret options.
 
