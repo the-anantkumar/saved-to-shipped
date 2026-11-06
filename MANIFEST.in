@@ -1,0 +1,15 @@
+include LICENSE README.md pyproject.toml MANIFEST.in
+include server.py saved_to_shipped.py .env.example
+include CONTRIBUTING.md ARCHITECTURE.md PRODUCT_SPEC.md ROADMAP.md CHANGELOG.md SECURITY.md
+include requirements-dev.txt
+recursive-include saved_to_shipped *.py *.html *.css *.js
+recursive-include tests *.py *.mjs
+recursive-include scripts *.py
+recursive-include docs *.md
+prune data
+prune output
+prune .local
+prune .git
+prune .venv
+prune venv
+global-exclude __pycache__ *.py[cod] .DS_Store *.zip .env
