@@ -28,6 +28,8 @@ The organizing experience is checkpointed at `checkpoint/organizing-ux-2026-11-0
 
 The [production execution plan](docs/PRODUCTION_PLAN.md) defines the next implementation phases. The hosted target is 500 members with 1,000 saves and 5 MB of user data each, on hard-free infrastructure. Hosting and these limits are not implemented yet; admission depends on real runtime and capacity evidence. Local use remains account-free.
 
+The P1 local Worker/SQLite prototype now measures synthetic storage, transaction rollback and search costs. Its [evidence](docs/evidence/P1.md) leaves the physical-storage and cloud metering gates open; the public data API remains closed. Full-text indexing is deferred from the proposed default because varied text leaves insufficient editing headroom.
+
 - [ ] P1: Prove the Worker and per-user SQLite runtime and capacity model
 - [ ] P2: Implement storage contracts, ownership boundaries and quotas
 - [ ] P3: Add Google sessions, atomic membership and account deletion

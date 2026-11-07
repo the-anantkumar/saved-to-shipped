@@ -93,3 +93,9 @@ The server binds IPv4 loopback, validates Host/port, requires a per-run token fo
 The initial retrieval adapter targets the documented `data_minds/linkedin-post-scraper` schema. Its actor ID can be overridden only with a compatible implementation. The transport uses authorization headers, bounded responses/timeouts, a run charge cap, and no automatic submission retries. Provider errors are redacted rather than echoing raw bodies or tokens.
 
 The model client receives context-backed items, coverage, goals, and project names. It validates exact ID coverage and field types before saving drafts. Local suggestions remain explicitly heuristic. Neither classifier starts tasks or publishes issues automatically.
+
+## Hosted runtime experiment
+
+The Git checkout also contains a separate TypeScript experiment under `hosted/`. It uses Cloudflare Workers and a SQLite-backed Durable Object to measure storage, full-text search and transaction behavior with synthetic libraries. Its public data API is closed. The local test harness is a separate entrypoint and is never part of the deployable Worker.
+
+This experiment does not change the Python application's storage or introduce accounts into local use. Hosted dependencies, generated files and deployment configuration are excluded from the Python distribution. The [P1 evidence](docs/evidence/P1.md) records measured behavior and outstanding cloud checks; the [production plan](docs/PRODUCTION_PLAN.md) owns subsequent identity, quota, product and release gates.

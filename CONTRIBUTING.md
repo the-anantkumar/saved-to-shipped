@@ -38,6 +38,8 @@ Use a fresh output directory. The checker rejects missing assets, mismatched ver
 
 CI runs source tests and an installed-app smoke test on Linux, macOS, and Windows; Linux covers Python 3.10, 3.12, and 3.14. Browser JavaScript and distribution checks run in their own jobs. Build tooling is optional and never added to the application's runtime dependencies.
 
+The hosted experiment requires a Git checkout, Node 24 and its own dependency install. Run `npm ci`, `npm run typecheck`, `npm test`, `npm run capacity` and `npm run dryrun` from `hosted/`. Its README explains the closed public API and synthetic test boundary. These checks do not require cloud accounts or provider credentials and do not deploy anything. Hosted CI keeps a synthetic capacity report for review; local elapsed times are not cloud CPU or billing measurements.
+
 For browser QA without an account or charge:
 
 ```bash

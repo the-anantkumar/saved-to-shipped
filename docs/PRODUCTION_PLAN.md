@@ -1,6 +1,6 @@
 # Free beta execution plan
 
-Status: P0 complete; P1 is the next implementation phase. Hosted implementation, deployment and capacity validation have not started. Last reviewed: 2026-11-07. See [P0 evidence](evidence/P0.md).
+Status: P0 complete; P1 has an independently reviewed local runtime/capacity checkpoint. Physical-storage accounting and cloud measurements remain unresolved, so P1 is not complete and no hosted service is deployed. Last reviewed: 2026-11-07. See [P0 evidence](evidence/P0.md) and [P1 evidence](evidence/P1.md).
 
 Build a useful, private hosted workspace for a bounded cohort while retaining the account-free local application. The user has chosen **hard free limits with no overage billing**. A paid plan with alerts does not meet that requirement.
 
@@ -59,7 +59,7 @@ Critical path: **P0 -> P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7**. P4 UI work can 
 | Phase | Status | Primary owner | Dependency | Reviewable result |
 | --- | --- | --- | --- | --- |
 | P0 | Complete | Coordinator | Existing release foundation | Plan, repository instructions, configured agents and skills; [evidence](evidence/P0.md) |
-| P1 | Not started | beta_platform | P0 | Reproducible runtime and storage evidence |
+| P1 | Local checkpoint; physical accounting and cloud gates open | beta_platform | P0 | Reproducible runtime and storage evidence; [findings](evidence/P1.md) |
 | P2 | Not started | beta_platform | P1 | Hosted contracts, private storage and quota enforcement |
 | P3 | Not started | beta_platform | P2 | Google sessions, membership and account lifecycle |
 | P4 | Not started | beta_product | P2 contracts; P3 for integration | Coherent hosted import, organisation and reading experience |
@@ -88,6 +88,8 @@ Critical path: **P0 -> P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7**. P4 UI work can 
 - Rollback: disable the prototype route and remove only disposable synthetic resources; retain evidence. No personal-data migration occurs in this phase.
 
 Cloudflare exposes database size and transactional storage APIs, but P1 must verify their behaviour for our schema and write pattern. [SQLite storage API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)
+
+The P1 experiment found that `sql.databaseSize` excludes allocated free pages. A successful used-page quota check therefore does not prove the 8 MB physical allocation budget. It also found that full-text indexes with varied vocabulary leave too little edit headroom, and local FTS row counters cannot certify account metering. Keep the physical-budget gate open; use the [P1 evidence](evidence/P1.md) for the provisional no-FTS search design, maintenance margin and bounded ingestion proposal. These constraints must be verified against the final schema and cloud meter before P2 freezes the production storage contract.
 
 ### P2: Implement contracts and user-owned storage
 
@@ -187,7 +189,7 @@ Do not redirect APIs to HTML login pages. No endpoint trusts a client-supplied U
 
 ## Inputs needed before external rollout
 
-These inputs are not required to implement or test the local phases:
+Local experiments and contract fixtures do not need these inputs. P1's remote accounting/performance gates and later live integration do; use [account preparation](HOSTED_SETUP.md) when they are available:
 
 - A Cloudflare account confirmed on Free, with measured allowance available and narrowly scoped deployment access.
 - A Firebase project confirmed on Spark, Google sign-in configuration, authorised origins and public web configuration. No Gmail mailbox scopes are needed.
