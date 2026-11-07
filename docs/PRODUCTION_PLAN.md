@@ -1,6 +1,6 @@
 # Free beta execution plan
 
-Status: P0 complete; P1 has reviewed local experiments and a bounded synthetic probe exercised and retired on Cloudflare Free. Physical-storage accounting and production budgets remain unresolved, so P1 is not complete. The hosted application is not deployed. Last reviewed: 2026-11-07. See [P0 evidence](evidence/P0.md), [local P1 evidence](evidence/P1.md) and [cloud P1 evidence](evidence/P1-CLOUD.md).
+Status: P0 complete; P1 has reviewed local experiments and a bounded synthetic probe exercised and retired on Cloudflare Free. P2 private storage is implemented and independently reviewed locally. Physical-storage accounting and production budgets remain unresolved, so the hosted application stays closed and undeployed. Last reviewed: 2026-11-07. See [P0 evidence](evidence/P0.md), [local P1 evidence](evidence/P1.md), [cloud P1 evidence](evidence/P1-CLOUD.md) and [P2 evidence](evidence/P2.md).
 
 Build a useful, private hosted workspace for a bounded cohort while retaining the account-free local application. The user has chosen **hard free limits with no overage billing**. A paid plan with alerts does not meet that requirement.
 
@@ -54,13 +54,13 @@ Persist separate metadata, source content/notes, groups, jobs, usage and encrypt
 
 The coordinating agent owns integration, shared contracts, phase status and commits. `beta_platform` owns hosted persistence/auth/jobs, `beta_product` owns browser integration, `beta_reviewer` independently checks correctness and boundaries, and `beta_release` owns release evidence and operations. Assign file ownership before concurrent edits; the coordinator serializes shared schema and API changes.
 
-Critical path: **P0 -> P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7**. P4 UI work can start against approved P2 contracts while P3 is implemented. P5 provider fixtures and P6 runbook drafts can proceed in parallel after P2. No downstream implementation may quietly redefine a shared contract.
+Release gate order: **P0 -> P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7**. On 2026-11-07 the user requested finishing development and end-to-end validation before planning shipment. Closed implementation of P2-P5 therefore proceeds against the provisional no-FTS storage design while P1 measurements remain open. This changes implementation scheduling, not admission or capacity requirements: the default cohort stays zero, and no production physical-storage guarantee is claimed. P4 UI work can start against approved P2 contracts while P3 is implemented. P5 provider fixtures and P6 runbook drafts can proceed in parallel after P2. No downstream implementation may quietly redefine a shared contract.
 
 | Phase | Status | Primary owner | Dependency | Reviewable result |
 | --- | --- | --- | --- | --- |
 | P0 | Complete | Coordinator | Existing release foundation | Plan, repository instructions, configured agents and skills; [evidence](evidence/P0.md) |
 | P1 | Local and small cloud checks; physical accounting and metering gates open | beta_platform | P0 | Reproducible runtime and storage evidence; [local](evidence/P1.md) and [cloud findings](evidence/P1-CLOUD.md) |
-| P2 | Not started | beta_platform | P1 | Hosted contracts, private storage and quota enforcement |
+| P2 | Implemented and reviewed locally; physical gate depends on P1 | beta_platform | P1 provisional no-FTS contract | Hosted contracts, private storage and quota enforcement; [evidence](evidence/P2.md) |
 | P3 | Not started | beta_platform | P2 | Google sessions, membership and account lifecycle |
 | P4 | Not started | beta_product | P2 contracts; P3 for integration | Coherent hosted import, organisation and reading experience |
 | P5 | Not started | beta_platform | P2-P4 | Durable retrieval and optional classification |
@@ -89,7 +89,7 @@ Critical path: **P0 -> P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7**. P4 UI work can 
 
 Cloudflare exposes database size and transactional storage APIs, but P1 must verify their behaviour for our schema and write pattern. [SQLite storage API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)
 
-The P1 experiment found that `sql.databaseSize` excludes allocated free pages. A successful used-page quota check therefore does not prove the 8 MB physical allocation budget. It also found that full-text indexes with varied vocabulary leave too little edit headroom, and local FTS row counters cannot certify account metering. Keep the physical-budget gate open; use the [P1 evidence](evidence/P1.md) for the provisional no-FTS search design, maintenance margin and bounded ingestion proposal. These constraints must be verified against the final schema and cloud meter before P2 freezes the production storage contract.
+The P1 experiment found that `sql.databaseSize` excludes allocated free pages. A successful used-page quota check therefore does not prove the 8 MB physical allocation budget. It also found that full-text indexes with varied vocabulary leave too little edit headroom, and local FTS row counters cannot certify account metering. Keep the physical-budget gate open; use the [P1 evidence](evidence/P1.md) for the provisional no-FTS search design, maintenance margin and bounded ingestion proposal. These constraints must be verified against the final schema and cloud meter before the storage contract is approved for production admission.
 
 Cloudflare deployment access and the Free plan are verified. The independently reviewed 50-save probe passed its fixed import/read/edit/rollback/delete/search steps and 16 synthetic token checks. Its 493 reported row writes reconcile with instrumentation, including control work and rejected writes. The FTS step also exposed post-transaction size growth not reflected in its in-transaction check. SQL-storage metrics and ordinary Worker CPU attribution remain inconclusive; no production admission budget is certified. See [cloud probe evidence](evidence/P1-CLOUD.md). The disposable probe was retired after measurement; the application entrypoint stays closed.
 
