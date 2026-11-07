@@ -24,6 +24,7 @@
     "uat": "npm run build && npm run build:client && node tests/uat.mjs",
     "test:uat": "npm run build && npm run build:client && node tests/uat-controls.mjs",
     "test:auth-ui": "npm run build && npm run build:client && node tests/auth-ui.mjs",
+    "firebase:local": "node scripts/firebase-local.mjs",
     "release:check": "npm run app:dryrun && node scripts/check-release.mjs",
     "capacity:workspace": "node tests/capacity/workspace.mjs"
   },

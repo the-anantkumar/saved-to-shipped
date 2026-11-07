@@ -28,10 +28,16 @@ assert.equal(config.vars.FIREBASE_PROJECT_ID, '');
 assert.equal(config.vars.FIREBASE_PUBLIC_CONFIG, '{}');
 assert.ok(!Object.hasOwn(config.vars, 'SESSION_SIGNING_KEY'));
 assert.ok(!Object.hasOwn(config.vars, 'CREDENTIAL_KEYS'));
+assert.ok(!Object.hasOwn(config.vars, 'FIRESTORE_SERVICE_ACCOUNT'));
+assert.equal(config.vars.FIRESTORE_ENABLED, 'true');
+assert.equal(config.vars.FIRESTORE_DATABASE_ID, 'save2ship');
 assert.deepEqual(config.durable_objects.bindings, [
-  { name: 'WORKSPACES', class_name: 'Workspace' }, { name: 'REGISTRY', class_name: 'Registry' },
+  { name: 'WORKSPACES', class_name: 'FirebaseWorkspace' }, { name: 'REGISTRY', class_name: 'FirebaseRegistry' },
 ]);
-assert.deepEqual(config.migrations, [{ tag: 'app-v1', new_sqlite_classes: ['Workspace', 'Registry'] }]);
+assert.deepEqual(config.migrations, [
+  { tag: 'app-v1', new_sqlite_classes: ['Workspace', 'Registry'] },
+  { tag: 'app-firebase-v1', new_sqlite_classes: ['FirebaseWorkspace', 'FirebaseRegistry'] },
+]);
 
 const copied = ['app.js', 'onboarding.js', 'reading.js', 'theme.js', 'style.css'];
 const expectedAssets = [...copied, 'index.html', 'hosted.js', 'import-worker.js'].sort();

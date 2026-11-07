@@ -32,7 +32,7 @@ test('Apify submission has explicit charge and discovery bounds, deduplicates so
   assert.equal(body.discoverMorePosts, false); assert.equal(body.includeProfileActivity, false); assert.equal(body.saveMedia, false);
   assert.equal(body.numComments, 0); assert.equal(body.numLikes, 0); assert.equal(body.limitPerSource, 1);
   assert.equal(request.options.headers.Authorization, `Bearer ${token}`);
-  assert.equal(request.options.redirect, 'error'); assert.ok(request.options.signal instanceof AbortSignal);
+  assert.equal(request.options.redirect, 'manual'); assert.ok(request.options.signal instanceof AbortSignal);
   assert.ok(!request.address.includes(token)); assert.ok(!JSON.stringify(body).includes('cookie'));
 });
 
@@ -153,7 +153,7 @@ test('classification chooses context-backed bounded batches and sends exact fiel
   const result = await classify({ items: [selected], goals: 'Learn APIs', existingProjects: ['Personal tools'] }, token, 'chosen-model', async (address, options) => {
     calls++;
     assert.equal(address, 'https://api.openai.com/v1/responses');
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
     const body = JSON.parse(options.body), input = JSON.parse(body.input);
     assert.equal(body.model, 'chosen-model'); assert.equal(body.store, false); assert.equal(body.max_output_tokens, 12000);
     assert.equal(body.text.format.strict, true); assert.equal(body.text.format.type, 'json_schema');

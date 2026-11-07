@@ -49,6 +49,12 @@ jobs:
         run: npm run typecheck
       - name: Test identity, tenant isolation, storage and mocked provider jobs
         run: npm test
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Test Firestore authority, recovery and isolation in the emulator
+        run: npx -y firebase-tools@latest emulators:exec --only firestore --project demo-save2ship "node --test tests/firestore-emulator.test.mjs tests/firestore-workspace.test.mjs tests/firestore-rules.test.mjs tests/firestore-app.test.mjs"
       - name: Build hosted browser assets
         run: npm run build:client
       - name: Install the pinned Chromium test browser

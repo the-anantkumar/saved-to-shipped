@@ -28,7 +28,7 @@ export async function providerJson(
   let response: Response;
   try {
     response = await fetcher(url, {
-      method, redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
+      method, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs),
       headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
@@ -43,7 +43,7 @@ export async function providerJson(
       403: `${provider} denied access. Check your account permissions.`,
       429: `${provider} is rate limiting requests. Check your account before trying again.`,
     };
-    throw new ProviderFailure('PROVIDER_HTTP_ERROR', messages[response.status] ?? `${provider} returned an error. Check your provider console.`, starting && response.status >= 500);
+    throw new ProviderFailure('PROVIDER_HTTP_ERROR', messages[response.status] ?? `${provider} returned an error. Check your provider console.`, starting && (response.status >= 500 || (response.status >= 300 && response.status < 400)));
   }
   const reader = response.body?.getReader();
   if (!reader) throw new ProviderFailure('PROVIDER_RESPONSE_INVALID', `${provider} returned an unreadable response.`, starting);

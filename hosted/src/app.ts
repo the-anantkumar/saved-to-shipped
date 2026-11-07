@@ -1,14 +1,32 @@
 import { decodeJwt } from 'jose';
-import { Workspace as StorageWorkspace } from './storage/workspace';
-import { Registry } from './membership/registry';
+import { Registry as SqlRegistry } from './membership/registry';
+import { FirestoreWorkspace, type FirestoreWorkspaceEnv } from './firestore/workspace';
+import { FirestoreRegistry, type FirestoreRegistryEnv } from './firestore/registry';
+import { FirestoreClient, type FirestoreWrite } from './firestore/client';
 import { googleVerifier, issueSession, verifySession, firebaseAccountChecker, credentialRequestFingerprint } from './auth/session';
 import { encryptCredential, decryptCredential, parseKeyring, rotateCredential, type Provider } from './credentials';
 import { classificationBatch, createApify } from './providers';
 import { LIMITS, Fault, failure, object, string, integer, type Access, type Input, type Result, type Membership, type StoredJob, type Ciphertext } from './contracts';
 import { publicJob, selectTargets, reconcileJob, stopJob, unwrap, type WorkspacePort } from './jobs/orchestrator';
-export { Registry };
+/** The old SQL mode remains available only for explicit legacy/synthetic configurations. */
+export class Registry extends SqlRegistry {
+  private readonly firebaseEnv: AppEnv;
+  private remote?: FirestoreRegistry;
+  constructor(ctx: DurableObjectState, env: AppEnv) { super(ctx, env); this.firebaseEnv = env; }
+  override async invoke(operation: string, input: Input = {}): Promise<Result> {
+    try {
+      if (this.firebaseEnv.FIRESTORE_ENABLED !== 'true') {
+        if (await this.ctx.storage.get('firestore-authority')) throw new Fault(503, 'STORAGE_BACKEND_MISMATCH', 'This workspace requires its configured cloud database.');
+        return super.invoke(operation, input);
+      }
+      await this.ctx.storage.put('firestore-authority', true);
+      return await (this.remote ??= new FirestoreRegistry(this.firebaseEnv)).invoke(operation, input);
+    }
+    catch (error) { return failure(error); }
+  }
+}
 /** Only this application class activates external background processing. */
-export class Workspace extends StorageWorkspace<AppEnv> {
+export class Workspace extends FirestoreWorkspace<AppEnv> {
   protected override async authorizeProvision(access: Access): Promise<void> {
     const member = checked<Membership | null>(await registry(this.env).invoke('lookup', { uid: access.uid }));
     if (!member || member.generation !== access.generation || member.state !== 'reserved')
@@ -17,9 +35,15 @@ export class Workspace extends StorageWorkspace<AppEnv> {
   protected override async reconcile(access: Access): Promise<boolean> {
     await reconcileJob(access, this, this.env); return true;
   }
+  protected override async provisionFences(access: Access): Promise<FirestoreWrite[]> {
+    return new FirestoreRegistry(this.env, this.firestore()).provisionFences(access);
+  }
 }
+// Separate production namespaces prevent older SQL builds from reading this cache.
+export class FirebaseWorkspace extends Workspace {}
+export class FirebaseRegistry extends Registry {}
 
-export interface AppEnv {
+export interface AppEnv extends FirestoreWorkspaceEnv, FirestoreRegistryEnv {
   ASSETS: Fetcher;
   WORKSPACES: DurableObjectNamespace<Workspace>;
   REGISTRY: DurableObjectNamespace<Registry>;
@@ -65,7 +89,8 @@ function publicConfig(env: AppEnv) {
       firebase = Object.fromEntries(['apiKey', 'authDomain', 'projectId', 'appId'].filter(key => typeof configured[key] === 'string').map(key => [key, configured[key]]));
     }
   } catch { /* Configuration remains unavailable. */ }
-  const enabled = env.HOSTED_ENABLED === 'true' && Boolean(firebase.apiKey && firebase.authDomain && firebase.projectId && env.SESSION_SIGNING_KEY && env.CREDENTIAL_KEYS);
+  const storageReady = env.FIRESTORE_ENABLED !== 'true' || Boolean(env.FIRESTORE_DATABASE_ID && (env.FIRESTORE_SERVICE_ACCOUNT || env.FIRESTORE_EMULATOR_HOST));
+  const enabled = env.HOSTED_ENABLED === 'true' && storageReady && Boolean(firebase.apiKey && firebase.authDomain && firebase.projectId && env.SESSION_SIGNING_KEY && env.CREDENTIAL_KEYS);
   return { mode: 'hosted', enabled, firebase, retrieval_limit: 25, item_limit: LIMITS.items, logical_limit: LIMITS.logicalBytes };
 }
 const checkFirebaseAccount = firebaseAccountChecker();
@@ -134,8 +159,28 @@ async function start(env: AppEnv, access: Access, store: WorkspacePort, input: I
   return publicJob(result);
 }
 
+export async function repairFirestoreWakeups(env: AppEnv): Promise<{ repaired: number; failed: number }> {
+  if (env.HOSTED_ENABLED !== 'true' || env.FIRESTORE_ENABLED !== 'true') return { repaired: 0, failed: 0 };
+  const store = new FirestoreClient(env);
+  // This bounded index scan recovers durable wake intents even if a DO cache/alarm was lost.
+  const due = await store.query('s2sWorkspaces', { field: 'wakeAt', op: 'LESS_THAN', value: Date.now(), orderBy: 'wakeAt', limit: 20 });
+  let repaired = 0, failed = 0;
+  for (const document of due) {
+    const data = document.data;
+    if (!(data.status === 'active' || (data.status === 'deleting' && data.purging === true)) || typeof data.wakeAt !== 'number' || data.wakeAt <= 0 ||
+      typeof data.uid !== 'string' || !data.uid || data.uid.length > 128 ||
+      typeof data.generation !== 'string' || !/^[a-f0-9-]{36}$/.test(data.generation)) continue;
+    const access = { uid: data.uid, generation: data.generation };
+    try {
+      await env.WORKSPACES.get(env.WORKSPACES.idFromName(`workspace:${access.uid}:${access.generation}`)).repair(access);
+      repaired++;
+    } catch { failed++; }
+  }
+  checked(await registry(env).invoke('maintenance'));
+  return { repaired, failed };
+}
 export function makeApp(dependencies: Dependencies = {}): ExportedHandler<AppEnv> {
-  return { async fetch(request, env, ctx): Promise<Response> {
+  return { async scheduled(_event, env): Promise<void> { await repairFirestoreWakeups(env); }, async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/') && url.pathname !== '/api') {
       if (url.pathname === '/health') return json({ status: 'development', mode: 'hosted', enabled: publicConfig(env).enabled });

@@ -3,22 +3,22 @@ import { Fault, LIMITS, failure, integer, object, string, type Access, type Inpu
 import { boundedJson, check, classification, digest, editItem, editReading, hasContext, importedItem, localClassification, metadata, now, readingState, size, type Group, type Item } from './domain';
 import { foldName } from './casefold';
 
-type Control = { uid: string; generation: string; status: string; revision: number; library_revision: number; logical_bytes: number; item_count: number; lifecycle_epoch: number };
+export type Control = { uid: string; generation: string; status: string; revision: number; library_revision: number; logical_bytes: number; item_count: number; lifecycle_epoch: number };
 type ItemRow = { id: string; source: string; revision: number; meta: string; bytes: number; origin_job: string; origin_quality: number; source_revision: number; incarnation: string };
 type RecordRow = { id: string; data: string; bytes: number };
 type Table = 'groups' | 'settings' | 'imports' | 'jobs' | 'credentials' | 'receipts';
 const TABLES: Table[] = ['groups', 'settings', 'imports', 'jobs', 'credentials', 'receipts'];
-const READS = new Set(['state', 'list', 'search', 'detail', 'details', 'export', 'import.plan', 'credential.get', 'job.get']);
+export const WORKSPACE_READS = new Set(['state', 'list', 'search', 'detail', 'details', 'export', 'import.plan', 'credential.get', 'job.get']);
 const TERMINAL = new Set(['COMPLETE', 'COMPLETED', 'DISMISSED', 'CANCELLED', 'DELETED', 'FAILED']);
 const USER_MUTATIONS = new Set(['capture', 'item', 'delete', 'move', 'reading', 'project', 'settings', 'classify', 'triage', 'import', 'restore', 'credential.set', 'job.begin']);
 
 /** Production storage contract; separate from the preserved P1 measurement class. */
 export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObject<Env> {
   private reservationCredit = 0;
-  private schemaReady = false;
-  private hasWorkspace: boolean | undefined;
+  protected schemaReady = false;
+  protected hasWorkspace: boolean | undefined;
   // Construction and absent-object reads must never allocate schema or alarms.
-  private schema() {
+  protected schema() {
     this.sql(`CREATE TABLE IF NOT EXISTS workspace (
       singleton INTEGER PRIMARY KEY CHECK(singleton=1), uid TEXT NOT NULL, generation TEXT NOT NULL,
       status TEXT NOT NULL, revision INTEGER NOT NULL, library_revision INTEGER NOT NULL DEFAULT 0,
@@ -43,10 +43,10 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
     for (const table of TABLES) this.sql(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, data TEXT NOT NULL, bytes INTEGER NOT NULL)`);
     this.schemaReady = true;
   }
-  private sql<T = Record<string, unknown>>(query: string, ...bindings: (string | number | null)[]): T[] {
+  protected sql<T = Record<string, unknown>>(query: string, ...bindings: (string | number | null)[]): T[] {
     return this.ctx.storage.sql.exec(query, ...bindings).toArray() as T[];
   }
-  private control() {
+  protected control() {
     this.hasWorkspace ??= this.sql("SELECT name FROM sqlite_master WHERE type='table' AND name='workspace'").length > 0;
     return this.hasWorkspace ? this.sql<Control>('SELECT * FROM workspace WHERE singleton=1')[0] : undefined;
   }
@@ -54,7 +54,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
   protected async authorizeProvision(_access: Access): Promise<void> {
     throw new Fault(403, 'PROVISIONING_DENIED', 'Workspace provisioning is not authorized.');
   }
-  private async provision(access: Access): Promise<Result> {
+  protected async provision(access: Access): Promise<Result> {
     return this.ctx.blockConcurrencyWhile(async () => {
       try {
         const existing = this.control();
@@ -64,13 +64,18 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
         }
         // No await between fresh authority and the synchronous owner/schema commit.
         await this.authorizeProvision(access);
-        return this.ctx.storage.transactionSync(() => {
-          this.schema();
-          this.sql('INSERT INTO workspace(singleton,uid,generation,status,revision,library_revision,logical_bytes,item_count) VALUES(1,?,?,?,0,0,0,0)', access.uid, access.generation, 'active');
-          this.put('settings', 'workspace', this.settings()); this.guard();
-          return { ok: true, data: { provisioned: true, revision: 0, library_revision: 0 } };
-        });
+        return this.initializeWorkspace(access);
       } catch (error) { this.hasWorkspace = undefined; this.schemaReady = false; return failure(error); }
+    });
+  }
+  /** The Firestore adapter uses this synchronous transition after its remote authority check. */
+  protected initializeWorkspace(access: Access): Result {
+    return this.ctx.storage.transactionSync(() => {
+      this.schema();
+      this.beforeMutation();
+      this.sql('INSERT INTO workspace(singleton,uid,generation,status,revision,library_revision,logical_bytes,item_count) VALUES(1,?,?,?,0,0,0,0)', access.uid, access.generation, 'active');
+      this.put('settings', 'workspace', this.settings()); this.guard();
+      return { ok: true, data: { provisioned: true, revision: 0, library_revision: 0 } };
     });
   }
   private async close(access: Access): Promise<Result> {
@@ -101,7 +106,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
     return { items: limit(this.env.WORKSPACE_ITEM_LIMIT, LIMITS.items), logicalBytes: limit(this.env.WORKSPACE_LOGICAL_LIMIT, LIMITS.logicalBytes), itemBytes: LIMITS.itemBytes,
       sqliteUsedBytes: limit(this.env.WORKSPACE_USED_LIMIT, LIMITS.sqliteUsedBytes) };
   }
-  private usage() {
+  protected usage() {
     const control = this.control()!;
     return { items: control.item_count, logicalBytes: control.logical_bytes, reservedBytes: this.reserved(), sqliteUsedBytes: this.ctx.storage.sql.databaseSize,
       limits: this.limits(), storageMetric: 'Used SQLite pages; physical allocation and production capacity remain release gates.' };
@@ -278,6 +283,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
         this.reservationCredit = 0;
         this.owned(access, ['suspend', 'resume', 'delete.prepare', 'delete.key'].includes(operation));
         if (!this.schemaReady) this.schema();
+        if (!WORKSPACE_READS.has(operation)) this.beforeMutation();
         if (operation === 'delete.key') {
           check(this.control()!.status === 'deleting', 'INVALID_TRANSITION', 'Deletion has not started.', 409);
           const active = this.records<StoredJob>('jobs').find(job => this.active(job));
@@ -302,7 +308,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
           else check(current.status === (operation === 'suspend' ? 'suspended' : 'active'), 'LIFECYCLE_CONFLICT', 'Membership state changed.', 409);
           return { ok: true, data: { status: operation === 'suspend' ? 'suspended' : 'active' } };
         }
-        if (READS.has(operation)) return { ok: true, data: this.read(operation, input, prepared) };
+        if (WORKSPACE_READS.has(operation)) return { ok: true, data: this.read(operation, input, prepared) };
         let requestId = '';
         if (USER_MUTATIONS.has(operation)) {
           requestId = string(input.request_id, 'Request ID', 100, false);
@@ -323,7 +329,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
         this.guard();
         return { ok: true, data: result };
       });
-      if (outcome.ok && !READS.has(operation)) await this.schedule();
+      if (outcome.ok && !WORKSPACE_READS.has(operation)) await this.schedule();
       return outcome;
     } catch (error) { this.hasWorkspace = undefined; this.schemaReady = false; return failure(error); }
   }
@@ -640,7 +646,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
     this.reservationCredit = originalReserved;
     this.put('jobs', job.id, job, 230_000); this.reservationCredit = 0; return job;
   }
-  private async schedule(): Promise<void> {
+  protected async schedule(): Promise<void> {
     const control = this.control();
     if (!control) return;
     if (control.status !== 'active') { await this.ctx.storage.deleteAlarm(); return; }
@@ -656,6 +662,8 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
     if (await this.reconcile({ uid: control.uid, generation: control.generation })) await this.schedule();
     else if (this.control()) await this.ctx.storage.deleteAlarm();
   }
+  /** Called inside the same SQL transaction as every non-close mutation. */
+  protected beforeMutation(): void {}
   /** P5 application subclass supplies reconciliation. Base storage never calls a provider. */
   protected async reconcile(_access: Access): Promise<boolean> { return false; }
   fetch() { return new Response('Workspace RPC only', { status: 404 }); }

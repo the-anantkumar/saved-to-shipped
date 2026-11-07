@@ -1,5 +1,7 @@
 # Shipping save2ship
 
+The Firebase backend branch supersedes the SQL-only hosting target below. Read [Firebase setup](FIREBASE_SETUP.md) and its [evidence](evidence/FIREBASE.md) before rollout. Both sign-in providers, Firestore rules/IAM, cloud recovery, Enterprise usage units and the reduced 1 GiB storage envelope must pass the revised gates. Use only Firestore-compatible rollback artifacts and the separate Firebase Durable Object namespaces; the earlier 500-seat progression is not approved for this backend.
+
 The intended next release has two destinations: the account-free local open-source package and a restricted hosted beta. They have separate release gates. Finishing local development and passing mocked end-to-end tests does not establish live Google/provider behavior or a 500-member capacity guarantee.
 
 This plan starts from `feat/hosted-workbench`, based on the P1 runtime checkpoint `34e2395`. Phase checkpoints are P2 storage `983d798`, provider adapters/encryption `5424f55`, authenticated backend/jobs `09589f9` and browser integration `3acc003`. The runtime dependency is ahead of main and must be reviewed and integrated explicitly. The final release record must replace these development references with the actual candidate commit, CI run and artifact hashes.

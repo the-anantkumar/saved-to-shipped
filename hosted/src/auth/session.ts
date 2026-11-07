@@ -8,7 +8,7 @@ export function googleVerifier(fetcher: typeof fetch = fetch) {
   let keys = new Map<string, CryptoKey>(), validUntil = 0, nextRefresh = 0;
   let pending: Promise<void> | undefined;
   const refresh = async () => {
-    const response = await fetcher(CERTIFICATES, { redirect: 'error', signal: AbortSignal.timeout(5000) });
+    const response = await fetcher(CERTIFICATES, { redirect: 'manual', signal: AbortSignal.timeout(5000) });
     if (!response.ok) throw new Error('Identity keys unavailable');
     const reader = response.body?.getReader();
     if (!reader) throw new Error('Identity keys unavailable');
@@ -84,7 +84,7 @@ export function firebaseAccountChecker(fetcher: typeof fetch = fetch) {
     let response: Response;
     try {
       response = await fetcher(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(apiKey)}`, {
-        method: 'POST', redirect: 'error', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', redirect: 'manual', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ idToken: token }), signal: AbortSignal.timeout(5000),
       });
     } catch { throw unavailable(); }

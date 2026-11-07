@@ -1,0 +1,26 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "s2sGrants",
+      "queryScope": "COLLECTION",
+      "density": "DENSE",
+      "fields": [{ "fieldPath": "day", "order": "ASCENDING" }]
+    },
+    {
+      "collectionGroup": "s2sMembers",
+      "queryScope": "COLLECTION",
+      "density": "DENSE",
+      "fields": [
+        { "fieldPath": "state", "order": "ASCENDING" },
+        { "fieldPath": "created_at", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "s2sWorkspaces",
+      "queryScope": "COLLECTION",
+      "density": "DENSE",
+      "fields": [{ "fieldPath": "wakeAt", "order": "ASCENDING" }]
+    }
+  ],
+  "fieldOverrides": []
+}

@@ -55,6 +55,9 @@ export class Workspace extends AppWorkspace {
     await reconcileJob(access, this, this.env, fixtureFetch); return true;
   }
 }
+// Match production namespace names while retaining synthetic provider reconciliation.
+export class FirebaseWorkspace extends Workspace {}
+export class FirebaseRegistry extends Registry {}
 interface Env extends AppEnv { WORKSPACES: DurableObjectNamespace<Workspace>; TEST_JWKS: string; TEST_PRIVATE_KEY: string; TEST_REVOKED_UIDS?: string }
 export default {
   async fetch(request: Request<unknown, IncomingRequestCfProperties>, env: Env, ctx: ExecutionContext): Promise<Response> {

@@ -6,7 +6,7 @@ This runbook describes the closed hosted implementation. No application deployme
 
 Before an authorized rollout, record the exact Git commit, CI run, lockfile hash, application bundle and asset hashes, Worker version ID, target account, Firebase project, origin, schema tag, cap, operator UIDs and rollback version. Keep credential values, user content and raw authenticated logs out of this record.
 
-`hosted/wrangler.app.jsonc` is the production application template. It binds SQLite-backed `Workspace` and `Registry` classes under migration tag `app-v1`. It is separate from `wrangler.jsonc` (P1 prototype) and `wrangler.probe.jsonc` (retired measurement probe). Do not deploy a `tests/*harness*` or `client/test-bootstrap.mjs` entrypoint.
+`hosted/wrangler.app.jsonc` is the production application template. It binds Firestore-backed `FirebaseWorkspace` and `FirebaseRegistry` classes under migration tag `app-firebase-v1`, retaining `app-v1` as migration history. SQLite is a disposable workspace projection. It is separate from `wrangler.jsonc` (P1 prototype) and `wrangler.probe.jsonc` (retired measurement probe). Do not deploy a `tests/*harness*` or `client/test-bootstrap.mjs` entrypoint. Follow the [Firebase setup](FIREBASE_SETUP.md) for database configuration and the revised capacity gates; previous SQLite measurements do not certify Firestore capacity.
 
 | Configuration | Committed default | Operational meaning |
 | --- | --- | --- |
@@ -45,18 +45,19 @@ The browser fixture starts its own isolated loopback service, uses generated sig
 
 Keep the account on **Cloudflare Workers Free** and Firebase on **Spark without a linked billing account**. Verify both actual account settings before each rollout. Free-plan exhaustion can make operations fail; do not upgrade plans or replace the spending constraint with alerts. Current provider policies are documented by [Cloudflare](https://developers.cloudflare.com/durable-objects/platform/pricing/) and [Firebase](https://firebase.google.com/docs/projects/billing/firebase-pricing-plans).
 
-Configure Google authentication and the exact authorized origin in Firebase. Only public web fields `apiKey`, `authDomain`, `projectId` and `appId` enter `FIREBASE_PUBLIC_CONFIG`; `FIREBASE_PROJECT_ID` must match. No Gmail access or Admin SDK private key is needed. Set `APP_ORIGIN` to the exact HTTPS origin, and configure operators by verified Firebase UID, never email or a client-supplied role.
+Configure Google and Email/password authentication and the exact authorized origin in Firebase. Only public web fields `apiKey`, `authDomain`, `projectId` and `appId` enter `FIREBASE_PUBLIC_CONFIG`; `FIREBASE_PROJECT_ID` must match. No Gmail access is needed. Firestore server access requires a dedicated database-scoped service account secret. Set `APP_ORIGIN` to the exact HTTPS origin, and configure operators by verified Firebase UID, never email or a client-supplied role.
 
 A finite cap is not an invitation restriction. Before a preview uses real Google identities, set `ADMISSION_UIDS` to the JSON array of designated test UIDs and test both an allowed and an unlisted identity. The committed empty array denies all new UIDs. Existing members can still return. Removing this variable later is a deliberate change to public admission, requiring the applicable cohort gates; do not briefly remove it to bootstrap an operator.
 
-Prepare an ignored `.local/deploy.jsonc` from the committed application template. Because this file lives one directory deeper, use `../src/app.ts` for `main`, `./client-assets` for the asset directory, and `../node_modules/wrangler/config-schema.json` for `$schema`. Review the exact account, Worker name, origin, routing, public Firebase configuration and operator UIDs. Keep the `app-v1` bindings/migration unchanged. Never point a prototype or probe deployment at this application namespace.
+Prepare an ignored `.local/deploy.jsonc` from the committed application template. Because this file lives one directory deeper, use `../src/app.ts` for `main`, `./client-assets` for the asset directory, and `../node_modules/wrangler/config-schema.json` for `$schema`. Review the exact account, Worker name, origin, routing, public Firebase configuration and operator UIDs. Preserve both migration tags and the distinct Firebase bindings. Never point a prototype or probe deployment at this application namespace, or roll a Firebase namespace back to SQL mode.
 
-Two independent platform secrets are required:
+Three platform secrets are required:
 
 | Secret | Shape | Purpose |
 | --- | --- | --- |
 | `SESSION_SIGNING_KEY` | One cryptographically random 32-byte key encoded as unpadded base64url | Signs 15-minute workspace capabilities |
 | `CREDENTIAL_KEYS` | JSON with `active` and `keys`, mapping version names to independent 32-byte base64url keys | Encrypts members' Apify/OpenAI credentials with AES-GCM |
+| `FIRESTORE_SERVICE_ACCOUNT` | Dedicated service-account JSON with database-scoped IAM | Authenticates server-side Firestore requests |
 
 Generate values in an approved local secret manager and keep a separate protected recovery copy. Use the platform secret prompt or dashboard; never put values in shell arguments, Git, build artifacts or chat. The shape of the second secret is `{"active":"v1","keys":{"v1":"<32-byte-base64url-key>"}}`.
 
@@ -67,6 +68,7 @@ npx wrangler deploy --config .local/deploy.jsonc --dry-run --outdir .local/revie
 npx wrangler deploy --config .local/deploy.jsonc
 npx wrangler secret put SESSION_SIGNING_KEY --config .local/deploy.jsonc
 npx wrangler secret put CREDENTIAL_KEYS --config .local/deploy.jsonc
+npx wrangler secret put FIRESTORE_SERVICE_ACCOUNT --config .local/deploy.jsonc
 npx wrangler deployments list --config .local/deploy.jsonc
 ```
 
