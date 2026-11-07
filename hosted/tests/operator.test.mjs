@@ -55,11 +55,16 @@ test('metric collection bounds its time window and never converts missing data i
   assert.throws(() => metricQueries(account, since, '2026-11-09T10:00:00Z'), /24 hours/);
   const queries = metricQueries(account, since, until);
   assert.equal(queries.length, 4);
-  assert.ok(queries.every(([, query]) => query.query.includes('limit: 2000') && query.variables.account === account));
+  assert.ok(queries.every(([, query]) => query.query.includes('limit: 100') && query.variables.account === account));
   const report = await capture(account, since, until, async () => ({ data: { viewer: { accounts: [] } } }));
   assert.ok(Object.values(report.datasets).every(dataset => dataset.available === false && !('samples' in dataset)));
   assert.equal(report.units.duration, 'GB-seconds');
   assert.equal(report.units.cpuTime, 'microseconds');
+  const full = await capture(account, since, until, async () => ({ data: { viewer: { accounts: [
+    Object.fromEntries(queries.map(([dataset]) => [dataset, Array.from({ length: 100 }, () => ({}))])),
+  ] } } }));
+  assert.equal(full.pageSize, 100);
+  assert.ok(Object.values(full.datasets).every(dataset => dataset.available && dataset.possiblyTruncated));
 });
 
 test('probe preparation is local, private and cannot overwrite an earlier run', async t => {

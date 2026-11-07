@@ -5,6 +5,9 @@ import { readOAuthToken, readOnlyClient, namedType, typeQuery } from './cloud-re
 
 const DATASETS = ['durableObjectsSqlStorageGroups', 'durableObjectsStorageGroups', 'durableObjectsPeriodicGroups',
   'durableObjectsInvocationsAdaptiveGroups', 'workersInvocationsAdaptive'];
+// A small probe needs few minute buckets. Queries requesting larger pages hit
+// budget errors; a full page requires narrowing the window, not assuming completeness.
+const PAGE_SIZE = 100;
 
 async function inspectSchema(account, request) {
   const discovery = JSON.parse(await readFile('.local/cloud-discovery.json', 'utf8'));
@@ -54,13 +57,14 @@ export function metricQueries(account, since, until) {
   }
   return Object.entries(MEASUREMENTS).map(([dataset, fields]) => [dataset, {
     query: `query($account: string!, $since: Time!, $until: Time!) { viewer { accounts(filter: {accountTag: $account}) {
-      ${dataset}(limit: 2000, filter: {datetime_geq: $since, datetime_lt: $until}) { ${fields} }
+      ${dataset}(limit: ${PAGE_SIZE}, filter: {datetime_geq: $since, datetime_lt: $until}) { ${fields} }
     } } }`, variables: { account, since: new Date(start).toISOString(), until: new Date(end).toISOString() },
   }]);
 }
 
 export async function capture(account, since, until, request) {
   const report = { capturedAt: new Date().toISOString(), account, since, until,
+    pageSize: PAGE_SIZE,
     boundary: 'Account-wide reported samples. Empty arrays do not establish zero usage; data can be delayed or sampled. Storage values are time-window maxima, not physical file allocation.',
     units: { rowsRead: 'rows', rowsWritten: 'rows', cpuTime: 'microseconds', cpuTimeUs: 'microseconds',
       cpuTimeP50: 'microseconds', cpuTimeP95: 'microseconds', activeTime: 'microseconds', duration: 'GB-seconds', storedBytes: 'bytes' }, datasets: {} };
@@ -70,7 +74,7 @@ export async function capture(account, since, until, request) {
       const accounts = data.data?.viewer?.accounts;
       if (!Array.isArray(accounts) || accounts.length !== 1 || !Array.isArray(accounts[0][dataset])) throw new Error('Expected one authorized account dataset.');
       const rows = accounts[0][dataset];
-      report.datasets[dataset] = { available: true, possiblyTruncated: rows.length === 2000, samples: rows };
+      report.datasets[dataset] = { available: true, possiblyTruncated: rows.length >= PAGE_SIZE, samples: rows };
     } catch (error) { report.datasets[dataset] = { available: false, error: error.message }; }
   }
   return report;

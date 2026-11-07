@@ -46,6 +46,8 @@ jobs:
         run: npm test
       - name: Measure synthetic local capacity
         run: npm run capacity
+      - name: Reproduce the known FTS commit-size gap
+        run: npm run capacity:fts-commit
       - name: Validate deployment bundle without deploying
         run: npm run dryrun
       - name: Validate bounded probe bundle without deploying

@@ -9,6 +9,7 @@
     "build": "node scripts/build.mjs",
     "test": "npm run build && node --test tests/*.test.mjs",
     "capacity": "npm run build && node tests/capacity/run.mjs",
+    "capacity:fts-commit": "node tests/capacity/fts-commit.mjs",
     "dryrun": "wrangler deploy --dry-run --outdir .local/dryrun",
     "probe:dryrun": "wrangler deploy --config wrangler.probe.jsonc --dry-run --outdir .local/probe-dryrun",
     "dev": "wrangler dev --ip 127.0.0.1"
