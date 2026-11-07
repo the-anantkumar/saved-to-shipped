@@ -3,7 +3,7 @@ import { Fault, LIMITS, failure, integer, object, string, type Access, type Inpu
 import { boundedJson, check, classification, digest, editItem, editReading, hasContext, importedItem, localClassification, metadata, now, readingState, size, type Group, type Item } from './domain';
 import { foldName } from './casefold';
 
-type Control = { uid: string; generation: string; status: string; revision: number; logical_bytes: number; item_count: number };
+type Control = { uid: string; generation: string; status: string; revision: number; logical_bytes: number; item_count: number; lifecycle_epoch: number };
 type ItemRow = { id: string; source: string; revision: number; meta: string; bytes: number; origin_job: string; origin_quality: number; source_revision: number; incarnation: string };
 type RecordRow = { id: string; data: string; bytes: number };
 type Table = 'groups' | 'settings' | 'imports' | 'jobs' | 'credentials' | 'receipts';
@@ -19,7 +19,9 @@ export class Workspace extends DurableObject<StorageEnv> {
     super(ctx, env);
     this.sql(`CREATE TABLE IF NOT EXISTS workspace (
       singleton INTEGER PRIMARY KEY CHECK(singleton=1), uid TEXT NOT NULL, generation TEXT NOT NULL,
-      status TEXT NOT NULL, revision INTEGER NOT NULL, logical_bytes INTEGER NOT NULL, item_count INTEGER NOT NULL)`);
+      status TEXT NOT NULL, revision INTEGER NOT NULL, logical_bytes INTEGER NOT NULL, item_count INTEGER NOT NULL, lifecycle_epoch INTEGER NOT NULL DEFAULT 0)`);
+    if (!this.sql<{ name: string }>('PRAGMA table_info(workspace)').some(column => column.name === 'lifecycle_epoch'))
+      this.sql('ALTER TABLE workspace ADD COLUMN lifecycle_epoch INTEGER NOT NULL DEFAULT 0');
     if (this.control()?.status !== 'closed') this.schema();
   }
   private sql<T = Record<string, unknown>>(query: string, ...bindings: (string | number | null)[]): T[] {
@@ -214,13 +216,15 @@ export class Workspace extends DurableObject<StorageEnv> {
         if (operation === 'capture') prepared[0]!.note = string(input.note ?? '', 'Note', 20_000);
         for (const item of prepared) check(size(item) <= LIMITS.itemBytes, 'ITEM_STORAGE_LIMIT', 'One save must fit within 128 KiB, including its source text and notes.', 409);
       }
-      const fingerprint = USER_MUTATIONS.has(operation) ? await digest(JSON.stringify({ operation, input })) : '';
+      const receiptInput = operation === 'settings' && typeof input.credential_fingerprint === 'string'
+        ? { ...input, credential_updates: undefined } : input;
+      const fingerprint = USER_MUTATIONS.has(operation) ? await digest(JSON.stringify({ operation, input: receiptInput })) : '';
       const outcome = this.ctx.storage.transactionSync((): Result => {
         this.reservationCredit = 0;
         if (operation === 'provision') {
           const existing = this.control();
           if (existing) { this.owned(access, true); return { ok: true, data: { provisioned: true, revision: existing.revision } }; }
-          this.sql('INSERT INTO workspace VALUES(1,?,?,?,0,0,0)', access.uid, access.generation, 'active');
+          this.sql('INSERT INTO workspace(singleton,uid,generation,status,revision,logical_bytes,item_count) VALUES(1,?,?,?,0,0,0)', access.uid, access.generation, 'active');
           this.put('settings', 'workspace', this.settings()); this.guard();
           return { ok: true, data: { provisioned: true, revision: 0 } };
         }
@@ -229,14 +233,34 @@ export class Workspace extends DurableObject<StorageEnv> {
           check(current.uid === access.uid && current.generation === access.generation, 'NOT_FOUND', 'Workspace not found.', 404);
           return { ok: true, data: { deleted: true, replayed: true } };
         }
-        this.owned(access, ['close', 'suspend', 'resume'].includes(operation));
+        this.owned(access, ['close', 'suspend', 'resume', 'delete.prepare', 'delete.key'].includes(operation));
+        if (operation === 'delete.key') {
+          check(this.control()!.status === 'deleting', 'INVALID_TRANSITION', 'Deletion has not started.', 409);
+          const active = this.records<StoredJob>('jobs').find(job => this.active(job));
+          check(active?.kind === 'retrieval' && active.run_id, 'INVALID_TRANSITION', 'No provider key is needed for this deletion.', 409);
+          this.setCredential('apify', input.value); this.guard();
+          return { ok: true, data: { repaired: true } };
+        }
+        if (operation === 'delete.prepare') {
+          const job = this.records<StoredJob>('jobs').find(job => this.active(job)) ?? null;
+          check(!job || !['STARTING', 'UNCERTAIN'].includes(job.status), 'SUBMISSION_UNCERTAIN', 'Check and dismiss the uncertain provider request before deleting this workspace.', 409);
+          const credential = job?.kind === 'retrieval' ? this.record('credentials', 'apify') ?? null : null;
+          check(!job?.run_id || credential, 'PROVIDER_KEY_REQUIRED', 'Restore the provider key before deleting this workspace.', 409);
+          if (this.control()!.status !== 'deleting') this.sql("UPDATE workspace SET status='deleting',revision=revision+1 WHERE singleton=1");
+          const records = TABLES.reduce((count, table) => count + this.sql<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)[0]!.n, 0);
+          return { ok: true, data: { job, credential, cleanup_units: 8 * this.control()!.item_count + 4 * records + 64 } };
+        }
         if (operation === 'close') {
           for (const table of ['bodies', 'items', ...TABLES]) this.sql(`DROP TABLE IF EXISTS ${table}`);
           this.sql("UPDATE workspace SET status='closed',revision=revision+1,logical_bytes=0,item_count=0 WHERE singleton=1");
           return { ok: true, data: { deleted: true } };
         }
         if (operation === 'suspend' || operation === 'resume') {
-          this.sql('UPDATE workspace SET status=?,revision=revision+1 WHERE singleton=1', operation === 'suspend' ? 'suspended' : 'active');
+          check(this.control()!.status !== 'deleting', 'ACCOUNT_DELETING', 'Workspace deletion is in progress.', 409);
+          const current = this.control()!, epoch = input.lifecycle_epoch === undefined ? current.lifecycle_epoch + 1 : integer(input.lifecycle_epoch, 'Lifecycle version', 1, Number.MAX_SAFE_INTEGER);
+          check(epoch >= current.lifecycle_epoch, 'LIFECYCLE_CONFLICT', 'A newer membership change already took effect.', 409);
+          if (epoch > current.lifecycle_epoch) this.sql('UPDATE workspace SET status=?,revision=revision+1,lifecycle_epoch=? WHERE singleton=1', operation === 'suspend' ? 'suspended' : 'active', epoch);
+          else check(current.status === (operation === 'suspend' ? 'suspended' : 'active'), 'LIFECYCLE_CONFLICT', 'Membership state changed.', 409);
           return { ok: true, data: { status: operation === 'suspend' ? 'suspended' : 'active' } };
         }
         if (READS.has(operation)) return { ok: true, data: this.read(operation, input, prepared) };
@@ -418,6 +442,8 @@ export class Workspace extends DurableObject<StorageEnv> {
   }
   private provider(value: unknown) { const provider = string(value, 'Provider', 20, false); check(['apify', 'openai'].includes(provider)); return provider; }
   private setCredential(provider: string, raw: unknown) {
+    check(raw !== null || !this.records<StoredJob>('jobs').some(job => this.active(job) && (job.kind === 'retrieval' ? 'apify' : 'openai') === provider),
+      'JOB_ACTIVE', 'Finish or reconcile the current job before clearing its provider key.', 409);
     if (raw === null) this.remove('credentials', provider);
     else {
       const value = object(raw);
@@ -458,10 +484,14 @@ export class Workspace extends DurableObject<StorageEnv> {
       check(!job.lease_until || Number(job.lease_until) <= Date.now() || job.lease_id === leaseId, 'JOB_BUSY', 'This job is already being checked.', 409);
       if (job.lease_id === leaseId && Number(job.lease_until) > Date.now()) return { ...job, replayed: true };
       const claims = integer(job.reconciliation_count ?? 0, 'Reconciliation count', 0, 24);
-      if (claims >= 24) {
+      // The API reserves 2,000 write units; 128 are held for intent/control.
+      // Charge the worst case before each attempt, including rolled-back writes.
+      const remaining = integer(job.completion_units_remaining ?? 1872, 'Remaining work', 0, 1872);
+      const cost = 16 * job.selected_ids.length + 48;
+      if (claims >= 24 || remaining < cost) {
         job.status = 'QUOTA_BLOCKED'; job.next_poll_at = 0; job.lease_until = 0;
         job.error = 'Automatic processing reached its reserved work limit. Resume explicitly when capacity is available.';
-      } else { job.lease_id = leaseId; job.lease_until = until; job.reconciliation_count = claims + 1; }
+      } else { job.lease_id = leaseId; job.lease_until = until; job.reconciliation_count = claims + 1; job.completion_units_remaining = remaining - cost; }
     } else {
       check(input.expected_job_revision === job.revision, 'REVISION_CONFLICT', 'The job changed. Read its current state.', 409);
       check(this.active(job), 'JOB_FINISHED', 'This job has finished.', 409);
@@ -483,6 +513,7 @@ export class Workspace extends DurableObject<StorageEnv> {
         if (patch.status === 'QUEUED') check(job.status === 'QUEUED', 'JOB_UNCERTAIN', 'A submitted job cannot restart.', 409);
         if (patch.status !== undefined) check(['QUEUED', 'STARTING', 'RUNNING', 'APPLYING', 'UNCERTAIN', 'QUOTA_BLOCKED', ...TERMINAL].includes(String(patch.status)));
         if (patch.reconciliation_count !== undefined) check(job.status === 'QUOTA_BLOCKED' && patch.reconciliation_count === 0, 'INVALID_INPUT', 'Only an explicit resume can reset work limits.');
+        if (patch.completion_units_remaining !== undefined) check(job.status === 'QUOTA_BLOCKED' && patch.completion_units_remaining === 1872, 'INVALID_INPUT', 'Only an explicit funded resume can reset work limits.');
         if (patch.selected_revisions !== undefined) {
           check(job.status === 'QUEUED' && patch.status === 'STARTING', 'INVALID_INPUT', 'Submission snapshots are immutable after start.');
           const revisions = object(patch.selected_revisions);

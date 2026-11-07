@@ -42,6 +42,7 @@ export interface Ciphertext {
 export interface Membership extends Access {
   state: 'reserved' | 'active' | 'suspended' | 'deleting' | 'deleted';
   created_at: string;
+  lifecycle_epoch?: number;
 }
 export function integer(value: unknown, name: string, min: number, max: number): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max)
