@@ -1,5 +1,7 @@
 # P6: local capacity of the application schema
 
+This record describes the pre-UAT checkpoint. The [UAT update](UAT.md) supersedes its workspace-closure behavior with complete storage purging; the active-workspace allocation findings and cloud capacity gates below remain open.
+
 Status: bounded local measurement completed on 2026-11-07. This measures `hosted/src/storage/workspace.ts`, not the P1 prototype. It does **not** close the deployed physical-storage, account-metering or cohort gates. Owner: `beta_release`; coordinator and independent reviewer must review the release implication.
 
 The run used working-tree changes on `a0df2ec7c946777167ffd51f8b1fc39dd51085e9`, Node 24.22.2 on macOS arm64, Miniflare `5.20261104.0-beta`, workerd `1.20261104.1` and esbuild `0.28.2`. The script builds the current workspace harness directly in memory, avoiding a stale shared build. Its compiled harness SHA-256 was `93da063bb31cf9197bfa8bd55cbbfb436a87753e7d467e49b8ba5c19fdc2f3d5`; the storage source SHA-256 was `6fe88e3cf575f61037063a5388d277a60a475865aa364e1864ece2d9a410ba8d`. The generated report includes hashes of every repository input. These identify the tested working tree; a later candidate needs its own artifact record.

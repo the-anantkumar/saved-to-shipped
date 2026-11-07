@@ -6,10 +6,10 @@ Try the complete synthetic flow with Node 24 and npm 10 or 11:
 
 ```sh
 npm ci
-npm run preview:synthetic
+npm run uat
 ```
 
-Open the printed loopback URL. Use only synthetic content and dummy keys. This disposable fixture uses signed test identities and mocked providers; it never needs cloud credentials or spends provider credit. Stop with Ctrl+C to remove its temporary workspace.
+Open the printed loopback URL. Alice has examples in all three spaces; Bob starts empty; Charlie demonstrates a full beta. The visible test controls remember the selected account and sign-out across reloads. Use only synthetic content and dummy keys. This disposable fixture uses signed test identities and mocked providers; it never needs cloud credentials or spends provider credit. Stop with Ctrl+C to remove its temporary workspace. Follow the [UAT checklist](../docs/UAT.md) for the acceptance pass. `preview:synthetic` remains the minimal automated-test fixture.
 
 For validation:
 
@@ -18,6 +18,7 @@ npm run typecheck
 npm test
 PLAYWRIGHT_BROWSERS_PATH=.local/playwright npx playwright install chromium
 PLAYWRIGHT_BROWSERS_PATH=.local/playwright npm run test:e2e
+PLAYWRIGHT_BROWSERS_PATH=.local/playwright npm run test:uat
 npm run release:check
 npm run capacity:workspace
 ```

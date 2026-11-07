@@ -21,6 +21,8 @@
     "dev": "wrangler dev --ip 127.0.0.1",
     "test:e2e": "npm run build && npm run build:client && node tests/e2e.mjs",
     "preview:synthetic": "npm run build && npm run build:client && node tests/browser-fixture.mjs",
+    "uat": "npm run build && npm run build:client && node tests/uat.mjs",
+    "test:uat": "npm run build && npm run build:client && node tests/uat-controls.mjs",
     "release:check": "npm run app:dryrun && node scripts/check-release.mjs",
     "capacity:workspace": "node tests/capacity/workspace.mjs"
   },

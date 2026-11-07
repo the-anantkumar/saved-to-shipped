@@ -55,7 +55,7 @@ assert.ok(browserInputs.includes('client/bootstrap.mjs'));
 assert.ok(browserInputs.some(path => path.includes('@firebase/auth/')));
 for (const path of browserInputs) {
   assert.ok(path.startsWith('client/') || path.startsWith('node_modules/'), `Unexpected browser input: ${path}`);
-  assert.doesNotMatch(path, /(?:^|\/)(?:tests?|probe)(?:\/|-)|test-bootstrap|@firebase\/firestore|@grpc\//, `Nonproduction dependency: ${path}`);
+  assert.doesNotMatch(path, /(?:^|\/)(?:tests?|probe)(?:\/|-)|(?:test|uat)-bootstrap|@firebase\/firestore|@grpc\//, `Nonproduction dependency: ${path}`);
 }
 for (const output of browserBuild.outputFiles) assert.equal(hash(await readFile(output.path)), hash(output.contents), `Stale browser bundle: ${relative(root, output.path)}`);
 

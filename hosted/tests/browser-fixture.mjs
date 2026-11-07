@@ -6,13 +6,15 @@ import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { appFixtureConfig } from './app-helpers.mjs';
 
-export async function startFixture() {
+export async function startFixture({ mode = 'automated' } = {}) {
+  if (!['automated', 'uat'].includes(mode)) throw new Error('Unknown synthetic fixture mode.');
   process.env.WRANGLER_SEND_METRICS = 'false';
+  process.env.WRANGLER_WRITE_LOGS = 'false';
   process.env.CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV = 'false';
   const { createTestHarness } = await import('wrangler');
   const root = await mkdtemp(join(tmpdir(), 'save2ship-hosted-browser-'));
   await cp(resolve('.local/client-assets'), join(root, 'assets'), { recursive: true });
-  await build({ entryPoints: ['client/test-bootstrap.mjs'], outfile: join(root, 'assets/hosted.js'),
+  await build({ entryPoints: [mode === 'uat' ? 'client/uat-bootstrap.mjs' : 'client/test-bootstrap.mjs'], outfile: join(root, 'assets/hosted.js'),
     bundle: true, platform: 'browser', format: 'iife', target: 'es2022', minify: true });
   const { vars } = await appFixtureConfig();
   const config = JSON.parse(await readFile('wrangler.app.jsonc', 'utf8'));

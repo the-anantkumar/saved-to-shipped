@@ -199,10 +199,10 @@ To try the hosted flow without creating cloud accounts or spending provider cred
 ```bash
 cd hosted
 npm ci
-npm run preview:synthetic
+npm run uat
 ```
 
-Open the loopback URL it prints. This disposable preview signs in a synthetic user and mocks all providers; use only test content and dummy keys. Its data disappears when stopped. It exercises the same interface and API paths as the hosted build, with a separate test-only identity entrypoint.
+Open the loopback URL it prints. This disposable preview has visible Alice, Bob and Charlie test-account controls and mocks all providers; use only test content and dummy keys. Its data disappears when stopped. It exercises the same interface and API paths as the hosted build, with a separate test-only identity entrypoint. Use the [UAT checklist](docs/UAT.md) to exercise it.
 
 Hosted batches contain at most 25 retrieval links. Workspaces enforce 1,000 saves, 5 MB logical storage and a 128 KiB per-save limit; actual hosted capacity is still unverified. Hosted exports contain the v1 JSON backup and a CSV, and **Import** can restore the backup. Provider credentials are encrypted on the server and excluded from exports. See the [hosted guide](hosted/README.md), [shipping plan](docs/SHIP_PLAN.md) and [production execution plan](docs/PRODUCTION_PLAN.md) for the remaining live sign-in, capacity and release checks.
 

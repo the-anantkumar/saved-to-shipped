@@ -55,6 +55,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Test the browser against the synthetic authenticated Worker
         run: node tests/e2e.mjs
+      - name: Test human UAT controls and session persistence
+        run: node tests/uat-controls.mjs
       - name: Measure synthetic local capacity
         run: npm run capacity
       - name: Measure final workspace capacity, churn and recovery
@@ -93,5 +95,6 @@ jobs:
             hosted/.local/e2e/signed-out.png
             hosted/.local/e2e/beta-full.png
             hosted/.local/release-check/report.json
+            hosted/.local/uat-controls/report.json
           if-no-files-found: error
           retention-days: 7
