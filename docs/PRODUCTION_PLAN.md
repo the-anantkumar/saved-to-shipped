@@ -1,6 +1,6 @@
 # Free beta execution plan
 
-Status: P0 complete; P1 has reviewed local experiments and a bounded synthetic probe exercised and retired on Cloudflare Free. P2 private storage is implemented and independently reviewed locally. Physical-storage accounting and production budgets remain unresolved, so the hosted application stays closed and undeployed. Last reviewed: 2026-11-07. See [P0 evidence](evidence/P0.md), [local P1 evidence](evidence/P1.md), [cloud P1 evidence](evidence/P1-CLOUD.md) and [P2 evidence](evidence/P2.md).
+Status: P0 complete; P1 has reviewed local experiments and a bounded synthetic probe exercised and retired on Cloudflare Free. P2-P5 private storage, identity, browser integration and durable jobs are implemented and reviewed with synthetic end-to-end checks. P6 local/package checks and the P7 shipping plan are prepared. Physical-storage accounting and production budgets remain unresolved, so the hosted application stays closed and undeployed. Last reviewed: 2026-11-07. See [P0 evidence](evidence/P0.md), [local P1 evidence](evidence/P1.md), [cloud P1 evidence](evidence/P1-CLOUD.md), [P2 evidence](evidence/P2.md), [backend evidence](evidence/P3-P5.md) and [browser evidence](evidence/P4.md).
 
 Build a useful, private hosted workspace for a bounded cohort while retaining the account-free local application. The user has chosen **hard free limits with no overage billing**. A paid plan with alerts does not meet that requirement.
 
@@ -61,11 +61,11 @@ Release gate order: **P0 -> P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7**. On 2026-11
 | P0 | Complete | Coordinator | Existing release foundation | Plan, repository instructions, configured agents and skills; [evidence](evidence/P0.md) |
 | P1 | Local and small cloud checks; physical accounting and metering gates open | beta_platform | P0 | Reproducible runtime and storage evidence; [local](evidence/P1.md) and [cloud findings](evidence/P1-CLOUD.md) |
 | P2 | Implemented and reviewed locally; physical gate depends on P1 | beta_platform | P1 provisional no-FTS contract | Hosted contracts, private storage and quota enforcement; [evidence](evidence/P2.md) |
-| P3 | Not started | beta_platform | P2 | Google sessions, membership and account lifecycle |
-| P4 | Not started | beta_product | P2 contracts; P3 for integration | Coherent hosted import, organisation and reading experience |
-| P5 | Not started | beta_platform | P2-P4 | Durable retrieval and optional classification |
-| P6 | Not started | beta_reviewer + beta_release | P3-P5 | Isolation, capacity, recovery and operational evidence |
-| P7 | Not started | beta_release | P6 | Public package/demo and controlled hosted cohorts |
+| P3 | Implemented and reviewed synthetically; real Google canary pending | beta_platform | P2 | Google sessions, membership and account lifecycle; [evidence](evidence/P3-P5.md) |
+| P4 | Eight synthetic browser flows passed; real login pending | beta_product | P2 contracts; P3 for integration | Import, organisation, reading and deletion recovery; [evidence](evidence/P4.md) |
+| P5 | Implemented and reviewed with mocked providers; live check pending | beta_platform | P2-P4 | Durable retrieval and optional classification; [evidence](evidence/P3-P5.md) |
+| P6 | Local isolation, package and final-schema capacity checks passed; cloud gates open | beta_reviewer + beta_release | P3-P5 | [Verification](evidence/P6.md), [capacity](evidence/P6-LOCAL-CAPACITY.md) and [operations](HOSTED_OPERATIONS.md) |
+| P7 | Shipping plan prepared; nothing published or deployed | beta_release | P6 | [Shipping plan](SHIP_PLAN.md) for separate local and hosted releases |
 
 ### P0: Establish the execution contract
 

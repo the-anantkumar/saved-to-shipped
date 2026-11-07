@@ -94,8 +94,35 @@ The initial retrieval adapter targets the documented `data_minds/linkedin-post-s
 
 The model client receives context-backed items, coverage, goals, and project names. It validates exact ID coverage and field types before saving drafts. Local suggestions remain explicitly heuristic. Neither classifier starts tasks or publishes issues automatically.
 
-## Hosted runtime experiment
+## Preserved runtime experiment
 
 The Git checkout also contains a separate TypeScript experiment under `hosted/`. It uses Cloudflare Workers and a SQLite-backed Durable Object to measure storage, full-text search and transaction behavior with synthetic libraries. Its public data API is closed. The local test harness is a separate entrypoint and is never part of the deployable Worker.
 
-This experiment does not change the Python application's storage or introduce accounts into local use. Hosted dependencies, generated files and deployment configuration are excluded from the Python distribution. The [P1 evidence](docs/evidence/P1.md) records measured behavior and outstanding cloud checks; the [production plan](docs/PRODUCTION_PLAN.md) owns subsequent identity, quota, product and release gates.
+This experiment does not change the Python application's storage or introduce accounts into local use. Hosted dependencies, generated files and deployment configuration are excluded from the Python distribution. The [P1 evidence](docs/evidence/P1.md) records measured behavior and outstanding cloud checks. The production workbench below uses a separate schema and entrypoint.
+
+
+## Closed hosted workbench
+
+The TypeScript implementation is now present under `hosted/`, with a separate deployment template `wrangler.app.jsonc`. It is disabled by default, has a zero-member cap and empty admission/operator allowlists, and has not been deployed. The synthetic entrypoints exercise real Worker/SQLite behavior with generated identities and mocked providers. They are excluded from production artifacts. The Python distribution includes none of the hosted dependencies.
+
+| Component | Responsibility |
+| --- | --- |
+| `client/bootstrap.mjs` | Firebase Google sign-in, managed auth persistence and explicit reauthentication |
+| `client/transport.mjs` | Memory-only workspace capability, paged metadata, on-demand details, revisioned writes and account-change cancellation |
+| `client/archive.mjs`, `import-worker.mjs` | Bounded ZIP/CSV parsing in the browser, chunked restore and v1 backup assembly |
+| `src/app.ts` | Verified identity, strict origin/body limits, API routing and operator boundaries |
+| `src/auth/session.ts` | Cached Google certificates, signed 15-minute workspace capabilities and fresh account-status checks |
+| `src/membership/registry.ts` | Atomic seats, stable generations, lifecycle epochs, admission allowlist and daily work reservations |
+| `src/storage/workspace.ts` | Per-user SQL, revisions, byte/item limits, import receipts, source-preserving merges and deletion tombstones |
+| `src/jobs/orchestrator.ts` | Durable submission, bounded reconciliation, saved classification results and uncertainty handling |
+| `src/providers`, `src/credentials` | Bounded BYOK adapters and versioned AES-GCM credential encryption |
+
+Normal requests verify both the Firebase ID token and a capability bound to UID/generation, then route to that private workspace. Ordinary reads avoid the global registry. The workspace checks ownership and lifecycle on every operation. Administrative suspension uses monotonic lifecycle epochs so delayed messages cannot revive a newer suspension. Firebase revocation is checked on capability renewal, with a maximum 15-minute window for ordinary requests; privileged routes check current account status directly.
+
+The browser retains metadata pages and hydrates source text/notes only when needed. Signed-out or switched accounts lose cached data, requests, drafts and timers. Stale revisions preserve a user's unsaved draft rather than overwriting another browser's changes. Import parses only Saved Items, then sends at most 25 rows per request. An explicit new import uses a new operation ID; retries retain its ID and sequence. Source deduplication preserves edits when a file is selected again. Exports use authenticated paged reads and assemble JSON/CSV ZIPs locally; a changed workspace invalidates an in-progress export rather than mixing revisions.
+
+A provider job reserves logical storage and a modeled completion allowance before QUEUED is persisted. A durable alarm claims STARTING once, then submits outside the SQL transaction. Unknown outcomes remain UNCERTAIN. Known runs use leases and bounded claims; classification results are persisted before application. Resuming a retrieval always checks provider status before declaring its dataset final. Content edits and save incarnations protect against stale enrichment, while notes do not block a fuller result from the same run.
+
+Account deletion freezes local mutations atomically with job submission claims. It refuses uncertain submissions, aborts known runs, drops workspace data and credentials, then releases the seat. If an expired provider key prevents abort, the frozen account exposes only a fresh-authenticated deletion retry with optional encrypted key repair. Late callbacks and old capabilities cannot recreate a closed workspace.
+
+Limits apply to canonical item JSON plus persisted operational JSON: 1,000 saves, 5,000,000 logical bytes, 131,072 bytes per item and bounded groups/jobs/receipts. A provisional 7,000,000-byte SQL used-page check does not certify the 8 MB physical allocation target. Daily modeled pools reserve ingestion, interactive, completion and cleanup work; failed attempts and retries count. These are implementation protections, not measured Cloudflare capacity. The [production plan](docs/PRODUCTION_PLAN.md), [backend evidence](docs/evidence/P3-P5.md) and [operations guide](docs/HOSTED_OPERATIONS.md) own the remaining live/deployed gates.

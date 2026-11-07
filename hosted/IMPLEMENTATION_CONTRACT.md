@@ -8,7 +8,7 @@ Base: reviewed P1 checkpoint `34e2395`, ahead of main. This branch depends on th
 
 Operations:
 
-- `provision`, `suspend`, `resume`, `close`: internal membership lifecycle; close retains a tombstone.
+- `provision`, `suspend`, `resume`, `delete.prepare`, `delete.key`, `close`: internal membership lifecycle; monotonic lifecycle epochs reject reordered state changes. Deletion freezes writes atomically before returning retained job/key references. Fresh-authenticated key repair is limited to frozen deletion. Close retains a tombstone.
 - `state`: bounded workspace summary, projects, imports, goals, board order, public settings/AI flags, compact job history, usage and workspace revision. No item bodies or credentials.
 - `list`: `{cursor?,limit?}` returns `{items,next_cursor}`. Items have bounded metadata, `revision`, `has_context`, `has_content`, `has_note`, `excerpt`, `reading_minutes`, reading and compact enrichment. No full content/notes. Max 50/page.
 - `detail`: `{id}` returns full item, including revision.
@@ -18,7 +18,7 @@ Operations:
 - `credential.get`, `credential.set`: internal encrypted records by provider; never public responses. Set/clear is quota checked.
 - `job.begin`: `{job,request_id}` stores QUEUED and selected IDs/revisions, rejecting another active/uncertain job. An alarm atomically changes QUEUED to STARTING before one paid request. Its 120-second submission deadline exceeds the 60-second provider timeout; uncertainty never resubmits.
 - `job.get`: optional id, returns internal job; normal state uses redacted public projection.
-- `job.claim`: `{id,lease_id,lease_until}` serializes polling, returns job with incremented revision; expired leases can recover read-only work. It never grants submission retry.
+- `job.claim`: `{id,lease_id,lease_until}` serializes polling, returns job with incremented revision; expired leases can recover reconciliation. Every claim deducts modeled worst-case work from its reserved allowance, with an additional 24-claim ceiling. It never grants submission retry.
 - `job.update`: `{id,expected_job_revision,patch}` applies bounded internal lifecycle changes; unknown submission stays uncertain.
 - `job.apply`: `{id,expected_job_revision,candidates,cursor,terminal?}` atomically merges at most 25 source-matched retrieval or revision-checked classification candidates, advances cursor and updates job. Candidate `{id,patch,expected_revision?}`; retrieval preserves existing source text and all annotations, classification skips stale revisions. Terminal missing results are finalized only after the final provider page.
 

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Closed hosted implementation with Google sessions, isolated SQLite workspaces, admission allowlists and hard-free defaults.
+- Browser-side archive parsing, paged libraries, version-1 backup restore and safe account switching.
+- Encrypted user-owned provider keys, durable jobs, bounded work reservations and retryable account deletion.
+- Synthetic authenticated browser E2E, restart recovery, strict lifecycle review and final-schema capacity evidence. Hosted admission remains closed pending live identity, physical allocation and platform recovery checks.
+
 - Separate Projects, Learning, and Experiences, with topics, a focused reader, independent reading progress, and takeaways.
 - Inline creation and assignment of projects, learning topics, and experience sections.
 - Persistent board ordering, keyboard/touch move controls, and corrected drag selection behavior.

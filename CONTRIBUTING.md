@@ -38,7 +38,7 @@ Use a fresh output directory. The checker rejects missing assets, mismatched ver
 
 CI runs source tests and an installed-app smoke test on Linux, macOS, and Windows; Linux covers Python 3.10, 3.12, and 3.14. Browser JavaScript and distribution checks run in their own jobs. Build tooling is optional and never added to the application's runtime dependencies.
 
-The hosted experiment requires a Git checkout, Node 24 and its own dependency install. Run `npm ci`, `npm run typecheck`, `npm test`, `npm run capacity` and `npm run dryrun` from `hosted/`. Its README explains the closed public API and synthetic test boundary. These checks do not require cloud accounts or provider credentials and do not deploy anything. Hosted CI keeps a synthetic capacity report for review; local elapsed times are not cloud CPU or billing measurements.
+Hosted development requires a Git checkout, Node 24 and its own dependency install. From `hosted/`, run `npm ci`, `npm run typecheck` and `npm test`. Install the pinned Chromium with `PLAYWRIGHT_BROWSERS_PATH=.local/playwright npx playwright install chromium`, then run `PLAYWRIGHT_BROWSERS_PATH=.local/playwright npm run test:e2e`. `npm run preview:synthetic` starts a disposable authenticated preview with dummy identities and mocked providers. `npm run release:check` builds the closed application and verifies artifact boundaries without deploying. See the [hosted README](hosted/README.md) for capacity experiments and their limits. No cloud account or real provider key is needed for these checks.
 
 For browser QA without an account or charge:
 

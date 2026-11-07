@@ -192,6 +192,18 @@ For release builds, see [docs/RELEASING.md](docs/RELEASING.md). Optional build t
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, test fixtures, and release gates; [ARCHITECTURE.md](ARCHITECTURE.md) for implementation boundaries; [PRODUCT_SPEC.md](PRODUCT_SPEC.md) for the user journey; and [ROADMAP.md](ROADMAP.md) for outstanding work.
 
-The proposed capped hosted beta has a separate [production execution plan](docs/PRODUCTION_PLAN.md). Google sign-in, private cloud workspaces and hosted capacity limits are planned work; the application described above runs locally today.
+A separate **closed hosted implementation** now includes Google sessions, isolated workspaces, browser-side imports and durable provider jobs. Its synthetic browser/API flow is tested; it is not deployed or accepting members. The local instructions above remain account-free.
+
+To try the hosted flow without creating cloud accounts or spending provider credit, use Node 24 in a checkout:
+
+```bash
+cd hosted
+npm ci
+npm run preview:synthetic
+```
+
+Open the loopback URL it prints. This disposable preview signs in a synthetic user and mocks all providers; use only test content and dummy keys. Its data disappears when stopped. It exercises the same interface and API paths as the hosted build, with a separate test-only identity entrypoint.
+
+Hosted batches contain at most 25 retrieval links. Workspaces enforce 1,000 saves, 5 MB logical storage and a 128 KiB per-save limit; actual hosted capacity is still unverified. Hosted exports contain the v1 JSON backup and a CSV, and **Import** can restore the backup. Provider credentials are encrypted on the server and excluded from exports. See the [hosted guide](hosted/README.md), [shipping plan](docs/SHIP_PLAN.md) and [production execution plan](docs/PRODUCTION_PLAN.md) for the remaining live sign-in, capacity and release checks.
 
 Existing CLI commands remain available through `python3 saved_to_shipped.py --help` or the installed `saved-to-shipped-cli` command. Future source adapters can reuse the normalized save contract. Native Reddit and Instagram archive support is outside the current web release.

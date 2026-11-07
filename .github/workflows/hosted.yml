@@ -57,6 +57,8 @@ jobs:
         run: node tests/e2e.mjs
       - name: Measure synthetic local capacity
         run: npm run capacity
+      - name: Measure final workspace capacity, churn and recovery
+        run: npm run capacity:workspace
       - name: Reproduce the known FTS commit-size gap
         run: npm run capacity:fts-commit
       - name: Validate deployment bundle without deploying
@@ -68,12 +70,16 @@ jobs:
       - name: Verify production entrypoints and hash reviewed artifacts
         run: node scripts/check-release.mjs
       - name: Stage synthetic measurement report
-        run: cp .local/capacity-report.json "$RUNNER_TEMP/save2ship-capacity-report.json"
+        run: |
+          cp .local/capacity-report.json "$RUNNER_TEMP/save2ship-capacity-report.json"
+          cp .local/workspace-capacity-report.json "$RUNNER_TEMP/save2ship-workspace-capacity-report.json"
       - name: Keep synthetic local measurements for review
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: hosted-local-capacity-${{ github.sha }}
-          path: ${{ runner.temp }}/save2ship-capacity-report.json
+          path: |
+            ${{ runner.temp }}/save2ship-capacity-report.json
+            ${{ runner.temp }}/save2ship-workspace-capacity-report.json
           if-no-files-found: error
           retention-days: 7
       - name: Keep synthetic browser and artifact evidence
