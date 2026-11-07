@@ -10,6 +10,7 @@ npm ci
 npm run typecheck
 npm test
 npm run capacity
+npm run capacity:fts-commit
 npm run dryrun
 ```
 
@@ -41,4 +42,4 @@ No personal archives, workspace content, authentication state, API keys or provi
 
 ## Bounded cloud experiment
 
-The separate `wrangler.probe.jsonc` and `probe/` entrypoint provide a secret-protected, fixed 50-save experiment. The application entrypoint remains closed. `npm run probe:dryrun` validates that bundle without deployment; its committed expiry is in the past and no secret is included. See [probe design](probe/README.md) and [preparation evidence](../docs/evidence/P1-CLOUD.md) before using the operator scripts. Creating local probe credentials does not deploy resources or start any provider request.
+The separate `wrangler.probe.jsonc` and `probe/` entrypoint provide a secret-protected, fixed 50-save experiment. The application entrypoint remains closed. `npm run probe:dryrun` validates that bundle without deployment; its committed expiry is in the past and no secret is included. See [probe design](probe/README.md) and [cloud execution evidence](../docs/evidence/P1-CLOUD.md) before using the operator scripts. Creating local probe credentials does not deploy resources or start any provider request. The live FTS experiment observed additional size growth after its in-transaction measurement, so that check does not yet establish a hard post-commit used-page cap.

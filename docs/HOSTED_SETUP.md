@@ -6,7 +6,7 @@ The hosted beta is still under development. These steps prepare the operator acc
 
 Create or sign in to a [Cloudflare account](https://dash.cloudflare.com/) on the Free plan and stay signed in. Approve the scoped browser connection prompt when it appears. You do not need to install tools, create a database, copy credentials or run terminal commands yourself.
 
-The operator handles the technical steps below. Firebase can wait until the Google sign-in phase. Cloudflare account connection and a Free-plan dashboard check have now succeeded for the current project; the synthetic cloud probe is a separate reviewed step.
+The operator handles the technical steps below. Firebase can wait until the Google sign-in phase. For the current project, Cloudflare connection, the Free-plan check and the bounded synthetic test have succeeded. No further manual Cloudflare setup is needed for this checkpoint. The [cloud evidence](evidence/P1-CLOUD.md) records the measured results and remaining technical gates.
 
 ## Operator reference: Cloudflare
 
@@ -36,4 +36,4 @@ No service-account private key is needed for this account preparation. There is 
 
 ## Handoff
 
-Once the accounts exist, provide the Cloudflare account ID, Firebase project ID and confirmation of Free/Spark plan status. These identifiers are not credentials. The remaining work is to validate the bounded cloud probe, record real CPU and resource usage, then implement the private workspace and sign-in phases. The public API stays closed until identity and membership checks are implemented and reviewed.
+The operator reads the Cloudflare account identifier from the scoped connection and records Free-plan evidence. Firebase project configuration is collected when the sign-in phase needs it. These project identifiers are not credentials; secrets stay in local/platform stores. The remaining work is to resolve storage accounting and incomplete cloud metrics, then implement the private workspace and sign-in phases. The public application API stays closed until identity and membership checks are implemented and reviewed.
