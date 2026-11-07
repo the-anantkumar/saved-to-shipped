@@ -1,5 +1,7 @@
 "use strict";
 
+const hosted = window.Save2ShipHosted || null;
+
 const $ = (s, root = document) => root.querySelector(s);
 const esc = (value) =>
   String(value ?? "").replace(
@@ -38,7 +40,7 @@ const shapes = {
 const icon = (name) =>
   `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${shapes[name] || shapes.file}"/></svg>`;
 const workspace =
-  new URLSearchParams(location.search).get("workspace") === "demo"
+  !hosted && new URLSearchParams(location.search).get("workspace") === "demo"
     ? "demo"
     : "personal";
 let state = { items: [], projects: [], imports: [] },
@@ -78,8 +80,9 @@ const statusLabels = {
   parked: "Parked",
 };
 const apiURL = (route, query = "") =>
-  `${route}?workspace=${workspace}${query ? "&" + query : ""}`;
+  hosted ? `${route}${query ? "?" + query : ""}` : `${route}?workspace=${workspace}${query ? "&" + query : ""}`;
 async function api(route, data, query = "") {
+  if (hosted) return hosted.api(route, data, query);
   const response = await fetch(
     apiURL(route, query),
     data === undefined
@@ -100,14 +103,19 @@ async function api(route, data, query = "") {
   return result;
 }
 async function refresh() {
+  const epoch = hosted?.epoch;
   if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
-  state = await api("/api/state");
+  if (hosted && epoch !== hosted.epoch) return;
+  const next = await api("/api/state");
+  if (hosted && epoch !== hosted.epoch) return;
+  state = next;
   const first = initialLoad;
   if (initialLoad) {
     restoreRoute();
     filter = reviewItems().length ? "review" : "all";
     initialLoad = false;
   }
+  if (hosted && readerId) await hydrateItem(readerId);
   if (!draggedTile) render();
   if (first && readerId) {
     restoreReadingPosition();
@@ -115,6 +123,27 @@ async function refresh() {
     if (item) startReading(item);
   }
   scheduleRetrieval();
+}
+async function hydrateItem(id) {
+  if (!hosted) return state.items.find(item => item.id === id);
+  const epoch = hosted.epoch;
+  const item = await hosted.detail(id);
+  if (epoch !== hosted.epoch) throw new Error("Account changed. Open the save again.");
+  const position = state.items.findIndex(value => value.id === id);
+  if (position >= 0) state.items[position] = item;
+  return item;
+}
+function resetHostedState() {
+  clearTimeout(retrievalTimer); retrievalTimer = null;
+  clearTimeout(readingProgressTimer); pendingReadingProgress = null; readingRequests.clear();
+  classificationCancelled = true; readerId = ""; initialLoad = true;
+  view = "inbox"; filter = "all"; projectFilter = ""; search = ""; visibleLimit = 25;
+  hostedPollFailures = 0;
+  clearTimeout(toastTimer); $("#toast").textContent = ""; $("#toast").classList.remove("visible");
+  if (pointerDrag) finishPointerDrag();
+  state = {items: [], projects: [], imports: []};
+  $("#modal").close(); $("#modal").innerHTML = "";
+  $("#sidebar").innerHTML = ""; $("#main").innerHTML = '<div class="loading">Opening your workspace…</div>';
 }
 function toast(message) {
   const node = $("#toast");
@@ -170,6 +199,7 @@ function restoreRoute() {
 window.addEventListener("popstate", async () => {
   if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
   restoreRoute();
+  if (hosted && readerId) await hydrateItem(readerId).catch(error => toast(error.message));
   filter = "all";
   render(false);
   if (readerId) {
@@ -183,7 +213,7 @@ function reviewItems() {
 function sidebar() {
   const theme = window.save2shipTheme?.preference || "system";
   $("#sidebar").innerHTML =
-    `<a class="brand" href="/?workspace=${workspace}" aria-label="Save2Ship home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
+    `<a class="brand" href="${hosted ? "/" : "/?workspace=" + workspace}" aria-label="Save2Ship home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
   <nav class="nav" aria-label="Main navigation">${[
     ["inbox", "inbox", "Saves"],
     ["backlog", "board", "Projects"],
@@ -195,10 +225,12 @@ function sidebar() {
         `<button data-view="${key}" class="${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? "active" : ""}" ${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? 'aria-current="page"' : ""} title="${label}">${icon(img)}<span class="nav-name">${label}</span>${key === "inbox" && reviewItems().length ? `<span class="count">${reviewItems().length}</span>` : ""}</button>`,
     )
     .join("")}</nav>
-  <div class="side-bottom"><button class="utility" data-action="import" aria-label="Import archive">${icon("upload")}<span>Import archive</span></button><button class="utility" data-action="settings" aria-label="Settings">${icon("lock")}<span>Settings</span></button><label class="utility theme-control" title="Appearance">${icon("moon")}<select id="theme-mode" aria-label="Appearance">${[["system","System theme"],["light","Light"],["dark","Dark"]].map(([mode,label]) => `<option value="${mode}" ${theme === mode ? "selected" : ""}>${label}</option>`).join("")}</select></label><a class="utility" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${icon("leaf")}<span>${workspace === "demo" ? "My workspace" : "Try the demo"}</span></a><div class="local-label"><span class="dot"></span>Local workspace</div></div>`;
+  <div class="side-bottom"><button class="utility" data-action="import" aria-label="Import archive">${icon("upload")}<span>Import archive</span></button><button class="utility" data-action="settings" aria-label="Settings">${icon("lock")}<span>Settings</span></button><label class="utility theme-control" title="Appearance">${icon("moon")}<select id="theme-mode" aria-label="Appearance">${[["system","System theme"],["light","Light"],["dark","Dark"]].map(([mode,label]) => `<option value="${mode}" ${theme === mode ? "selected" : ""}>${label}</option>`).join("")}</select></label>${hosted ? `<button class="utility" data-action="hosted-account" aria-label="Account: ${esc(hosted.user?.name || "Your account")}">${icon("leaf")}<span>${esc(hosted.user?.name || "Your account")}</span></button><div class="local-label"><span class="dot"></span>Private cloud workspace</div>` : `<a class="utility" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${icon("leaf")}<span>${workspace === "demo" ? "My workspace" : "Try the demo"}</span></a><div class="local-label"><span class="dot"></span>Local workspace</div>`}</div>`;
 }
 function topbar() {
-  return `<div class="topbar"><span>${workspace === "demo" ? "THE PLAYGROUND" : "A LITTLE LESS SAVING. A LITTLE MORE DOING."}</span><button class="quiet-link" data-action="export">${icon("download")}Export</button></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample ideas, separate from your workspace.</span><a href="/">My workspace ↗</a></div>' : ""}`;
+  const usage = hosted && state.usage;
+  const usageLabel = usage ? `${Number(usage.items || 0)} / ${Number(usage.limits?.items || 1000)} saves · ${(Number(usage.logicalBytes || 0) / 1_000_000).toFixed(1)} / ${(Number(usage.limits?.logicalBytes || 5_000_000) / 1_000_000).toFixed(0)} MB` : "";
+  return `<div class="topbar"><span>${workspace === "demo" ? "THE PLAYGROUND" : "A LITTLE LESS SAVING. A LITTLE MORE DOING."}</span><div class="topbar-actions">${usage ? `<span class="usage-label" title="Saved content and personal notes. Internal storage limits also apply.">${esc(usageLabel)}</span>` : ""}<button class="quiet-link" data-action="export">${icon("download")}Export</button></div></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample ideas, separate from your workspace.</span><a href="/">My workspace ↗</a></div>' : ""}`;
 }
 function heading(title, description, actions) {
   return `<div class="heading"><div><h1 tabindex="-1">${title}</h1><p>${description}</p></div>${actions ? `<div class="heading-actions">${actions}</div>` : ""}</div>`;
@@ -209,7 +241,7 @@ function empty(title, description, actions = "") {
 
 function row(item) {
   const title = item.title || "Saved LinkedIn post";
-  return `<div class="save-row"><button class="save-open" data-item="${item.id}" aria-label="${item.has_context ? "Review" : "Add context to"} ${esc(title)}"><span class="source-mark">${item.has_context ? icon(item.kind === "project" ? "spark" : "file") : "in"}</span><span class="save-text"><span class="save-title">${esc(title)}</span><span class="save-meta">${esc(item.author || "LinkedIn")}<span>·</span>${esc(dateLabel(item.saved_at))}${item.project_id ? `<span>·</span><span class="row-project">${esc(projectName(item.project_id))}</span>` : ""}</span></span><span class="pill ${esc(item.kind)}">${esc(category(item))}</span></button><button class="notes-button ${item.note ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${item.note ? "Edit your notes" : "Add notes"}">${icon("note")}</button></div>`;
+  return `<div class="save-row"><button class="save-open" data-item="${item.id}" aria-label="${item.has_context ? "Review" : "Add context to"} ${esc(title)}"><span class="source-mark">${item.has_context ? icon(item.kind === "project" ? "spark" : "file") : "in"}</span><span class="save-text"><span class="save-title">${esc(title)}</span><span class="save-meta">${esc(item.author || "LinkedIn")}<span>·</span>${esc(dateLabel(item.saved_at))}${item.project_id ? `<span>·</span><span class="row-project">${esc(projectName(item.project_id))}</span>` : ""}</span></span><span class="pill ${esc(item.kind)}">${esc(category(item))}</span></button><button class="notes-button ${(item.has_note ?? Boolean(item.note)) ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${(item.has_note ?? Boolean(item.note)) ? "Edit your notes" : "Add notes"}">${icon("note")}</button></div>`;
 }
 function table(items) {
   return `<div class="save-list">${items.length ? items.map(row).join("") : empty("Nothing here yet", search ? "Try a different search." : "Your saves will appear here as they move through your workspace.")}</div>`;
@@ -220,9 +252,9 @@ function inbox() {
   const waiting = scope.filter((item) => !item.has_context);
   const items = scope.filter((item) =>
     (filter === "all" || (filter === "review" && reviews.some((review) => review.id === item.id)) || (filter === "context" && !item.has_context)) &&
-    `${item.title} ${item.content} ${item.note} ${projectName(item.project_id)} ${(item.tags || []).join(" ")}`.toLowerCase().includes(search.toLowerCase())
+    `${item.title} ${item.excerpt || item.content || ""} ${item.note || ""} ${projectName(item.project_id)} ${(item.tags || []).join(" ")}`.toLowerCase().includes(search.toLowerCase())
   );
-  if (!state.items.length) return heading("Good ideas deserve a next step.", "A calmer home for the things you want to build and learn.") + `<div class="welcome"><div class="welcome-mark">${icon("inbox")}</div><h2>Start with your saved posts.</h2><p>Import your LinkedIn archive. Recover the useful bits.<br>Leave with a few things worth doing.</p><button class="button primary" data-action="import">${icon("upload")}Import LinkedIn archive</button><a class="quiet-link" href="/?workspace=demo">Take a look around first ${icon("arrow")}</a><div class="welcome-note">Your archive stays on your device.</div></div>`;
+  if (!state.items.length) return heading("Good ideas deserve a next step.", "A calmer home for the things you want to build and learn.") + `<div class="welcome"><div class="welcome-mark">${icon("inbox")}</div><h2>Start with your saved posts.</h2><p>Import your LinkedIn archive. Recover the useful bits.<br>Leave with a few things worth doing.</p><button class="button primary" data-action="import">${icon("upload")}Import LinkedIn archive</button>${hosted ? '<button class="quiet-link" data-action="capture">Or add one saved link</button>' : `<a class="quiet-link" href="/?workspace=demo">Take a look around first ${icon("arrow")}</a>`}<div class="welcome-note">Your archive stays on your device.</div></div>`;
   return heading(projectFilter ? esc(projectName(projectFilter)) : "Your saves, with somewhere to go.", projectFilter ? "Related ideas. One useful next step at a time." : `${state.items.length} saves · ${reviews.length} to review · ${waiting.length} waiting for content`, `<button class="button" data-action="capture">${icon("plus")}Add a link</button>`) +
     (projectFilter ? `<button class="quiet-link back-link" data-view="projects">← All projects</button>` : pipeline()) +
     `<div class="toolbar"><div class="tabs" aria-label="Filter saves">${[["review", "To review", reviews.length], ["all", "All saves", scope.length], ["context", "Waiting", waiting.length]].map(([key,label,count]) => `<button class="tab ${filter === key ? "selected" : ""}" data-filter="${key}" aria-pressed="${filter === key}">${label}<span>${count}</span></button>`).join("")}</div><label class="search">${icon("search")}<input id="search" placeholder="Search saves" aria-label="Search saves" value="${esc(search)}"><kbd>/</kbd></label></div>` + table(items.slice(0,visibleLimit)) + `${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25,items.length-visibleLimit)} more</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "save" : "saves"}${projectFilter ? " in this project" : ""}</span>${waiting.length && filter !== "context" && !projectFilter ? '<button class="quiet-link" data-action="retrieve">Process more saves ↗</button>' : ""}</div>`;
@@ -233,7 +265,7 @@ function orderedTiles(items) {
 }
 function task(item, draggable = false) {
   const title = item.title || "Untitled idea";
-  return `<article class="task tile" data-tile-id="${item.id}" draggable="false" ${draggable ? 'data-draggable="true"' : ""} aria-label="${esc(title)}"><div class="tile-top"><span class="tile-kind ${esc(item.kind)}"><span></span>${esc(labels[item.kind])}</span>${draggable ? `<span class="drag-handle" aria-hidden="true" title="Drag to move">${icon("grip")}</span>` : ""}</div><h3><button class="save-title" data-item="${item.id}" draggable="false">${esc(title)}</button></h3><p class="task-preview">${esc(item.next_action)}</p><div class="tile-meta"><span class="task-project">${esc(projectName(item.project_id) || "Personal")}</span><span>${item.effort_hours}h</span></div><footer><button class="notes-button ${item.note ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${item.note ? "Edit notes" : "Add notes"}">${icon("note")}<span>Notes</span></button><select class="move-select" data-move-id="${item.id}" aria-label="Move ${esc(title)}"><option value="">Move…</option>${Object.entries(statusLabels).filter(([key]) => key !== item.status).map(([key,label]) => `<option value="${key}">${label}</option>`).join("")}</select></footer></article>`;
+  return `<article class="task tile" data-tile-id="${item.id}" draggable="false" ${draggable ? 'data-draggable="true"' : ""} aria-label="${esc(title)}"><div class="tile-top"><span class="tile-kind ${esc(item.kind)}"><span></span>${esc(labels[item.kind])}</span>${draggable ? `<span class="drag-handle" aria-hidden="true" title="Drag to move">${icon("grip")}</span>` : ""}</div><h3><button class="save-title" data-item="${item.id}" draggable="false">${esc(title)}</button></h3><p class="task-preview">${esc(item.next_action)}</p><div class="tile-meta"><span class="task-project">${esc(projectName(item.project_id) || "Personal")}</span><span>${item.effort_hours}h</span></div><footer><button class="notes-button ${(item.has_note ?? Boolean(item.note)) ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${(item.has_note ?? Boolean(item.note)) ? "Edit notes" : "Add notes"}">${icon("note")}<span>Notes</span></button><select class="move-select" data-move-id="${item.id}" aria-label="Move ${esc(title)}"><option value="">Move…</option>${Object.entries(statusLabels).filter(([key]) => key !== item.status).map(([key,label]) => `<option value="${key}">${label}</option>`).join("")}</select></footer></article>`;
 }
 function backlogTabs() {
   return `<div class="tabs backlog-tabs" aria-label="Board views">${[["backlog","Board"],["week","This week"],["shipped","Done"]].map(([key,label]) => `<button class="tab ${view===key ? "selected" : ""}" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join("")}</div>`;
@@ -347,17 +379,22 @@ function organizationPayload(form) {
 function bindForm(callback) {
   $("#dialog-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const buttons = [...$("#dialog-form").querySelectorAll("[type=submit]")];
+    const form = e.currentTarget, epoch = hosted?.epoch;
+    const buttons = [...form.querySelectorAll("[type=submit]")];
     buttons.forEach(button => button.disabled = true);
     $("#form-error").classList.add("hidden");
     try {
       const next = await callback(new FormData(e.currentTarget), e.submitter);
+      if (hosted && epoch !== hosted.epoch) return;
+      if ($("#dialog-form") !== form) { await refresh(); return; }
       $("#modal").close();
       await refresh();
       if (next?.nextItem) itemDialog(next.nextItem);
       if (next?.completedReview) navigate("backlog");
       if (next?.afterRefresh) next.afterRefresh();
     } catch (error) {
+      if (hosted && epoch !== hosted.epoch) return;
+      if ($("#dialog-form") !== form || !$("#form-error")) { toast(error.message); return; }
       $("#form-error").textContent = error.message;
       $("#form-error").classList.remove("hidden");
       $("#form-error").scrollIntoView({ block: "nearest" });
@@ -410,36 +447,40 @@ function effortChoices(current) {
   return values.sort((a,b) => a-b).map(value => [String(value), value < 1 ? `${value * 60} minutes` : `${value} ${value === 1 ? "hour" : "hours"}`]);
 }
 function contextDialog(id) {
+  if (hosted && !hosted.hasDetail(id)) return hydrateItem(id).then(() => contextDialog(id)).catch(error => toast(error.message));
   const item = state.items.find(candidate => candidate.id === id);
   if (!item) return;
   modal("A little context, on your terms.",
     `<div class="context-header"><h3>${esc(item.title || "Saved LinkedIn post")}</h3><a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original post ${icon("external")}</a></div><p>A place for why you saved this, a question, or something you want to try.</p>${field("Your notes", "note", item.note, "textarea", 'rows="7" maxlength="20000" placeholder="What makes this interesting to you?"')}<details><summary>Post text</summary><p class="helper">Paste or correct the source text here. Your notes stay separate.</p>${field("Source text", "content", item.content, "textarea", 'rows="8" maxlength="20000" placeholder="Paste the post text…"')}</details>`,
-    '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save context</button>', true);
+    `${hosted ? `<button class="quiet-link danger" type="button" data-action="hosted-delete-item" data-id="${esc(id)}">Delete save</button>` : ""}<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save context</button>`, true);
   bindForm(async form => {
-    const payload = {id};
+    const payload = {id, ...(hosted ? {expected_revision: item.revision} : {})};
     for (const key of ["note", "content"]) {
       if (form.get(key) !== (item[key] || "")) payload[key] = form.get(key);
     }
-    if (Object.keys(payload).length > 1) await api("/api/item", payload);
+    if (["note", "content"].some(key => key in payload)) await api("/api/item", payload);
     toast("Context saved.");
   });
 }
 function itemDialog(id) {
+  if (hosted && !hosted.hasDetail(id)) return hydrateItem(id).then(() => itemDialog(id)).catch(error => toast(error.message));
   const item = state.items.find((i) => i.id === id);
   if (!item) return;
   const draft = item.status === "inbox" && item.kind !== "untriaged";
   const queue = reviewItems().filter(candidate => !projectFilter || candidate.project_id === projectFilter);
   const coverage = item.enrichment;
+  const links = safeReadingLinks(item);
   const compact = window.matchMedia("(max-width: 800px)").matches;
   modal(
     draft ? "One idea. One next step." : "Your saved idea",
-    `<div class="review-layout"><section class="source-panel"><div class="eyebrow">THE INSPIRATION</div><h2>${esc(item.title || "Saved LinkedIn post")}</h2><div class="source-byline">${esc(item.author || "LinkedIn")} · ${esc(dateLabel(item.saved_at))}<a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original ${icon("external")}</a></div>${item.metadata?.synthetic ? '<div class="coverage-note">Synthetic sample content.</div>' : ""}${coverage ? `<div class="coverage-note ${coverage.status === "partial" ? "partial" : ""}">${icon(coverage.status === "partial" ? "file" : "check")}${esc(retrievalLabels[coverage.status] || coverage.status)} · ${esc(coverage.coverage || "No readable text returned")}${coverage.content_truncated ? ". Text shortened to 20,000 characters." : ""}</div>` : ""}<details class="read-source" ${compact ? "" : "open"}><summary>${item.content ? "Read post text" : "Read saved context"}</summary><div class="post-text">${esc(item.content || item.note || "The archive contains this post's link. Use Notes on the save to add context, or retrieve its text.")}</div></details>${coverage?.links?.length ? `<details class="source-links"><summary>${coverage.links.length} links from this post</summary>${coverage.links.slice(0,30).map(link => `<a class="quiet-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)} ${icon("external")}</a>`).join("")}</details>` : ""}</section><section class="action-panel"><div class="eyebrow">MAKE IT USEFUL</div>${item.classification_method ? `<p class="suggestion-note">Draft from ${esc(item.classification_method)} · ${esc(item.confidence)} confidence</p>` : '<p class="suggestion-note">Add context, then organize this save or shape a task yourself.</p>'}${field("Working title", "title", item.title, "input", 'maxlength="300" placeholder="Give the idea a short name"')}${field("Next action", "next_action", item.next_action, "textarea", 'placeholder="One small thing you can do in under two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="A result you can point to."')}<div class="field-row">${organizationFields(item)}${select("Time to make a start", "effort_hours", effortChoices(item.effort_hours || 1), String(item.effort_hours || 1))}</div><details><summary>More details</summary>${select("Kind of idea", "kind", Object.entries(labels).map(([key,label]) => [key,key === "untriaged" ? "Not organized yet" : label]),item.kind)}${select("Status", "status", Object.entries(statusLabels),item.status)}${item.why ? `<p>${esc(item.why)}</p>` : ""}${field("Result / commit / PR link", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}</details></section></div>`,
+    `<div class="review-layout"><section class="source-panel"><div class="eyebrow">THE INSPIRATION</div><h2>${esc(item.title || "Saved LinkedIn post")}</h2><div class="source-byline">${esc(item.author || "LinkedIn")} · ${esc(dateLabel(item.saved_at))}<a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original ${icon("external")}</a></div>${item.metadata?.synthetic ? '<div class="coverage-note">Synthetic sample content.</div>' : ""}${coverage ? `<div class="coverage-note ${coverage.status === "partial" ? "partial" : ""}">${icon(coverage.status === "partial" ? "file" : "check")}${esc(retrievalLabels[coverage.status] || coverage.status)} · ${esc(coverage.coverage || "No readable text returned")}${coverage.content_truncated ? ". Text shortened to 20,000 characters." : ""}</div>` : ""}<details class="read-source" ${compact ? "" : "open"}><summary>${item.content ? "Read post text" : "Read saved context"}</summary><div class="post-text">${esc(item.content || item.note || "The archive contains this post's link. Use Notes on the save to add context, or retrieve its text.")}</div></details>${links.length ? `<details class="source-links"><summary>${links.length} links from this post</summary>${links.map(link => `<a class="quiet-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)} ${icon("external")}</a>`).join("")}</details>` : ""}</section><section class="action-panel"><div class="eyebrow">MAKE IT USEFUL</div>${item.classification_method ? `<p class="suggestion-note">Draft from ${esc(item.classification_method)} · ${esc(item.confidence)} confidence</p>` : '<p class="suggestion-note">Add context, then organize this save or shape a task yourself.</p>'}${field("Working title", "title", item.title, "input", 'maxlength="300" placeholder="Give the idea a short name"')}${field("Next action", "next_action", item.next_action, "textarea", 'placeholder="One small thing you can do in under two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="A result you can point to."')}<div class="field-row">${organizationFields(item)}${select("Time to make a start", "effort_hours", effortChoices(item.effort_hours || 1), String(item.effort_hours || 1))}</div><details><summary>More details</summary>${select("Kind of idea", "kind", Object.entries(labels).map(([key,label]) => [key,key === "untriaged" ? "Not organized yet" : label]),item.kind)}${select("Status", "status", Object.entries(statusLabels),item.status)}${item.why ? `<p>${esc(item.why)}</p>` : ""}${field("Result / commit / PR link", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}</details></section></div>`,
     `${draft ? `<span class="review-count">${queue.length} ${queue.length === 1 ? "idea" : "ideas"} left to review</span><button class="button ghost" type="submit" name="decision" value="parked">Park for later</button>` : ""}<button class="button" type="submit" name="decision" value="save">${draft ? "Save draft" : "Save changes"}</button>${draft ? '<button class="button primary" type="submit" name="decision" value="ready">Add to backlog '+icon("arrow")+'</button>' : ""}`,
     true,
   );
   bindForm(async (form, submitter) => {
     const payload = organizationPayload(form);
     payload.id = id;
+    if (hosted) payload.expected_revision = item.revision;
     payload.effort_hours = Number(payload.effort_hours);
     const decision = submitter?.value;
     if (["ready","parked"].includes(decision)) payload.status = decision;
@@ -452,6 +493,7 @@ function itemDialog(id) {
   });
 }
 function importDialog() {
+  if (hosted) return hosted.importDialog();
   modal(
     "Bring your saves in.",
     `<p>Choose your LinkedIn data export. We’ll find the saved posts and keep your existing notes intact.</p><label class="dropzone" id="dropzone" for="archive-file">${icon("upload")}<strong>Drop your LinkedIn archive here</strong>or choose a ZIP / Saved Items CSV (up to 128 MiB)<input id="archive-file" type="file" accept=".zip,.csv" required></label><p class="helper">Re-import any time. Duplicate saves are skipped and your notes stay intact.</p><p>Need a test file? <a class="inline-link" href="${apiURL("/api/sample")}">Download a synthetic test ZIP</a> or <a class="inline-link" href="/?workspace=demo">explore the demo</a>.</p><p class="helper"><a href="https://www.linkedin.com/help/linkedin/answer/a1341346" target="_blank" rel="noopener noreferrer">How to request your Saved Items archive ↗</a></p>${state.imports.length ? `<div class="history"><strong>Last import</strong><br>${esc(state.imports[0].filename)} · ${state.imports[0].added} new · ${state.imports[0].duplicates} duplicates</div>` : ""}`,
@@ -489,14 +531,19 @@ function classifyDialog() {
   const eligible = state.items.filter(i => i.kind === "untriaged" && i.has_context && i.status === "inbox").length;
   const ai = state.ai?.available;
   modal("Find the useful next steps.",
-    `<div class="dialog-intro"><span class="intro-number">${eligible}</span><p>readable saves ready to organize.<br>Related ideas become projects, with small next steps to review.</p></div>${ai ? `<p>Use your OpenAI key to organize up to 20 saves per batch. Selected post text, notes, and goals are sent to OpenAI. API charges apply.</p><button class="button primary wide" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Organize ${Math.min(20,eligible)} ${eligible === 1 ? "save" : "saves"}</button><details><summary>Batch options</summary><label class="checkbox"><input id="classify-all" type="checkbox"> Continue through all ${eligible} readable saves (additional API usage)</label></details>` : `<p>Start with offline suggestions, or connect OpenAI for more specific actions and groups.</p><button class="button primary wide" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Organize with local rules</button><button class="quiet-link" data-action="settings">Connect OpenAI in Settings ↗</button>`}<details><summary>${ai ? "Other ways to organize" : "Use ChatGPT instead"}</summary>${ai ? `<p>Local rules use keywords and run offline. Suggestions are marked low confidence.</p><button class="button" data-action="run-classify" ${eligible ? "" : "disabled"}>Use local rules</button>` : ""}<p>Download a prompt, use it in ChatGPT, then paste the JSON response.</p><a class="quiet-link" href="${apiURL("/api/prompt")}">${icon("download")}Download prompt</a><div class="field"><label for="triage-json">ChatGPT response</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button" data-action="apply-triage">Apply response</button></details>`);
+    `<div class="dialog-intro"><span class="intro-number">${eligible}</span><p>readable saves ready to organize.<br>Related ideas become projects, with small next steps to review.</p></div>${ai ? `<p>Use your OpenAI key to organize up to 20 saves per batch. Selected post text, notes, and goals are sent to OpenAI. API charges apply.</p><button class="button primary wide" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Organize ${Math.min(20,eligible)} ${eligible === 1 ? "save" : "saves"}</button>${hosted ? "" : `<details><summary>Batch options</summary><label class="checkbox"><input id="classify-all" type="checkbox"> Continue through all ${eligible} readable saves (additional API usage)</label></details>`}` : `<p>Start with ${hosted ? "keyword suggestions" : "offline suggestions"}, or connect OpenAI for more specific actions and groups.</p><button class="button primary wide" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Organize with local rules</button><button class="quiet-link" data-action="settings">Connect OpenAI in Settings ↗</button>`}<details><summary>${ai ? "Other ways to organize" : "Use ChatGPT instead"}</summary>${ai ? `<p>Local rules use keywords${hosted ? " without calling an AI provider" : " and run offline"}. Suggestions are marked low confidence.</p><button class="button" data-action="run-classify" ${eligible ? "" : "disabled"}>Use local rules</button>` : ""}<p>Download a prompt, use it in ChatGPT, then paste the JSON response.</p><a class="quiet-link" href="${apiURL("/api/prompt")}" data-download="prompt">${icon("download")}Download prompt</a><div class="field"><label for="triage-json">ChatGPT response</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button" data-action="apply-triage">Apply response</button></details>`);
 }
 document.addEventListener("click", async (e) => {
   const button = e.target.closest(
-    "[data-view],[data-item],[data-project],[data-filter],[data-action],[data-status]",
+    "[data-view],[data-item],[data-project],[data-filter],[data-action],[data-status],[data-download]",
   );
   if (!button) return;
   try {
+    if (hosted && button.dataset.download) {
+      e.preventDefault();
+      await hosted.downloadPrompt();
+      return;
+    }
     if (button.dataset.status) {
       button.disabled = true;
       await api("/api/item", { id: button.dataset.id, status: button.dataset.status });
@@ -520,6 +567,45 @@ document.addEventListener("click", async (e) => {
       return render();
     }
     switch (button.dataset.action) {
+      case "hosted-account":
+        hosted?.accountDialog();
+        break;
+      case "hosted-signout":
+        try { await flushReadingProgress(); } finally { await hosted?.logout(); }
+        break;
+      case "hosted-delete":
+        await hosted?.removeAccount();
+        break;
+      case "hosted-confirm-delete":
+        button.disabled = true; await hosted?.confirmDelete();
+        break;
+      case "hosted-sample":
+        hosted?.sample();
+        break;
+      case "hosted-restore":
+        hosted?.restoreDialog();
+        break;
+      case "hosted-restore-review":
+        button.disabled = true;
+        try { await hosted?.reviewRestore(); } finally { button.disabled = false; }
+        break;
+      case "hosted-import-review":
+        button.disabled = true;
+        try { await hosted?.reviewImport(); } finally { button.disabled = false; }
+        break;
+      case "hosted-import-confirm":
+        button.disabled = true;
+        try { await hosted?.confirmImport(); } finally { button.disabled = false; }
+        break;
+      case "hosted-delete-item":
+        modal("Delete this save?", "<p>The saved text, notes and organization for this save will be permanently removed. Export a backup first if you want to keep them.</p>", `<button class="button" data-action="close">Keep save</button><button class="button danger" data-action="hosted-confirm-delete-item" data-id="${esc(button.dataset.id)}" data-revision="${esc(state.items.find(item => item.id === button.dataset.id)?.revision)}">Delete save</button>`);
+        break;
+      case "hosted-confirm-delete-item":
+        button.disabled = true;
+        await api("/api/delete", {id: button.dataset.id, expected_revision: Number(button.dataset.revision)});
+        if (readerId === button.dataset.id) readerId = "";
+        $("#modal").close(); await refresh(); toast("Save deleted.");
+        break;
       case "library-back":
         backToLibrary();
         break;
@@ -582,6 +668,11 @@ document.addEventListener("click", async (e) => {
       case "poll-retrieval":
         await pollRetrieval(true);
         break;
+      case "resume-retrieval":
+        button.disabled = true;
+        await api("/api/jobs/resume", {});
+        await refresh(); retrievalDialog();
+        break;
       case "stop-retrieval":
         await api("/api/retrieve/stop", {});
         await refresh();
@@ -616,6 +707,7 @@ document.addEventListener("click", async (e) => {
         render();
         break;
       case "export":
+        if (hosted) { button.disabled = true; await hosted.exportData(); button.disabled = false; break; }
         location.href = apiURL("/api/export", "hours=" + hours);
         break;
       case "run-classify": {
@@ -631,6 +723,10 @@ document.addEventListener("click", async (e) => {
       }
       case "run-ai": {
         button.disabled = true;
+        if (hosted) {
+          await api("/api/classify-ai", {});
+          $("#modal").close(); await refresh(); toast("Organizing your saves. You can keep browsing."); break;
+        }
         classificationCancelled = false;
         const all = $("#classify-all")?.checked;
         let total = 0;
@@ -655,6 +751,11 @@ document.addEventListener("click", async (e) => {
       }
       case "apply-triage": {
         const payload = JSON.parse($("#triage-json").value);
+        if (hosted) {
+          const items = Array.isArray(payload) ? payload : payload.items;
+          if (!Array.isArray(items) || items.length > 25) throw new Error("Paste a batch of up to 25 classified saves.");
+          if (items.some(item => !Number.isInteger(item.expected_revision))) throw new Error("Keep each save’s expected_revision from the downloaded prompt so newer edits are protected.");
+        }
         button.disabled = true;
         const result = await api(
           "/api/triage",
@@ -668,7 +769,7 @@ document.addEventListener("click", async (e) => {
     }
   } catch (error) {
     button.disabled = false;
-    if ($("#modal").open) {
+    if ($("#modal").open && $("#form-error")) {
       $("#form-error").textContent = error.message;
       $("#form-error").classList.remove("hidden");
     } else toast(error.message);
@@ -876,7 +977,8 @@ $("#modal").addEventListener("click", (e) => {
       e.target.close();
   }
 });
-refresh().catch((error) => {
+if (hosted) hosted.start({open: refresh, reset: resetHostedState, modal, toast, refresh});
+else refresh().catch((error) => {
   $("#main").innerHTML =
     `<div class="empty"><h3>Could not open the workbench</h3><p>${esc(error.message)} Make sure server.py is running, then reload.</p></div>`;
 });

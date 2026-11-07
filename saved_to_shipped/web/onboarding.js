@@ -1,6 +1,8 @@
 "use strict";
 
+let hostedPollFailures = 0;
 function pendingRetrieval() {
+  if (hosted) return (state.retrieval_jobs || []).find(job => ["QUEUED", "STARTING", "RUNNING", "APPLYING", "UNCERTAIN", "QUOTA_BLOCKED"].includes(job.status));
   return (state.retrieval_jobs || []).find(
     (job) => job.run_id && !job.applied_at,
   );
@@ -8,6 +10,16 @@ function pendingRetrieval() {
 
 function latestRetrieval() {
   return (state.retrieval_jobs || []).find((job) => job.status !== "DISMISSED");
+}
+function hostedJobDialog(job) {
+  const classification = job.kind === "classification";
+  const providerConsole = classification ? "https://platform.openai.com/usage" : "https://console.apify.com/actors/runs";
+  const uncertain = job.status === "UNCERTAIN";
+  const blocked = job.status === "QUOTA_BLOCKED";
+  const status = ({QUEUED: "Queued", STARTING: "Starting", RUNNING: "In progress", APPLYING: "Saving results", UNCERTAIN: "Needs checking", QUOTA_BLOCKED: "Paused at a limit"})[job.status] || job.status;
+  modal(uncertain ? "Check before trying again" : blocked ? "A little more room is needed" : classification ? "Finding the next steps" : "Retrieving your saves",
+    `<p><strong>${esc(status)}</strong> · ${Number(job.selected_count ?? job.total ?? 0)} selected saves.</p><p>${esc(job.error || (uncertain ? "The provider may have accepted this request. We will not submit it again automatically." : blocked ? "Processing reached a workspace or daily limit. Export or delete saves if storage is full, or return after the daily budget resets. Resume applies the existing results without submitting another paid request." : "You can keep browsing or close this tab. The server keeps the job’s progress."))}</p>${uncertain ? `<p>Review your <a class="inline-link" href="${providerConsole}" target="_blank" rel="noopener noreferrer">provider account ↗</a> before dismissing the uncertain submission. Dismissal does not cancel or refund provider work.</p>` : ""}`,
+    `<button class="button" data-action="close">Close</button>${uncertain ? '<button class="button" data-action="dismiss-retrieval">I checked the provider. Dismiss.</button>' : `<button class="button" data-action="stop-retrieval">Stop processing</button><button class="button primary" data-action="${blocked ? "resume-retrieval" : "poll-retrieval"}">${blocked ? "Resume existing results" : "Check progress"}</button>`}`);
 }
 
 function pipeline() {
@@ -18,7 +30,7 @@ function pipeline() {
   let title, description, action, label, image = "arrow";
   if (job && (["STARTING","UNCERTAIN"].includes(job.status) || pendingRetrieval())) {
     title = job.status === "UNCERTAIN" ? "Your last run needs a look." : "Your saves are on their way.";
-    description = job.error || `${job.total} selected saves. You can keep browsing while we check for results.`;
+    description = job.error || `${job.selected_count ?? job.total ?? 0} selected saves. You can keep browsing while we check for results.`;
     action = 'data-action="retrieve"'; label = "Check run"; image = "clock";
   } else if (reviews) {
     title = `${reviews} ${reviews === 1 ? "idea, ready for a decision." : "ideas, ready for a decision."}`;
@@ -51,13 +63,13 @@ function settingsDialog(afterSave) {
   const settings = state.settings || {};
   modal(
     "Make yourself at home.",
-    `<p>Connect your tools once. Your keys stay in a separate local settings file.</p><div class="provider-label">Post retrieval <span>${settings.extractor_available ? "Connected" : "Not connected"}</span></div>
+    `<p>Connect your tools once. ${hosted ? "Your keys are encrypted in your private cloud workspace and are never included in exports." : "Your keys stay in a separate local settings file."}</p><div class="provider-label">Post retrieval <span>${settings.extractor_available ? "Connected" : "Not connected"}</span></div>
     ${field("Apify API token", "apify_token", "", "input", `type="password" autocomplete="off" placeholder="${settings.extractor_available ? "Configured. Leave blank to keep it." : "Paste your Apify token"}"`)}
     <p class="helper"><a class="inline-link" href="https://console.apify.com/" target="_blank" rel="noopener noreferrer">Open Apify Console ↗</a> · Retrieval uses <a class="inline-link" href="https://apify.com/${esc(settings.actor || "data_minds/linkedin-post-scraper")}" target="_blank" rel="noopener noreferrer">${esc(settings.actor || "data_minds/linkedin-post-scraper")}</a>. Provider charges and plan limits apply.</p>
     <div class="provider-label">Idea organization <span>${settings.ai_available ? "Connected" : "Optional"}</span></div>
     ${field("OpenAI API key", "openai_key", "", "input", `type="password" autocomplete="off" placeholder="${settings.ai_available ? "Configured. Leave blank to keep it." : "Optional: enable AI project suggestions"}"`)}
     ${field("What would you like to build or learn?", "goals", state.goals || "", "textarea", 'maxlength="2000" placeholder="Optional: e.g. practical developer tools and small experiments with Rust."')}
-    <details><summary>Advanced settings</summary>${field("Model", "model", settings.model || "gpt-4.1-mini", "input", 'maxlength="100"')}<label class="checkbox"><input name="clear_apify_token" type="checkbox"> Remove the saved Apify key</label><label class="checkbox"><input name="clear_openai_key" type="checkbox"> Remove the saved OpenAI key</label><p class="helper">This does not unset keys provided through environment variables.</p></details>`,
+    <details><summary>Advanced settings</summary>${field("Model", "model", settings.model || "gpt-4.1-mini", "input", 'maxlength="100"')}<label class="checkbox"><input name="clear_apify_token" type="checkbox"> Remove the saved Apify key</label><label class="checkbox"><input name="clear_openai_key" type="checkbox"> Remove the saved OpenAI key</label>${hosted ? "" : '<p class="helper">This does not unset keys provided through environment variables.</p>'}</details>`,
     '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save settings</button>',
     true,
   );
@@ -72,6 +84,7 @@ function settingsDialog(afterSave) {
 }
 
 function retrievalDialog() {
+  if (hosted && pendingRetrieval()) return hostedJobDialog(pendingRetrieval());
   if (workspace === "demo") {
     modal(
       "Hosted retrieval",
@@ -100,7 +113,7 @@ function retrievalDialog() {
   const missing = state.items.filter(
     (item) =>
       item.platform === "linkedin" &&
-      !item.content &&
+      !(item.has_content ?? Boolean(item.content)) &&
       !["done", "parked"].includes(item.status),
   );
   const fresh = missing.filter(
@@ -116,8 +129,7 @@ function retrievalDialog() {
       "limit",
       [
         ["10", "10 saves"],
-        ["50", "50 saves"],
-        ["1000", "All eligible saves (up to 1000)"],
+        ...(hosted ? [["25", "25 saves"]] : [["50", "50 saves"], ["1000", "All eligible saves (up to 1000)"]]),
       ],
       "10",
     )}${field("Maximum Apify charge (USD)", "max_charge", 1, "input", 'type="number" min="0.01" max="20" step="0.01" required')}</div>
@@ -137,8 +149,8 @@ function retrievalDialog() {
 }
 
 function scheduleRetrieval() {
-  if (retrievalTimer || !pendingRetrieval()) return;
-  const delay = pendingRetrieval().error ? 30000 : 5000;
+  if (retrievalTimer || !pendingRetrieval() || (hosted && (document.visibilityState === "hidden" || hostedPollFailures >= 3 || ["UNCERTAIN", "QUOTA_BLOCKED"].includes(pendingRetrieval().status)))) return;
+  const delay = hosted ? 30000 : pendingRetrieval().error ? 30000 : 5000;
   retrievalTimer = setTimeout(async () => {
     retrievalTimer = null;
     await pollRetrieval(false);
@@ -146,11 +158,21 @@ function scheduleRetrieval() {
 }
 
 async function pollRetrieval(manual) {
+  const epoch = hosted?.epoch;
+  if (manual) hostedPollFailures = 0;
   clearTimeout(retrievalTimer);
   retrievalTimer = null;
   try {
-    const result = await api("/api/retrieve/poll", {});
+    const result = await api(hosted ? "/api/jobs/poll" : "/api/retrieve/poll", {});
+    if (hosted && epoch !== hosted.epoch) return;
+    hostedPollFailures = 0;
     await refresh();
+    if (hosted) {
+      const job = result.job || result;
+      if (job.status === "COMPLETED") toast(job.kind === "classification" ? "Your drafts are ready to review." : "Retrieved content is ready to explore.");
+      if (manual) { if (pendingRetrieval()) hostedJobDialog(pendingRetrieval()); else $("#modal").close(); }
+      return;
+    }
     if (result.applied_at) {
       const counts = result.counts;
       toast(
@@ -159,7 +181,14 @@ async function pollRetrieval(manual) {
       if (manual) $("#modal").close();
     } else if (manual) retrievalDialog();
   } catch (error) {
+    if (hosted && epoch !== hosted.epoch) return;
+    if (hosted) hostedPollFailures++;
     await refresh().catch(() => {});
     if (manual) toast(error.message);
   }
 }
+document.addEventListener("visibilitychange", () => {
+  if (!hosted) return;
+  if (document.visibilityState === "hidden") { clearTimeout(retrievalTimer); retrievalTimer = null; }
+  else scheduleRetrieval();
+});
