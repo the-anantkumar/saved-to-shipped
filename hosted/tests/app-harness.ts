@@ -1,7 +1,6 @@
 // Synthetic local entrypoint only. Not imported by the application or any deploy configuration.
 import { createLocalJWKSet, importJWK, SignJWT, decodeJwt } from 'jose';
-import { makeApp, Registry, type AppEnv } from '../src/app';
-import { Workspace as StorageWorkspace } from '../src/storage/workspace';
+import { makeApp, Registry, Workspace as AppWorkspace, type AppEnv } from '../src/app';
 import { verifyGoogleToken } from '../src/auth/token';
 import { reconcileJob } from '../src/jobs/orchestrator';
 import { Fault, type Access } from '../src/contracts';
@@ -39,13 +38,24 @@ export const fixtureFetch: typeof fetch = async (input, init) => {
   }
   throw new Error('Fixture outbound network is disabled');
 };
-export class Workspace extends StorageWorkspace {
+export class Workspace extends AppWorkspace {
+  async snapshot() {
+    return { tables: this.ctx.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '_cf_%' ORDER BY name").toArray().map(row => row.name),
+      alarm: await this.ctx.storage.getAlarm(), kvKeys: (await this.ctx.storage.list()).size, sqliteUsedBytes: this.ctx.storage.sql.databaseSize };
+  }
+  async testAlarm() { await this.alarm(); }
+  async legacyClose() {
+    for (const table of ['items', 'bodies', 'groups', 'settings', 'imports', 'jobs', 'credentials', 'receipts'])
+      this.ctx.storage.sql.exec(`DROP TABLE IF EXISTS ${table}`);
+    this.ctx.storage.sql.exec("UPDATE workspace SET status='closed',logical_bytes=0,item_count=0 WHERE singleton=1");
+    await this.ctx.storage.deleteAlarm();
+  }
   protected override async reconcile(access: Access): Promise<boolean> {
     if ((this.env as { TEST_MANUAL_JOBS?: string }).TEST_MANUAL_JOBS === 'true') return false;
     await reconcileJob(access, this, this.env, fixtureFetch); return true;
   }
 }
-interface Env extends AppEnv { TEST_JWKS: string; TEST_PRIVATE_KEY: string; TEST_REVOKED_UIDS?: string }
+interface Env extends AppEnv { WORKSPACES: DurableObjectNamespace<Workspace>; TEST_JWKS: string; TEST_PRIVATE_KEY: string; TEST_REVOKED_UIDS?: string }
 export default {
   async fetch(request: Request<unknown, IncomingRequestCfProperties>, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -75,6 +85,9 @@ export default {
     if (url.pathname === '/__fixture__/workspace') {
       const data = await request.json() as { access: Access; operation: string; input?: Record<string, unknown> };
       const stub = env.WORKSPACES.get(env.WORKSPACES.idFromName(`workspace:${data.access.uid}:${data.access.generation}`));
+      if (data.operation === 'test.snapshot') return Response.json({ ok: true, data: await stub.snapshot() });
+      if (data.operation === 'test.alarm') { await stub.testAlarm(); return Response.json({ ok: true, data: {} }); }
+      if (data.operation === 'test.legacyClose') { await stub.legacyClose(); return Response.json({ ok: true, data: {} }); }
       return Response.json(await stub.invoke(data.access, data.operation, data.input));
     }
     const app = makeApp({

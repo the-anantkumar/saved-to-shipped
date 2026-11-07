@@ -82,7 +82,9 @@ export class Registry extends DurableObject<Env> {
     if (operation === 'member') return member;
     if (operation === 'grant' || operation === 'cleanup.grant') {
       const cleanup = operation === 'cleanup.grant';
-      if (cleanup ? member.state === 'deleted' : member.state !== 'active') throw new Fault(403, 'MEMBERSHIP_REQUIRED', 'This workspace is unavailable.');
+      // Cleanup may finish after another request marked the generation deleted,
+      // or reclaim a legacy Workspace tombstone. It never authorizes user writes.
+      if (!cleanup && member.state !== 'active') throw new Fault(403, 'MEMBERSHIP_REQUIRED', 'This workspace is unavailable.');
       const kind = cleanup ? 'cleanup' : string(input.kind, 'Budget', 20, false);
       if (!['interactive', 'ingestion', 'completion', ...(cleanup ? ['cleanup'] : [])].includes(kind)) throw new Fault(400, 'INVALID_INPUT', 'Unknown budget.');
       if (['ingestion', 'completion'].includes(kind) && this.env.PROCESSING_OPEN !== 'true') throw new Fault(429, 'PROCESSING_PAUSED', 'Processing is temporarily paused.');

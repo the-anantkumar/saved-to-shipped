@@ -9,8 +9,9 @@ export async function workspaceRuntime({ persist, limits = {} } = {}) {
     workers: [{ config: {
       name: 'workspace-app-test', compatibilityDate: '2026-07-30',
       manifest: { mainModule: 'workspace.js', modules: { 'workspace.js': { type: 'esm', contents: await readFile('.local/build/tests/workspace-harness.js', 'utf8') } } },
-      exports: { Workspace: { type: 'durable-object', storage: 'sqlite' } },
+      exports: { Workspace: { type: 'durable-object', storage: 'sqlite' }, Authority: { type: 'durable-object', storage: 'sqlite' } },
       env: { WORKSPACES: { type: 'durable-object', worker: 'workspace-app-test', exportName: 'Workspace' },
+        AUTHORITY: { type: 'durable-object', worker: 'workspace-app-test', exportName: 'Authority' },
         ...Object.fromEntries(Object.entries(limits).map(([key, value]) => [key, { type: 'text', value: String(value) }])) },
     } }], host: '127.0.0.1', port: 0, resourcePersistencePath: persist,
     telemetry: { enabled: false }, enableDevRegistry: false, log: new Log(LogLevel.ERROR), cf: false,
@@ -28,7 +29,15 @@ export async function workspaceRuntime({ persist, limits = {} } = {}) {
       assert.equal(result.ok, true, `${operation}: ${JSON.stringify(result)}`); return result.data;
     },
     mutate(operation, input = {}, access = alice, name = access.uid) { return this.call(operation, { request_id: `request-${++request}`, ...input }, access, name); },
-    provision(access = alice, name = access.uid) { return this.call('provision', {}, access, name); },
+    async provision(access = alice, name = access.uid) {
+      await this.call('authority.reserve', {}, access, name);
+      return this.call('provision', {}, access, name);
+    },
+    async close(access = alice, name = access.uid) {
+      await this.call('delete.prepare', {}, access, name);
+      await this.call('authority.deleting', {}, access, name);
+      return this.call('close', {}, access, name);
+    },
     async capture(n, content = 'Learn an example', access = alice) { return this.mutate('capture', row(n, content), access); },
     dispose() { return mf.dispose(); },
   };

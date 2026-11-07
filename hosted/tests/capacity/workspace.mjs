@@ -26,8 +26,9 @@ async function runtime(persist, limits = {}) {
   const mf = new Miniflare({ workers: [{ config: {
     name: 'workspace-capacity-test', compatibilityDate: '2026-07-30',
     manifest: { mainModule: 'workspace.js', modules: { 'workspace.js': { type: 'esm', contents: bundle } } },
-    exports: { Workspace: { type: 'durable-object', storage: 'sqlite' } },
+    exports: { Workspace: { type: 'durable-object', storage: 'sqlite' }, Authority: { type: 'durable-object', storage: 'sqlite' } },
     env: { WORKSPACES: { type: 'durable-object', worker: 'workspace-capacity-test', exportName: 'Workspace' },
+      AUTHORITY: { type: 'durable-object', worker: 'workspace-capacity-test', exportName: 'Authority' },
       ...Object.fromEntries(Object.entries(limits).map(([key, value]) => [key, { type: 'text', value: String(value) }])) },
   } }], host: '127.0.0.1', port: 0, resourcePersistencePath: persist, telemetry: { enabled: false },
   enableDevRegistry: false, log: new Log(LogLevel.ERROR), cf: false });
@@ -45,6 +46,10 @@ async function runtime(persist, limits = {}) {
     async call(access, operation, input = {}) {
       const result = await this.invoke(access, operation, input);
       assert.ok(result.ok, `${operation}: ${JSON.stringify(result)}`); return result.data;
+    },
+    async provision(access) { await this.call(access, 'authority.reserve'); return this.call(access, 'provision'); },
+    async close(access) {
+      await this.call(access, 'delete.prepare'); await this.call(access, 'authority.deleting'); return this.call(access, 'close');
     },
     dispose: () => mf.dispose(),
   };
@@ -65,21 +70,25 @@ async function allocation(directory) {
   for (const file of files) sizes.set(file, (await stat(file)).size);
   const persistenceBytes = [...sizes.values()].reduce((sum, size) => sum + size, 0);
   assert.ok(persistenceBytes <= maxPersistenceBytes, 'Synthetic persistence exceeded its 64 MiB bound');
-  const workspaces = [];
+  const workspaces = [], nonWorkspaceDatabases = [];
   for (const file of files.filter(path => path.endsWith('.sqlite'))) {
     const db = new DatabaseSync(file, { readOnly: true });
     try {
-      if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='workspace'").get()) continue;
-      const control = db.prepare('SELECT uid,status,logical_bytes,item_count FROM workspace WHERE singleton=1').get();
       const pageCount = db.prepare('PRAGMA page_count').get().page_count;
       const freePages = db.prepare('PRAGMA freelist_count').get().freelist_count;
       const pageSize = db.prepare('PRAGMA page_size').get().page_size;
+      if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='workspace'").get()) {
+        nonWorkspaceDatabases.push({ tables: db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map(row => row.name),
+          allocatedBytes: pageCount * pageSize, fileBytes: sizes.get(file), walBytes: sizes.get(`${file}-wal`) ?? 0, shmBytes: sizes.get(`${file}-shm`) ?? 0 });
+        continue;
+      }
+      const control = db.prepare('SELECT uid,status,logical_bytes,item_count FROM workspace WHERE singleton=1').get();
       workspaces.push({ uid: control.uid, status: control.status, logicalBytes: control.logical_bytes, items: control.item_count,
         pageCount, freePages, pageSize, usedBytes: (pageCount - freePages) * pageSize, allocatedBytes: pageCount * pageSize,
         fileBytes: sizes.get(file), walBytes: sizes.get(`${file}-wal`) ?? 0, shmBytes: sizes.get(`${file}-shm`) ?? 0 });
     } finally { db.close(); }
   }
-  return { persistenceBytes, workspaces: workspaces.sort((a, b) => a.uid.localeCompare(b.uid)) };
+  return { persistenceBytes, workspaces: workspaces.sort((a, b) => a.uid.localeCompare(b.uid)), nonWorkspaceDatabases };
 }
 function text(seed, length, unicode = false) {
   let value = '', n = 0, characters = 0;
@@ -145,7 +154,7 @@ const report = { generatedAt: new Date().toISOString(), schema: 'app-v1', synthe
   dirty: Boolean(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' }).trim()),
   environment: { node: process.version, platform: process.platform, arch: process.arch },
   sourceSHA256: {}, bundleSHA256: hash(bundle),
-  boundary: 'Actual application Workspace in local Miniflare/workerd. No public Worker/registry, cloud meter, real Google account or paid provider. Elapsed request time is not Worker CPU or billable duration.',
+  boundary: 'Actual application Workspace in local Miniflare/workerd with a separate synthetic provisioning authority. No public Worker/registry, cloud meter, real Google account or paid provider. Elapsed request time is not Worker CPU or billable duration.',
   allocationBoundary: 'SQLite file/allocated/freelist/WAL/SHM sizes after workerd disposal. Transient WAL peaks, remote billing and account-wide capacity are not measured.',
   limits: { items: 1000, logicalBytes: 5_000_000, sqliteUsedBytes: 7_000_000, itemBytes: 131_072 },
   workBounds: { maxElapsedMs, maxPersistenceBytes, maxItemsPerRequest: 25, maxRowsJSONBytes: 220_000 }, profiles, scenarios: [],
@@ -173,7 +182,7 @@ for (const [target, profile] of [[500, 'typical'], [1000, 'typical'], [1000, 'un
     rt = await runtime(directory);
   }
   try {
-    await rt.call(access, 'provision');
+    await rt.provision(access);
     let accepted = 0, sequence = 0, single = false;
     const rows = Array.from({ length: target }, (_, n) => fixture(n, profile));
     while (accepted < rows.length) {
@@ -239,7 +248,7 @@ for (const [target, profile] of [[500, 'typical'], [1000, 'typical'], [1000, 'un
     await checkpoint('after-reinsertion');
     // Restore the complete pre-deletion backup, even if reinsertion into the
     // churned original was capacity-limited. Never drop unaccepted rows silently.
-    const backup = beforeDeletion; await rt.call(recovered, 'provision');
+    const backup = beforeDeletion; await rt.provision(recovered);
     offset = 0; restoreSequence = 0;
     scenario.recovery = { attemptedItems: backup.items.length, restoredItems: 0, complete: false, rejections: [] };
     single = false;
@@ -260,9 +269,33 @@ for (const [target, profile] of [[500, 'typical'], [1000, 'typical'], [1000, 'un
     assert.equal(recoveredBackup.workspace.goals, backup.workspace.goals);
     Object.assign(scenario.recovery, { complete: offset === backup.items.length, acceptedSourceAndAnnotationsEqual: true, groupsAndGoalsEqual: true, sourceExportSHA256: hash(JSON.stringify(backup.items)) });
     await checkpoint('after-restore-into-new-workspace');
-    await rt.call(access, 'close'); await rt.call(recovered, 'close'); await rt.dispose();
+    await rt.close(access); await rt.close(recovered);
+    scenario.purged = [];
+    for (const owner of [access, recovered]) {
+      const snapshot = await rt.call(owner, 'test.snapshot');
+      assert.deepEqual(snapshot.tables, []); assert.equal(snapshot.kvKeys, 0); assert.equal(snapshot.alarm, null);
+      scenario.purged.push({ uid: owner.uid, ...snapshot });
+    }
+    await rt.dispose();
     scenario.closedAllocation = await allocation(directory);
-    assert.ok(scenario.closedAllocation.workspaces.every(row => row.status === 'closed' && row.logicalBytes === 0 && row.items === 0));
+    assert.equal(scenario.closedAllocation.workspaces.length, 0, 'Workspace schemas are purged, not retained as closed tombstones');
+    rt = await runtime(directory);
+    for (const [index, owner] of [access, recovered].entries()) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        assert.equal((await rt.invoke(owner, 'state')).code, 'NOT_FOUND');
+        assert.equal((await rt.invoke(owner, 'provision')).code, 'PROVISIONING_DENIED');
+        await rt.call(owner, 'test.alarm');
+        const snapshot = await rt.call(owner, 'test.snapshot');
+        assert.deepEqual({ uid: owner.uid, ...snapshot }, scenario.purged[index]);
+      }
+    }
+    await rt.dispose();
+    scenario.postPurgeReadsAllocation = await allocation(directory);
+    assert.equal(scenario.postPurgeReadsAllocation.workspaces.length, 0);
+    assert.equal(scenario.postPurgeReadsAllocation.persistenceBytes, scenario.closedAllocation.persistenceBytes);
+    assert.deepEqual(scenario.postPurgeReadsAllocation.nonWorkspaceDatabases.map(row => JSON.stringify(row)).sort(),
+      scenario.closedAllocation.nonWorkspaceDatabases.map(row => JSON.stringify(row)).sort());
+    scenario.lateRequestsRecreatedStorage = false;
     scenario.complete = true; await saveReport();
     console.log(`${profile} target=${target}: accepted=${accepted}, initial logical=${scenario.snapshots[0].usage.logicalBytes}, used=${scenario.snapshots[0].usage.sqliteUsedBytes}; recovered=${scenario.recovery.restoredItems}/${scenario.recovery.attemptedItems}`);
   } finally { await rt.dispose(); await rm(directory, { recursive: true, force: true }); }
@@ -274,7 +307,7 @@ for (const [target, profile] of [[500, 'typical'], [1000, 'typical'], [1000, 'un
   const directory = await mkdtemp(join(tmpdir(), 'save2ship-final-pressure-'));
   const access = accessFor('used-pressure'); let rt = await runtime(directory, { WORKSPACE_USED_LIMIT: 100_000 });
   try {
-    await rt.call(access, 'provision');
+    await rt.provision(access);
     const result = await rt.call(access, 'capture', request({ url: fixture(9999, 'typical').url, title: 'Quota control', content: 'Small synthetic source' }));
     const before = await exported(rt, access);
     report.usedPageRollback = await expectRollback(rt, access, 'item', { id: result.id, expected_revision: result.revision, note: '知'.repeat(19_000) }, ['STORAGE_PRESSURE']);

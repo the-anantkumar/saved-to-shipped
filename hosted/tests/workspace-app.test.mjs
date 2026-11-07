@@ -11,6 +11,9 @@ test('workspace ownership and deletion survive restart without reprovisioning ol
   let rt = await workspaceRuntime({ persist });
   t.after(async () => { await rt.dispose(); await rm(persist, { recursive: true, force: true }); });
   assert.equal((await rt.invoke('state')).code, 'NOT_FOUND');
+  assert.equal((await rt.invoke('provision')).code, 'PROVISIONING_DENIED');
+  const empty = await rt.call('test.snapshot');
+  assert.deepEqual(empty.tables, []); assert.equal(empty.alarm, null);
   await rt.provision(); await rt.provision(bob);
   const a = await rt.capture(1), b = await rt.capture(2, 'Build something', bob);
   assert.equal((await rt.invoke('detail', { id: a.id }, bob)).code, 'NOT_FOUND');
@@ -18,11 +21,97 @@ test('workspace ownership and deletion survive restart without reprovisioning ol
   assert.equal((await rt.invoke('state', {}, { ...alice, generation: 'stale' })).code, 'NOT_FOUND');
   await rt.call('suspend'); assert.equal((await rt.invoke('detail', { id: a.id })).code, 'MEMBERSHIP_SUSPENDED');
   await rt.call('resume'); assert.equal((await rt.call('detail', { id: a.id })).content, 'Learn an example');
-  await rt.call('close'); assert.equal((await rt.call('close')).replayed, true);
-  assert.equal((await rt.invoke('provision')).code, 'WORKSPACE_DELETED');
+  assert.equal((await rt.invoke('close')).code, 'INVALID_TRANSITION');
+  await rt.close(); assert.equal((await rt.invoke('close')).code, 'NOT_FOUND');
+  assert.equal((await rt.invoke('provision')).code, 'PROVISIONING_DENIED');
+  assert.deepEqual(await rt.call('test.snapshot'), empty);
   await rt.dispose(); rt = await workspaceRuntime({ persist });
-  assert.equal((await rt.invoke('state')).code, 'WORKSPACE_DELETED');
+  for (let n = 0; n < 3; n++) {
+    assert.equal((await rt.invoke('state')).code, 'NOT_FOUND');
+    assert.equal((await rt.invoke('provision')).code, 'PROVISIONING_DENIED');
+    assert.equal((await rt.invoke('credential.set', { request_id: `late-key-${n}`, provider: 'apify', record: null })).code, 'NOT_FOUND');
+    await rt.call('test.alarm');
+    assert.deepEqual(await rt.call('test.snapshot'), empty);
+  }
   assert.equal((await rt.call('detail', { id: b.id }, bob)).content, 'Build something');
+});
+
+test('legacy closed tombstones are fully purged and frozen workspaces cannot be reprovisioned', async t => {
+  const rt = await workspaceRuntime(); t.after(() => rt.dispose());
+  await rt.call('test.legacyClosed');
+  assert.equal((await rt.invoke('provision')).code, 'WORKSPACE_DELETED');
+  await rt.call('close');
+  const empty = await rt.call('test.snapshot');
+  assert.deepEqual(empty.tables, []); assert.equal(empty.kvKeys, 0); assert.equal(empty.alarm, null);
+  assert.equal((await rt.invoke('provision')).code, 'PROVISIONING_DENIED');
+  await rt.provision(bob);
+  await rt.call('delete.prepare', {}, bob);
+  assert.equal((await rt.invoke('provision', {}, bob)).code, 'MEMBERSHIP_SUSPENDED');
+});
+
+test('library revisions change only with item saves or deletes and list cursors tolerate job bookkeeping', async t => {
+  const rt = await workspaceRuntime(); t.after(() => rt.dispose()); await rt.provision();
+  assert.equal((await rt.call('state')).library_revision, 0);
+  const first = await rt.capture(901, ''), second = await rt.capture(902);
+  assert.equal(first.library_revision, 1); assert.equal(second.library_revision, 2);
+  const list = await rt.call('list', { limit: 1 }), backup = await rt.call('export', { limit: 1 });
+  const job = await begin(rt, first.item);
+  assert.equal(job.library_revision, 2);
+  await rt.call('job.update', { id: job.id, expected_job_revision: job.revision, patch: { next_poll_at: 0 } });
+  assert.equal((await rt.call('state')).library_revision, 2);
+  assert.equal((await rt.call('list', { cursor: list.next_cursor })).library_revision, 2);
+  assert.equal((await rt.invoke('export', { cursor: backup.next_cursor })).code, 'REVISION_CONFLICT');
+  const patch = { id: first.id, expected_revision: first.revision, note: 'A changed note', request_id: 'revision-note' };
+  assert.equal((await rt.call('item', patch)).library_revision, 3);
+  assert.equal((await rt.call('item', patch)).library_revision, 3);
+  assert.equal((await rt.invoke('list', { cursor: list.next_cursor })).code, 'REVISION_CONFLICT');
+  assert.equal((await rt.mutate('delete', { id: second.id, expected_revision: second.revision })).library_revision, 4);
+  assert.equal((await rt.call('item', patch)).library_revision, 4, 'receipt replay returns current library revision');
+  const current = await rt.call('detail', { id: first.id });
+  const failed = await rt.invoke('item', { id: first.id, expected_revision: current.revision, status: 'ready', request_id: 'invalid-edit' });
+  assert.equal(failed.ok, false); assert.equal((await rt.call('state')).library_revision, 4);
+  const pending = await rt.call('job.get', { id: job.id });
+  const applied = await rt.call('job.apply', { id: job.id, expected_job_revision: pending.revision,
+    candidates: [{ id: first.id, patch: { content: 'New retrieved source' }, quality: 4 }], cursor: 1, terminal: true });
+  assert.equal(applied.library_revision, 5);
+  assert.equal((await rt.call('state')).library_revision, 5);
+});
+
+test('active legacy schema migrates without changing saves, annotations or export consistency', async t => {
+  const persist = await mkdtemp(join(tmpdir(), 'save2ship-library-migration-'));
+  let rt = await workspaceRuntime({ persist });
+  t.after(async () => { await rt.dispose(); await rm(persist, { recursive: true, force: true }); });
+  await rt.provision();
+  const saved = await rt.capture(904, 'Keep the source and context');
+  await rt.mutate('item', { id: saved.id, expected_revision: saved.revision, note: 'Retain annotations', kind: 'learning' });
+  await rt.mutate('settings', { goals: 'Keep separate settings too' });
+  const backup = await rt.call('export'), before = await rt.call('state');
+  assert.ok(before.revision > before.library_revision);
+  await rt.call('test.legacySchema'); await rt.dispose();
+  rt = await workspaceRuntime({ persist });
+  const after = await rt.call('state');
+  assert.equal(after.library_revision, before.revision); assert.equal(after.revision, before.revision);
+  const migrated = await rt.call('export');
+  assert.deepEqual(migrated.items, backup.items); assert.deepEqual(migrated.workspace, backup.workspace);
+  const current = await rt.call('detail', { id: saved.id });
+  assert.equal((await rt.mutate('reading', { id: saved.id, expected_revision: current.revision, progress: 50, request_id: 'post-migration-reading' })).library_revision, before.revision + 1);
+});
+
+test('bounded private search covers full notes, source, Unicode, tags and sections without returning bodies', async t => {
+  const rt = await workspaceRuntime(); t.after(() => rt.dispose()); await rt.provision(); await rt.provision(bob);
+  await rt.mutate('restore', { import_id: 'search-fixture', sequence: 0, rows: [{ ...row(903, 'Visible source followed by '.repeat(50) + 'deep-source-marker'), tags: ['sqlite-tag'] }] });
+  let saved = (await rt.call('list')).items[0];
+  saved = (await rt.mutate('item', { id: saved.id, expected_revision: saved.revision, note: 'A hidden annotated thought CAFÉ 学習', new_project_name: 'A named section' })).item;
+  for (const query of ['annotated', 'café', '学習', 'sqlite-tag', 'named section', 'deep-source-marker']) {
+    const found = await rt.call('search', { query });
+    assert.deepEqual(found.ids, [saved.id], query); assert.equal(found.library_revision, 2);
+    assert.deepEqual(Object.keys(found).sort(), ['ids', 'library_revision']);
+  }
+  assert.deepEqual((await rt.call('search', { query: 'annotated' }, bob)).ids, []);
+  assert.equal((await rt.invoke('search', { query: 'annotated' }, bob, alice.uid)).code, 'NOT_FOUND');
+  assert.equal((await rt.invoke('search', { query: 'x'.repeat(201) })).code, 'INVALID_INPUT');
+  assert.deepEqual((await rt.call('search', { query: ' ' })).ids, [saved.id]);
+  assert.deepEqual((await rt.call('search', { query: 'missing' })).ids, []);
 });
 
 test('metadata pages omit bodies, detail hydrates them, stale mutations conflict and exact replay is safe', async t => {
@@ -37,6 +126,32 @@ test('metadata pages omit bodies, detail hydrates them, stale mutations conflict
   assert.equal((await rt.invoke('item', { ...patch, note: 'Different' })).code, 'IDEMPOTENCY_CONFLICT');
   assert.equal((await rt.invoke('item', { ...patch, request_id: 'stale' })).code, 'REVISION_CONFLICT');
   assert.equal((await rt.call('detail', { id: captured.id })).note, 'My private annotation');
+});
+
+test('opaque cache revisions distinguish recreated links even when numeric item revisions coincide', async t => {
+  const rt = await workspaceRuntime(); t.after(() => rt.dispose()); await rt.provision();
+  const captured = await rt.capture(905, 'Original source');
+  const old = (await rt.mutate('item', { id: captured.id, expected_revision: captured.revision, note: 'Old private note' })).item;
+  assert.equal(typeof old.cache_revision, 'string');
+  assert.notEqual(old.cache_revision, captured.item.cache_revision);
+  assert.equal((await rt.call('list')).items[0].cache_revision, old.cache_revision);
+  assert.equal((await rt.call('detail', { id: old.id })).cache_revision, old.cache_revision);
+  const deletion = { id: old.id, expected_revision: old.revision, request_id: 'delete-before-recreate' };
+  await rt.call('delete', deletion);
+  const recreated = await rt.capture(905, 'Replacement source');
+  assert.equal(recreated.id, old.id);
+  // Deliberately exercise the collision boundary independently of today's
+  // workspace-wide revision floor for new items, as a legacy cache may collide.
+  await rt.call('test.itemRevision', { id: recreated.id, revision: old.revision });
+  const detail = await rt.call('detail', { id: old.id }), listed = (await rt.call('list')).items[0];
+  assert.equal(detail.revision, old.revision); assert.equal(listed.revision, old.revision);
+  assert.notEqual(detail.cache_revision, old.cache_revision); assert.equal(listed.cache_revision, detail.cache_revision);
+  assert.equal(detail.content, 'Replacement source'); assert.equal(detail.note, '');
+  const replayed = await rt.call('delete', deletion);
+  assert.equal(replayed.replayed, true); assert.equal(replayed.deleted, true);
+  assert.equal(replayed.item.cache_revision, detail.cache_revision);
+  assert.equal(replayed.item.content, 'Replacement source');
+  assert.equal(Object.hasOwn((await rt.call('export')).items[0], 'cache_revision'), false);
 });
 
 test('last item slot is atomic and failed inline groups or quota writes leave prior state intact', async t => {
@@ -145,9 +260,10 @@ test('classification skips stale revisions and deletion blocks all late job or c
   await rt.mutate('item', { id: item.id, expected_revision: item.revision, note: 'New direction while AI runs' });
   const result = await rt.call('job.apply', { id: job.id, expected_job_revision: job.revision, candidates: [{ id: item.id, patch: { kind: 'project' } }], terminal: true, cursor: 1 });
   assert.equal(result.skipped, 1); assert.equal((await rt.call('detail', { id: item.id })).kind, 'untriaged');
-  await rt.call('close');
-  assert.equal((await rt.invoke('job.update', { id: job.id, expected_job_revision: result.revision, patch: { status: 'RUNNING' } })).code, 'WORKSPACE_DELETED');
-  assert.equal((await rt.invoke('credential.set', { request_id: 'late-key', provider: 'apify', record: null })).code, 'WORKSPACE_DELETED');
+  await rt.close();
+  assert.equal((await rt.invoke('job.update', { id: job.id, expected_job_revision: result.revision, patch: { status: 'RUNNING' } })).code, 'NOT_FOUND');
+  assert.equal((await rt.invoke('credential.set', { request_id: 'late-key', provider: 'apify', record: null })).code, 'NOT_FOUND');
+  assert.deepEqual((await rt.call('test.snapshot')).tables, []);
 });
 
 test('settings bundle is atomic and Unicode case-folded section names reuse existing IDs', async t => {

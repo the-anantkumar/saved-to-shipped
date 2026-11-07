@@ -3,31 +3,34 @@ import { Fault, LIMITS, failure, integer, object, string, type Access, type Inpu
 import { boundedJson, check, classification, digest, editItem, editReading, hasContext, importedItem, localClassification, metadata, now, readingState, size, type Group, type Item } from './domain';
 import { foldName } from './casefold';
 
-type Control = { uid: string; generation: string; status: string; revision: number; logical_bytes: number; item_count: number; lifecycle_epoch: number };
+type Control = { uid: string; generation: string; status: string; revision: number; library_revision: number; logical_bytes: number; item_count: number; lifecycle_epoch: number };
 type ItemRow = { id: string; source: string; revision: number; meta: string; bytes: number; origin_job: string; origin_quality: number; source_revision: number; incarnation: string };
 type RecordRow = { id: string; data: string; bytes: number };
 type Table = 'groups' | 'settings' | 'imports' | 'jobs' | 'credentials' | 'receipts';
 const TABLES: Table[] = ['groups', 'settings', 'imports', 'jobs', 'credentials', 'receipts'];
-const READS = new Set(['state', 'list', 'detail', 'details', 'export', 'import.plan', 'credential.get', 'job.get']);
+const READS = new Set(['state', 'list', 'search', 'detail', 'details', 'export', 'import.plan', 'credential.get', 'job.get']);
 const TERMINAL = new Set(['COMPLETE', 'COMPLETED', 'DISMISSED', 'CANCELLED', 'DELETED', 'FAILED']);
 const USER_MUTATIONS = new Set(['capture', 'item', 'delete', 'move', 'reading', 'project', 'settings', 'classify', 'triage', 'import', 'restore', 'credential.set', 'job.begin']);
 
 /** Production storage contract; separate from the preserved P1 measurement class. */
-export class Workspace extends DurableObject<StorageEnv> {
+export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObject<Env> {
   private reservationCredit = 0;
-  constructor(ctx: DurableObjectState, env: StorageEnv) {
-    super(ctx, env);
+  private schemaReady = false;
+  private hasWorkspace: boolean | undefined;
+  // Construction and absent-object reads must never allocate schema or alarms.
+  private schema() {
     this.sql(`CREATE TABLE IF NOT EXISTS workspace (
       singleton INTEGER PRIMARY KEY CHECK(singleton=1), uid TEXT NOT NULL, generation TEXT NOT NULL,
-      status TEXT NOT NULL, revision INTEGER NOT NULL, logical_bytes INTEGER NOT NULL, item_count INTEGER NOT NULL, lifecycle_epoch INTEGER NOT NULL DEFAULT 0)`);
-    if (!this.sql<{ name: string }>('PRAGMA table_info(workspace)').some(column => column.name === 'lifecycle_epoch'))
+      status TEXT NOT NULL, revision INTEGER NOT NULL, library_revision INTEGER NOT NULL DEFAULT 0,
+      logical_bytes INTEGER NOT NULL, item_count INTEGER NOT NULL, lifecycle_epoch INTEGER NOT NULL DEFAULT 0)`);
+    this.hasWorkspace = true;
+    const columns = this.sql<{ name: string }>('PRAGMA table_info(workspace)');
+    if (!columns.some(column => column.name === 'lifecycle_epoch'))
       this.sql('ALTER TABLE workspace ADD COLUMN lifecycle_epoch INTEGER NOT NULL DEFAULT 0');
-    if (this.control()?.status !== 'closed') this.schema();
-  }
-  private sql<T = Record<string, unknown>>(query: string, ...bindings: (string | number | null)[]): T[] {
-    return this.ctx.storage.sql.exec(query, ...bindings).toArray() as T[];
-  }
-  private schema() {
+    if (!columns.some(column => column.name === 'library_revision')) {
+      this.sql('ALTER TABLE workspace ADD COLUMN library_revision INTEGER NOT NULL DEFAULT 0');
+      this.sql('UPDATE workspace SET library_revision=revision WHERE singleton=1');
+    }
     this.sql(`CREATE TABLE IF NOT EXISTS items (
       id TEXT PRIMARY KEY, source TEXT UNIQUE NOT NULL, revision INTEGER NOT NULL,
       kind TEXT NOT NULL, status TEXT NOT NULL, group_id TEXT NOT NULL, saved_at TEXT NOT NULL,
@@ -38,8 +41,53 @@ export class Workspace extends DurableObject<StorageEnv> {
     this.sql('CREATE INDEX IF NOT EXISTS items_classify ON items(kind,status,has_context,id)');
     this.sql('CREATE TABLE IF NOT EXISTS bodies (id TEXT PRIMARY KEY, body TEXT NOT NULL)');
     for (const table of TABLES) this.sql(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, data TEXT NOT NULL, bytes INTEGER NOT NULL)`);
+    this.schemaReady = true;
   }
-  private control() { return this.sql<Control>('SELECT * FROM workspace WHERE singleton=1')[0]; }
+  private sql<T = Record<string, unknown>>(query: string, ...bindings: (string | number | null)[]): T[] {
+    return this.ctx.storage.sql.exec(query, ...bindings).toArray() as T[];
+  }
+  private control() {
+    this.hasWorkspace ??= this.sql("SELECT name FROM sqlite_master WHERE type='table' AND name='workspace'").length > 0;
+    return this.hasWorkspace ? this.sql<Control>('SELECT * FROM workspace WHERE singleton=1')[0] : undefined;
+  }
+  /** The application must verify a fresh, matching Registry reservation. */
+  protected async authorizeProvision(_access: Access): Promise<void> {
+    throw new Fault(403, 'PROVISIONING_DENIED', 'Workspace provisioning is not authorized.');
+  }
+  private async provision(access: Access): Promise<Result> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      try {
+        const existing = this.control();
+        if (existing) {
+          this.owned(access);
+          return { ok: true, data: { provisioned: true, revision: existing.revision, library_revision: existing.library_revision ?? existing.revision } };
+        }
+        // No await between fresh authority and the synchronous owner/schema commit.
+        await this.authorizeProvision(access);
+        return this.ctx.storage.transactionSync(() => {
+          this.schema();
+          this.sql('INSERT INTO workspace(singleton,uid,generation,status,revision,library_revision,logical_bytes,item_count) VALUES(1,?,?,?,0,0,0,0)', access.uid, access.generation, 'active');
+          this.put('settings', 'workspace', this.settings()); this.guard();
+          return { ok: true, data: { provisioned: true, revision: 0, library_revision: 0 } };
+        });
+      } catch (error) { this.hasWorkspace = undefined; this.schemaReady = false; return failure(error); }
+    });
+  }
+  private async close(access: Access): Promise<Result> {
+    return this.ctx.blockConcurrencyWhile(async () => {
+      try {
+        const current = this.control();
+        check(current && current.uid === access.uid && current.generation === access.generation, 'NOT_FOUND', 'Workspace not found.', 404);
+        check(['deleting', 'closed'].includes(current.status), 'INVALID_TRANSITION', 'Freeze this workspace before deleting it.', 409);
+        await this.ctx.storage.deleteAlarm();
+        // deleteAll is atomic and deallocates SQL, KV and internal object metadata.
+        // A SQL tombstone would retain allocation; Registry owns the terminal state.
+        await this.ctx.storage.deleteAll();
+        this.hasWorkspace = false; this.schemaReady = false; this.reservationCredit = 0;
+        return { ok: true, data: { deleted: true } };
+      } catch (error) { this.hasWorkspace = undefined; this.schemaReady = false; return failure(error); }
+    });
+  }
   private owned(access: Access, allowSuspended = false): Control {
     const control = this.control();
     if (!control || control.uid !== access.uid || control.generation !== access.generation)
@@ -95,6 +143,9 @@ export class Workspace extends DurableObject<StorageEnv> {
     for (const row of stale) this.remove(table, row.id);
   }
   private row(id: string) { return this.sql<ItemRow>('SELECT * FROM items WHERE id=?', id)[0]; }
+  private cacheRevision(row: Pick<ItemRow, 'incarnation' | 'revision'>): string {
+    return `${row.incarnation}:${row.revision}`;
+  }
   private get(id: unknown): { item: Item; row: ItemRow } {
     const ident = string(id, 'Item ID', 50, false), row = this.row(ident);
     if (!row) throw new Fault(404, 'NOT_FOUND', 'Save not found.');
@@ -102,7 +153,7 @@ export class Workspace extends DurableObject<StorageEnv> {
   }
   private detail(id: unknown): Input {
     const { item, row } = this.get(id);
-    return { ...item, ...metadata(item, row.revision), content: item.content, note: item.note,
+    return { ...item, ...metadata(item, row.revision), cache_revision: this.cacheRevision(row), content: item.content, note: item.note,
       why: item.why, next_action: item.next_action, definition_of_done: item.definition_of_done,
       ...(item.enrichment ? { enrichment: item.enrichment } : {}) };
   }
@@ -119,6 +170,7 @@ export class Workspace extends DurableObject<StorageEnv> {
     item.id, `${item.platform}\0${item.url}`, revision, item.kind, item.status, String(item.project_id ?? ''), item.saved_at, Number(hasContext(item)),
     JSON.stringify(metadata(item, revision)), bytes, origin?.job ?? '', origin?.quality ?? 0, sourceRevision, previous?.incarnation ?? crypto.randomUUID());
     this.sql('INSERT INTO bodies(id,body) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET body=excluded.body', item.id, body);
+    this.sql('UPDATE workspace SET library_revision=library_revision+1 WHERE singleton=1');
   }
   private expect(row: ItemRow, input: Input) {
     check(input.expected_revision === row.revision, 'REVISION_CONFLICT', 'This save changed. Reload it before saving your edit.', 409);
@@ -147,7 +199,7 @@ export class Workspace extends DurableObject<StorageEnv> {
     const settings = this.settings();
     const publicSettings = { extractor_available: Boolean(this.record('credentials', 'apify')),
       ai_available: Boolean(this.record('credentials', 'openai')), model: settings.model, actor: 'data_minds/linkedin-post-scraper' };
-    return { version: 1, revision: this.control()!.revision, items: [], projects: this.records('groups').reverse(), imports: this.records('imports').map(record => this.importSummary(record)),
+    return { version: 1, revision: this.control()!.revision, library_revision: this.control()!.library_revision, items: [], projects: this.records('groups').reverse(), imports: this.records('imports').map(record => this.importSummary(record)),
       goals: settings.goals ?? '', board_order: settings.board_order ?? [], settings: publicSettings,
       ai: { available: publicSettings.ai_available, model: settings.model },
       retrieval_jobs: this.records<StoredJob>('jobs').map(job => this.publicJob(job)),
@@ -163,33 +215,34 @@ export class Workspace extends DurableObject<StorageEnv> {
   }
   private page(input: Input, exporting: boolean) {
     const limit = input.limit === undefined ? LIMITS.page : integer(input.limit, 'Page size', 1, LIMITS.page);
-    let after = ''; const revision = this.control()!.revision;
+    let after = ''; const { revision, library_revision } = this.control()!;
+    const snapshotRevision = exporting ? revision : library_revision;
     if (input.cursor) {
       try {
         const cursor = JSON.parse(atob(string(input.cursor, 'Cursor', 300, false)));
-        check(cursor.revision === revision, 'REVISION_CONFLICT', 'The workspace changed. Restart this list or export.', 409);
+        check(cursor.revision === snapshotRevision && cursor.exporting === exporting, 'REVISION_CONFLICT', 'The workspace changed. Restart this list or export.', 409);
         after = string(cursor.after, 'Cursor', 50);
       } catch (error) { if (error instanceof Fault) throw error; throw new Fault(400, 'INVALID_INPUT', 'Invalid cursor.'); }
     }
     const rows = this.sql<ItemRow>('SELECT * FROM items WHERE id>? ORDER BY id LIMIT ?', after, limit + 1);
     const visible: ItemRow[] = [], items: unknown[] = []; let responseBytes = 0;
     for (const row of rows.slice(0, limit)) {
-      const item = exporting ? this.get(row.id).item : JSON.parse(row.meta), bytes = size(item);
+      const item = exporting ? this.get(row.id).item : { ...JSON.parse(row.meta), cache_revision: this.cacheRevision(row) }, bytes = size(item);
       if (items.length && responseBytes + bytes > 131_072) break;
       visible.push(row); items.push(item); responseBytes += bytes;
     }
-    const next = rows.length > visible.length ? btoa(JSON.stringify({ revision, after: visible.at(-1)!.id })) : null;
+    const next = rows.length > visible.length ? btoa(JSON.stringify({ revision: snapshotRevision, exporting, after: visible.at(-1)!.id })) : null;
     const settings = this.settings();
-    return { items, next_cursor: next, revision,
+    return { items, next_cursor: next, revision, library_revision,
       ...(exporting && !input.cursor ? { workspace: { version: 1, projects: this.records('groups').reverse(), imports: this.records('imports').map(record => this.importSummary(record)), goals: settings.goals ?? '', board_order: settings.board_order ?? [] } } : {}) };
   }
   private changed(id: string): Input {
     const item = this.detail(id);
-    return { id, item, revision: item.revision, workspace_revision: this.control()!.revision, reading: item.reading };
+    return { id, item, revision: item.revision, workspace_revision: this.control()!.revision, library_revision: this.control()!.library_revision, reading: item.reading };
   }
   private receiptResult(saved: Input): Input {
-    const result: Input = { ...object(saved.result ?? {}), replayed: true, workspace_revision: this.control()!.revision };
-    if (result._job === true && typeof result.job_id === 'string') return { ...this.job(result.job_id), replayed: true };
+    const result: Input = { ...object(saved.result ?? {}), replayed: true, workspace_revision: this.control()!.revision, library_revision: this.control()!.library_revision };
+    if (result._job === true && typeof result.job_id === 'string') return { ...this.job(result.job_id), replayed: true, workspace_revision: result.workspace_revision, library_revision: result.library_revision };
     if (typeof result.project_id === 'string') result.project = this.record('groups', result.project_id);
     if (typeof result.id === 'string' && this.row(result.id)) Object.assign(result, this.changed(result.id));
     if (typeof result.job_id === 'string') result.job = this.record('jobs', result.job_id);
@@ -208,6 +261,8 @@ export class Workspace extends DurableObject<StorageEnv> {
     try {
       check(typeof access?.uid === 'string' && access.uid.length > 0 && access.uid.length <= 128 && typeof access.generation === 'string' && access.generation.length <= 100);
       object(input); check(size(input) <= LIMITS.requestBytes, 'REQUEST_TOO_LARGE', 'Use a smaller request.', 413);
+      if (operation === 'provision') return await this.provision(access);
+      if (operation === 'close') return await this.close(access);
       const prepared: Item[] = [];
       if (['capture', 'import', 'import.plan', 'restore'].includes(operation)) {
         const rows = operation === 'capture' ? [input] : input.rows ?? input.items ?? [];
@@ -221,19 +276,8 @@ export class Workspace extends DurableObject<StorageEnv> {
       const fingerprint = USER_MUTATIONS.has(operation) ? await digest(JSON.stringify({ operation, input: receiptInput })) : '';
       const outcome = this.ctx.storage.transactionSync((): Result => {
         this.reservationCredit = 0;
-        if (operation === 'provision') {
-          const existing = this.control();
-          if (existing) { this.owned(access, true); return { ok: true, data: { provisioned: true, revision: existing.revision } }; }
-          this.sql('INSERT INTO workspace(singleton,uid,generation,status,revision,logical_bytes,item_count) VALUES(1,?,?,?,0,0,0)', access.uid, access.generation, 'active');
-          this.put('settings', 'workspace', this.settings()); this.guard();
-          return { ok: true, data: { provisioned: true, revision: 0 } };
-        }
-        if (operation === 'close' && this.control()?.status === 'closed') {
-          const current = this.control()!;
-          check(current.uid === access.uid && current.generation === access.generation, 'NOT_FOUND', 'Workspace not found.', 404);
-          return { ok: true, data: { deleted: true, replayed: true } };
-        }
-        this.owned(access, ['close', 'suspend', 'resume', 'delete.prepare', 'delete.key'].includes(operation));
+        this.owned(access, ['suspend', 'resume', 'delete.prepare', 'delete.key'].includes(operation));
+        if (!this.schemaReady) this.schema();
         if (operation === 'delete.key') {
           check(this.control()!.status === 'deleting', 'INVALID_TRANSITION', 'Deletion has not started.', 409);
           const active = this.records<StoredJob>('jobs').find(job => this.active(job));
@@ -249,11 +293,6 @@ export class Workspace extends DurableObject<StorageEnv> {
           if (this.control()!.status !== 'deleting') this.sql("UPDATE workspace SET status='deleting',revision=revision+1 WHERE singleton=1");
           const records = TABLES.reduce((count, table) => count + this.sql<{ n: number }>(`SELECT count(*) AS n FROM ${table}`)[0]!.n, 0);
           return { ok: true, data: { job, credential, cleanup_units: 8 * this.control()!.item_count + 4 * records + 64 } };
-        }
-        if (operation === 'close') {
-          for (const table of ['bodies', 'items', ...TABLES]) this.sql(`DROP TABLE IF EXISTS ${table}`);
-          this.sql("UPDATE workspace SET status='closed',revision=revision+1,logical_bytes=0,item_count=0 WHERE singleton=1");
-          return { ok: true, data: { deleted: true } };
         }
         if (operation === 'suspend' || operation === 'resume') {
           check(this.control()!.status !== 'deleting', 'ACCOUNT_DELETING', 'Workspace deletion is in progress.', 409);
@@ -276,6 +315,7 @@ export class Workspace extends DurableObject<StorageEnv> {
         const result = this.mutate(operation, input, prepared);
         this.sql('UPDATE workspace SET revision=revision+1 WHERE singleton=1');
         result.workspace_revision = this.control()!.revision;
+        result.library_revision = this.control()!.library_revision;
         if (requestId) {
           this.put('receipts', requestId, { hash: fingerprint, result: this.receiptProjection(result), at: now() }, 8192);
           this.prune('receipts', LIMITS.receipts);
@@ -285,11 +325,25 @@ export class Workspace extends DurableObject<StorageEnv> {
       });
       if (outcome.ok && !READS.has(operation)) await this.schedule();
       return outcome;
-    } catch (error) { return failure(error); }
+    } catch (error) { this.hasWorkspace = undefined; this.schemaReady = false; return failure(error); }
   }
   private read(operation: string, input: Input, prepared: Item[]): unknown {
     if (operation === 'state') return this.summary();
     if (operation === 'list' || operation === 'export') return this.page(input, operation === 'export');
+    if (operation === 'search') {
+      const query = string(input.query ?? '', 'Search query', 200).toLowerCase();
+      if (!query) return { ids: this.sql<{ id: string }>('SELECT id FROM items ORDER BY id LIMIT ?', LIMITS.items).map(row => row.id), library_revision: this.control()!.library_revision };
+      const groups = new Map(this.records<Group>('groups').map(group => [group.id, group.name]));
+      // Logical workspace and item-count limits bound this scan. Return IDs only;
+      // source text and notes stay private and never enter a persisted search index.
+      const ids = this.sql<{ id: string; body: string }>('SELECT id,body FROM bodies ORDER BY id LIMIT ?', LIMITS.items)
+        .filter(row => {
+          const item = JSON.parse(row.body) as Item;
+          return [item.title, item.author, item.content, item.note, ...(item.tags ?? []), groups.get(String(item.project_id ?? '')) ?? '']
+            .some(value => String(value ?? '').toLowerCase().includes(query));
+        }).map(row => row.id);
+      return { ids, library_revision: this.control()!.library_revision };
+    }
     if (operation === 'detail') return this.detail(input.id);
     if (operation === 'details') {
       check(Array.isArray(input.ids) && input.ids.length <= LIMITS.batch);
@@ -322,6 +376,7 @@ export class Workspace extends DurableObject<StorageEnv> {
     if (operation === 'delete') {
       const { item, row } = this.get(input.id); this.expect(row, input);
       this.sql('DELETE FROM bodies WHERE id=?', item.id); this.sql('DELETE FROM items WHERE id=?', item.id); this.adjust(-row.bytes, -1);
+      this.sql('UPDATE workspace SET library_revision=library_revision+1 WHERE singleton=1');
       const settings = this.settings(); settings.board_order = (settings.board_order as string[]).filter(id => id !== item.id); this.put('settings', 'workspace', settings);
       return { id: item.id, deleted: true };
     }
@@ -436,7 +491,8 @@ export class Workspace extends DurableObject<StorageEnv> {
       if (!local) this.expect(row, record);
       const next = classification(item, record); next.classification_method = local ? 'local rules' : 'Manual classification';
       if (record.project_name) next.project_id = this.group(record.project_name).id;
-      this.save(next, { job: row.origin_job, quality: row.origin_quality }); changed.push(metadata(next, row.revision + 1));
+      this.save(next, { job: row.origin_job, quality: row.origin_quality });
+      changed.push({ ...metadata(next, row.revision + 1), cache_revision: this.cacheRevision({ incarnation: row.incarnation, revision: row.revision + 1 }) });
     }
     return { classified: records.length, items: changed, projects: this.records('groups').reverse() };
   }
@@ -586,7 +642,8 @@ export class Workspace extends DurableObject<StorageEnv> {
   }
   private async schedule(): Promise<void> {
     const control = this.control();
-    if (!control || control.status !== 'active') { await this.ctx.storage.deleteAlarm(); return; }
+    if (!control) return;
+    if (control.status !== 'active') { await this.ctx.storage.deleteAlarm(); return; }
     const job = this.records<StoredJob>('jobs').find(job => this.active(job));
     if (!job || !['QUEUED', 'STARTING', 'RUNNING', 'APPLYING'].includes(job.status)) { await this.ctx.storage.deleteAlarm(); return; }
     const due = job.status === 'STARTING' ? Number(job.submission_deadline ?? Date.parse(job.created_at) + 120_000) + 1000 : Number(job.next_poll_at ?? 0);
@@ -597,7 +654,7 @@ export class Workspace extends DurableObject<StorageEnv> {
     const control = this.control();
     if (!control || control.status !== 'active') return;
     if (await this.reconcile({ uid: control.uid, generation: control.generation })) await this.schedule();
-    else await this.ctx.storage.deleteAlarm();
+    else if (this.control()) await this.ctx.storage.deleteAlarm();
   }
   /** P5 application subclass supplies reconciliation. Base storage never calls a provider. */
   protected async reconcile(_access: Access): Promise<boolean> { return false; }

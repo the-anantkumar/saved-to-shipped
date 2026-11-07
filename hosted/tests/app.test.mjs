@@ -49,7 +49,7 @@ test('concurrent final seat allocation, returning members, immediate suspension 
   success(await rt.request('/api/admin/resume', { token: operatorToken, data: { target: uid } }));
   success(await rt.request(`/api/item?id=${item.id}`, admitted));
   success(await write(rt, admitted, '/api/account/delete'));
-  assert.equal((await rt.request(`/api/item?id=${item.id}`, admitted)).status, 410);
+  assert.equal((await rt.request(`/api/item?id=${item.id}`, admitted)).status, 404);
   success(await write(rt, admitted, '/api/account/delete'));
   assert.equal((await rt.member(uid)).response.status, 403);
   success((await rt.member('synthetic-charlie')).response);
@@ -74,6 +74,89 @@ test('failed and replayed writes still consume shared allowance after receipt ev
   const beforeEvictedReplay = success(await stats()).budget.find(row => row.kind === 'interactive').spent;
   success(await write(rt, member, '/api/item', { id: first.id, expected_revision: current.revision, note: 'new attempt with old ID', request_id: 'cycle-0' }));
   assert.ok(success(await stats()).budget.find(row => row.kind === 'interactive').spent > beforeEvictedReplay);
+});
+
+test('registry owns deletion tombstones and interrupted purge completion releases its seat only on safe retry', async t => {
+  const persist = await mkdtemp(join(tmpdir(), 'save2ship-purge-restart-'));
+  const variables = { SESSION_SIGNING_KEY: randomBytes(32).toString('base64url') };
+  let rt = await appRuntime({ persist, variables, cap: 1 });
+  t.after(async () => { await rt.dispose(); await rm(persist, { recursive: true, force: true }); });
+  let alice = await rt.member(); success(alice.response);
+  const access = { uid: alice.membership.uid, generation: alice.membership.generation };
+  const registry = async operation => {
+    const result = await rt.request('/__fixture__/registry', { data: { operation, input: access } });
+    assert.equal(result.body.ok, true, JSON.stringify(result.body)); return result.body.data;
+  };
+  success(await write(rt, alice, '/api/capture', { url: url(1), note: 'Delete all private data' }));
+  await internal(rt, access, 'delete.prepare'); await registry('deleting');
+  await internal(rt, access, 'close'); // Simulate loss of the response before registry.deleted.
+  assert.equal((await registry('lookup')).state, 'deleting');
+  assert.equal((await rt.member('synthetic-bob')).response.body.code, 'BETA_FULL');
+  const empty = await internal(rt, access, 'test.snapshot');
+  assert.deepEqual(empty.tables, []); assert.equal(empty.kvKeys, 0); assert.equal(empty.alarm, null);
+  await rt.dispose(); rt = await appRuntime({ persist, variables, cap: 1 });
+  alice = { ...alice, token: await rt.token() };
+  for (const operation of ['provision', 'state', 'job.get']) {
+    const result = await rt.request('/__fixture__/workspace', { data: { access, operation } });
+    assert.equal(result.body.code, operation === 'provision' ? 'PROVISIONING_DENIED' : 'NOT_FOUND');
+  }
+  await internal(rt, access, 'test.alarm');
+  assert.equal((await rt.request('/api/state', alice)).status, 404);
+  assert.deepEqual(await internal(rt, access, 'test.snapshot'), empty);
+  success(await write(rt, alice, '/api/account/delete', { apify_token: 'synthetic-repaired-key' }));
+  assert.equal((await registry('lookup')).state, 'deleted');
+  success(await write(rt, alice, '/api/account/delete'));
+  assert.equal((await rt.member()).response.body.code, 'ACCOUNT_DELETED');
+  success((await rt.member('synthetic-bob')).response);
+  assert.deepEqual(await internal(rt, access, 'test.snapshot'), empty);
+});
+
+test('search authenticates ownership and finds note-only or Unicode matches without disclosing source bodies', async t => {
+  const rt = await appRuntime(); t.after(() => rt.dispose());
+  const alice = await rt.member(), bob = await rt.member('synthetic-bob');
+  const save = success(await write(rt, alice, '/api/capture', { url: url(1), content: 'Visible source', note: 'Hidden idea 学習 CAFÉ' }));
+  assert.equal((await rt.request('/api/search?q=Hidden')).status, 401);
+  assert.equal((await rt.request('/api/search?q=Hidden', { token: bob.token, capability: alice.capability })).status, 403);
+  for (const query of ['hidden', '学習', 'café']) {
+    const result = success(await rt.request(`/api/search?q=${encodeURIComponent(query)}`, alice));
+    assert.deepEqual(result, { ids: [save.id], library_revision: 1 });
+  }
+  assert.deepEqual(success(await rt.request('/api/search?q=Hidden', bob)).ids, []);
+  assert.equal((await rt.request(`/api/search?q=${'a'.repeat(201)}`, alice)).status, 400);
+});
+
+test('an active Registry member with missing storage cannot be reprovisioned or silently release a seat', async t => {
+  const rt = await appRuntime({ cap: 1 }); t.after(() => rt.dispose());
+  const reserved = await rt.request('/__fixture__/registry', { data: { operation: 'reserve', input: { uid: 'synthetic-alice' } } });
+  assert.equal(reserved.body.ok, true);
+  const access = { uid: reserved.body.data.uid, generation: reserved.body.data.generation };
+  assert.equal((await rt.request('/__fixture__/registry', { data: { operation: 'activate', input: access } })).body.ok, true);
+  const denied = await rt.request('/__fixture__/workspace', { data: { access, operation: 'provision' } });
+  assert.equal(denied.body.code, 'PROVISIONING_DENIED');
+  const token = await rt.token();
+  assert.equal((await write(rt, { token }, '/api/account/delete')).body.code, 'NOT_FOUND');
+  assert.equal((await rt.member('synthetic-bob')).response.body.code, 'BETA_FULL');
+  assert.deepEqual((await internal(rt, access, 'test.snapshot')).tables, []);
+});
+
+test('concurrent deletion retries and already-deleted legacy tombstones complete cleanup without reopening admission', async t => {
+  const rt = await appRuntime(); t.after(() => rt.dispose());
+  const alice = await rt.member(), bob = await rt.member('synthetic-bob');
+  const a = { uid: alice.membership.uid, generation: alice.membership.generation };
+  const b = { uid: bob.membership.uid, generation: bob.membership.generation };
+  success(await write(rt, alice, '/api/capture', { url: url(1), content: 'Synthetic retained source' }));
+  const deleting = await Promise.all([1, 2, 3].map(() => write(rt, alice, '/api/account/delete')));
+  deleting.forEach(success);
+  assert.deepEqual((await internal(rt, a, 'test.snapshot')).tables, []);
+  await internal(rt, b, 'test.legacyClose');
+  for (const operation of ['deleting', 'deleted']) {
+    const response = await rt.request('/__fixture__/registry', { data: { operation, input: b } });
+    assert.equal(response.body.ok, true);
+  }
+  assert.deepEqual((await internal(rt, b, 'test.snapshot')).tables, ['workspace']);
+  success(await write(rt, bob, '/api/account/delete'));
+  assert.deepEqual((await internal(rt, b, 'test.snapshot')).tables, []);
+  assert.equal((await rt.member('synthetic-bob')).response.body.code, 'ACCOUNT_DELETED');
 });
 
 test('full API flow imports, encrypts credentials, retrieves, classifies, preserves annotations and exports v1', async t => {
@@ -207,7 +290,7 @@ test('deletion freezes jobs and writes, then repairs an invalid provider key wit
   assert.ok(statsAfter > statsBefore, 'paused deletion attempts consume cleanup headroom');
   success(await write(rt, alice, '/api/account/delete', { apify_token: 'synthetic-repaired-key' }));
   const deleted = await rt.request('/__fixture__/workspace', { data: { access, operation: 'job.get' } });
-  assert.equal(deleted.body.code, 'WORKSPACE_DELETED');
+  assert.equal(deleted.body.code, 'NOT_FOUND');
   success((await rt.member('synthetic-bob')).response);
   assert.equal((await rt.request('/__fixture__/provider')).body.starts, 1);
 });

@@ -8,7 +8,12 @@ import { LIMITS, Fault, failure, object, string, integer, type Access, type Inpu
 import { publicJob, selectTargets, reconcileJob, stopJob, unwrap, type WorkspacePort } from './jobs/orchestrator';
 export { Registry };
 /** Only this application class activates external background processing. */
-export class Workspace extends StorageWorkspace {
+export class Workspace extends StorageWorkspace<AppEnv> {
+  protected override async authorizeProvision(access: Access): Promise<void> {
+    const member = checked<Membership | null>(await registry(this.env).invoke('lookup', { uid: access.uid }));
+    if (!member || member.generation !== access.generation || member.state !== 'reserved')
+      throw new Fault(403, 'PROVISIONING_DENIED', 'This workspace reservation is no longer available.');
+  }
   protected override async reconcile(access: Access): Promise<boolean> {
     await reconcileJob(access, this, this.env); return true;
   }
@@ -176,6 +181,7 @@ export function makeApp(dependencies: Dependencies = {}): ExportedHandler<AppEnv
       const store = workspace(env, access);
       if (request.method === 'GET') {
         if (url.pathname === '/api/state') return json(checked(await store.invoke(access, 'state')));
+        if (url.pathname === '/api/search') return json(checked(await store.invoke(access, 'search', { query: string(url.searchParams.get('q') ?? '', 'Search query', 200) })));
         if (url.pathname === '/api/items' || url.pathname === '/api/export') {
           const limit = url.searchParams.has('limit') ? integer(Number(url.searchParams.get('limit')), 'Page size', 1, LIMITS.page) : LIMITS.page;
           return json(checked(await store.invoke(access, url.pathname === '/api/items' ? 'list' : 'export', { cursor: url.searchParams.get('cursor') || undefined, limit })));
@@ -229,17 +235,37 @@ export function makeApp(dependencies: Dependencies = {}): ExportedHandler<AppEnv
 
 async function deleteAccount(env: AppEnv, uid: string, input: Input, fetcher: typeof fetch = fetch): Promise<Input> {
   const member = checked<Membership | null>(await registry(env).invoke('lookup', { uid }));
-  if (!member || member.state === 'deleted') return { deleted: true };
+  if (!member) return { deleted: true };
   const access = { uid, generation: member.generation }, store = workspace(env, access);
+  const finishPurged = async (missing: Result): Promise<Input> => {
+    // An active/reserved workspace disappearing is an error, never seat release.
+    const current = checked<Membership | null>(await registry(env).invoke('lookup', { uid }));
+    if (current?.generation !== access.generation || !['deleting', 'deleted'].includes(current.state)) checked(missing);
+    checked(await registry(env).invoke('deleted', access));
+    return { deleted: true };
+  };
   checked(await registry(env).invoke('cleanup.grant', { ...access, id: `delete-attempt:${crypto.randomUUID()}`, units: 64 }));
+  if (member.state === 'deleted') {
+    // Old versions retained a closed SQL tombstone. Reclaim it on an authorized,
+    // budgeted deletion retry; an already-empty object remains strictly read-only.
+    const closed = await store.invoke(access, 'close');
+    if (!closed.ok && closed.code !== 'NOT_FOUND') checked(closed);
+    return { deleted: true };
+  }
   if (input.apify_token !== undefined) {
     if (member.state !== 'deleting') throw new Fault(409, 'INVALID_TRANSITION', 'Only a paused deletion accepts a replacement key here.');
     const encrypted = await encryptCredential(access, 'apify', string(input.apify_token, 'Provider key', 2048, false), parseKeyring(env.CREDENTIAL_KEYS));
-    checked(await store.invoke(access, 'delete.key', { value: encrypted }));
+    const repaired = await store.invoke(access, 'delete.key', { value: encrypted });
+    if (!repaired.ok && repaired.code === 'NOT_FOUND') return finishPurged(repaired);
+    checked(repaired);
   }
   // The workspace-local freeze is atomic with QUEUED -> STARTING and all edits.
   // A retry retains the known run/key until abort succeeds and cleanup commits.
   const prepared = await store.invoke(access, 'delete.prepare');
+  if (!prepared.ok && prepared.code === 'NOT_FOUND') {
+    // Only a matching deletion in Registry can explain already-purged storage.
+    return finishPurged(prepared);
+  }
   if (!prepared.ok && prepared.code !== 'WORKSPACE_DELETED') checked(prepared);
   if (prepared.ok) {
     const pending = prepared.data as { job: StoredJob | null; credential: Ciphertext | null; cleanup_units: number };
@@ -255,8 +281,9 @@ async function deleteAccount(env: AppEnv, uid: string, input: Input, fetcher: ty
     }
     checked(await registry(env).invoke('cleanup.grant', { ...access, id: `delete-close:${crypto.randomUUID()}`, units: pending.cleanup_units }));
   } else checked(await registry(env).invoke('deleting', access));
-  // Tombstone first; retries cannot release a seat before durable workspace cleanup.
-  checked(await store.invoke(access, 'close'));
+  // Registry freezes provisioning before purge and retains the terminal generation.
+  const closed = await store.invoke(access, 'close');
+  if (!closed.ok && closed.code !== 'NOT_FOUND') checked(closed);
   checked(await registry(env).invoke('deleted', access));
   return { deleted: true };
 }
