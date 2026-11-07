@@ -1,6 +1,6 @@
 import { jwtVerify, type JWTVerifyGetKey } from 'jose';
 
-/** P1 verification primitive only. Remote key caching and revocation are P3. */
+/** Firebase Google and verified email/password identity. Key caching is in session.ts. */
 export async function verifyGoogleToken(
   token: string,
   projectId: string,
@@ -23,7 +23,8 @@ export async function verifyGoogleToken(
     typeof payload.iat !== 'number' || payload.iat > seconds ||
     typeof payload.auth_time !== 'number' || payload.auth_time > seconds ||
     payload.auth_time < 0 || payload.iat < 0 ||
-    firebase?.sign_in_provider !== 'google.com'
+    !(firebase?.sign_in_provider === 'google.com' ||
+      (firebase?.sign_in_provider === 'password' && payload.email_verified === true))
   ) throw new Error('Invalid identity');
   return { uid: payload.sub };
 }

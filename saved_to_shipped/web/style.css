@@ -534,6 +534,13 @@ body[data-hosted-gate] #main { margin: 0; max-width: none; }
 .hosted-gate p { line-height: 1.7; margin: 22px 0; }
 .hosted-gate .helper { max-width: 400px; margin-top: 36px; }
 .hosted-account-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 20px; margin: 28px 0 8px; }
+.hosted-auth-options { display: flex; align-items: center; flex-wrap: wrap; gap: 16px 20px; }
+.hosted-auth-form { flex-basis: 100%; max-width: 400px; margin-top: 6px; }
+.hosted-auth-form .field { margin-bottom: 18px; }
+.hosted-auth-form > .button { width: 100%; }
+.hosted-auth-form .hosted-auth-options { justify-content: space-between; margin-top: 18px; }
+.hosted-gate #hosted-auth-status { font-size: 14px; max-width: 400px; }
+.hosted-gate #hosted-auth-status:empty { display: none; }
 .topbar-actions { display: flex; align-items: center; gap: 18px; }
 .usage-label { font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .75; }
 .danger { color: var(--danger, #bd5148); }

@@ -57,6 +57,8 @@ jobs:
         run: node tests/e2e.mjs
       - name: Test human UAT controls and session persistence
         run: node tests/uat-controls.mjs
+      - name: Test email verification, password reset and account reauthentication
+        run: node tests/auth-ui.mjs
       - name: Measure synthetic local capacity
         run: npm run capacity
       - name: Measure final workspace capacity, churn and recovery

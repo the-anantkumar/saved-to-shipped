@@ -23,6 +23,7 @@
     "preview:synthetic": "npm run build && npm run build:client && node tests/browser-fixture.mjs",
     "uat": "npm run build && npm run build:client && node tests/uat.mjs",
     "test:uat": "npm run build && npm run build:client && node tests/uat-controls.mjs",
+    "test:auth-ui": "npm run build && npm run build:client && node tests/auth-ui.mjs",
     "release:check": "npm run app:dryrun && node scripts/check-release.mjs",
     "capacity:workspace": "node tests/capacity/workspace.mjs"
   },

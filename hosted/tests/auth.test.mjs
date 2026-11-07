@@ -22,7 +22,7 @@ export async function signingFixture() {
   };
 }
 
-test('maintained token verifier accepts a signed Google identity and rejects invalid claims and signatures', async t => {
+test('maintained token verifier accepts Google or verified password identities and rejects invalid claims and signatures', async t => {
   const rt = await runtime(); t.after(() => rt.dispose());
   const signer = await signingFixture();
   async function verify(token, publicKey = signer.publicKey) {
@@ -33,6 +33,8 @@ test('maintained token verifier accepts a signed Google identity and rejects inv
     return { status: response.status, body: await response.json() };
   }
   assert.deepEqual(await verify(await signer.token()), { status: 200, body: { uid: 'synthetic-member' } });
+  assert.deepEqual(await verify(await signer.token({ firebase: { sign_in_provider: 'password' }, email_verified: true })),
+    { status: 200, body: { uid: 'synthetic-member' } });
   for (const overrides of [
     { aud: 'another-project' }, { aud: ['synthetic-project', 'another-project'] },
     { iss: 'https://attacker.invalid' },
@@ -40,7 +42,13 @@ test('maintained token verifier accepts a signed Google identity and rejects inv
     { auth_time: undefined }, { iat: signer.now + 3600 },
     { auth_time: signer.now + 3600 }, { auth_time: -1 },
     { sub: '' }, { sub: 'x'.repeat(129) },
-    { firebase: { sign_in_provider: 'password' } }, { firebase: undefined },
+    { firebase: { sign_in_provider: 'password' } },
+    { firebase: { sign_in_provider: 'password' }, email_verified: false },
+    { firebase: { sign_in_provider: 'password' }, email_verified: 'true' },
+    { firebase: { sign_in_provider: 'anonymous' }, email_verified: true },
+    { firebase: { sign_in_provider: 'custom' }, email_verified: true },
+    { firebase: { sign_in_provider: 'github.com' }, email_verified: true },
+    { firebase: { sign_in_provider: ['google.com'] } }, { firebase: undefined },
   ]) assert.equal((await verify(await signer.token(overrides))).status, 401, JSON.stringify(overrides));
   const another = await signingFixture();
   assert.equal((await verify(await signer.token({}, { kid: undefined }))).status, 401, 'missing key ID');
