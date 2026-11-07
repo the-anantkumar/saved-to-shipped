@@ -54,6 +54,7 @@ let state = { items: [], projects: [], imports: [] },
   visibleLimit = 25,
   classificationCancelled = false;
 let initialLoad = true;
+let searchIds = new Set(), searchKey = "", searchPending = false, searchError = "", searchTimer, searchSequence = 0;
 let draggedTile = "", movingTile = false, suppressTileClick = false, pointerDrag = null;
 const labels = {
   untriaged: "Needs context",
@@ -115,8 +116,21 @@ async function refresh() {
     filter = reviewItems().length ? "review" : "all";
     initialLoad = false;
   }
-  if (hosted && readerId) await hydrateItem(readerId);
-  if (!draggedTile) render();
+  if (hosted && readerId) {
+    const refreshedReader = readerId;
+    const closeMissingReader = () => { if (readerId !== refreshedReader) return; readerId = ""; syncLibraryRoute(); toast('This save is no longer in this library.'); };
+    if (!libraryItems().some(item => item.id === refreshedReader && item.has_context)) closeMissingReader();
+    else {
+      try { await hydrateItem(refreshedReader); }
+      catch (error) {
+        if (error.code !== 'NOT_FOUND') throw error;
+        state.items = state.items.filter(item => item.id !== refreshedReader); closeMissingReader();
+      }
+    }
+  }
+  if (hosted) await updateHostedSearch();
+  if (hosted && epoch !== hosted.epoch) return;
+  if (!draggedTile) renderKeepingSearchFocus();
   if (first && readerId) {
     restoreReadingPosition();
     const item = state.items.find(item => item.id === readerId);
@@ -134,6 +148,7 @@ async function hydrateItem(id) {
   return item;
 }
 function resetHostedState() {
+  clearTimeout(searchTimer); searchSequence++; searchIds.clear(); searchKey = ""; searchPending = false; searchError = "";
   clearTimeout(retrievalTimer); retrievalTimer = null;
   clearTimeout(readingProgressTimer); pendingReadingProgress = null; readingRequests.clear();
   classificationCancelled = true; readerId = ""; initialLoad = true;
@@ -154,6 +169,53 @@ function toast(message) {
 }
 function projectName(id) {
   return state.projects.find((p) => p.id === id)?.name || "";
+}
+function matchesSearch(item) {
+  if (!search.trim()) return true;
+  if (hosted) return !searchPending && !searchError && searchIds.has(item.id);
+  return `${item.title} ${item.author || ""} ${item.content || item.excerpt || ""} ${item.note || ""} ${projectName(item.project_id)} ${(item.tags || []).join(" ")}`.toLowerCase().includes(search.trim().toLowerCase());
+}
+function searchFeedback() {
+  if (!hosted || !search.trim()) return "";
+  if (searchPending) return '<p class="helper" role="status">Searching your saves and notes…</p>';
+  if (searchError) return `<p class="helper" role="alert">${esc(searchError)} Change your search or return to this tab to try again.</p>`;
+  return "";
+}
+async function updateHostedSearch() {
+  if (!hosted) return;
+  clearTimeout(searchTimer);
+  const query = search.trim(), epoch = hosted.epoch;
+  if (!query) { searchSequence++; searchIds.clear(); searchKey = ""; searchPending = false; searchError = ""; return; }
+  const key = JSON.stringify([query.toLowerCase(), state.library_revision, state.projects.map(p => [p.id, p.name])]);
+  if (searchKey === key && !searchPending && !searchError) return;
+  const sequence = ++searchSequence;
+  searchPending = true; searchError = "";
+  try {
+    const result = await api('/api/search', undefined, `q=${encodeURIComponent(query)}`);
+    if (sequence !== searchSequence || epoch !== hosted.epoch) return;
+    searchIds = new Set(result.ids); searchKey = key;
+  } catch (error) {
+    if (sequence !== searchSequence || epoch !== hosted.epoch) return;
+    searchError = error.message; searchKey = "";
+  } finally {
+    if (sequence === searchSequence && epoch === hosted.epoch) searchPending = false;
+  }
+}
+function scheduleHostedSearch() {
+  if (!hosted) return;
+  clearTimeout(searchTimer); searchSequence++; searchPending = Boolean(search.trim()); searchError = "";
+  searchTimer = setTimeout(async () => {
+    const epoch = hosted.epoch;
+    await updateHostedSearch();
+    if (epoch !== hosted.epoch) return;
+    renderKeepingSearchFocus();
+  }, 250);
+}
+function renderKeepingSearchFocus() {
+  const input = document.activeElement?.id === 'search' ? $('#search') : null;
+  const cursor = input?.selectionStart;
+  render();
+  if (input && $('#search')) { $('#search').focus(); $('#search').setSelectionRange(cursor, cursor); }
 }
 function category(item) {
   if (!item.has_context && item.enrichment)
@@ -190,16 +252,20 @@ function restoreRoute() {
   view = route === "projects" ? "backlog" : ["inbox", "backlog", "week", "shipped", "learning", "experiences"].includes(route) ? route : fallback;
   const params = new URLSearchParams(query);
   projectFilter = params.get("project") || "";
-  search = params.get("q") || "";
+  search = (params.get("q") || "").slice(0, 200);
   readingFilter = ["unread", "reading", "read", "all", "queued"].includes(params.get("filter")) ? params.get("filter") : "unread";
   readingLength = ["5", "10"].includes(params.get("length")) ? params.get("length") : "any";
   readerId = isReadingView() ? params.get("read") || "" : "";
   if (readerId && !libraryItems().some(item => item.id === readerId && item.has_context)) readerId = "";
 }
 window.addEventListener("popstate", async () => {
+  const epoch = hosted?.epoch;
   if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
+  if (hosted && epoch !== hosted.epoch) return;
   restoreRoute();
   if (hosted && readerId) await hydrateItem(readerId).catch(error => toast(error.message));
+  if (hosted) await updateHostedSearch();
+  if (hosted && epoch !== hosted.epoch) return;
   filter = "all";
   render(false);
   if (readerId) {
@@ -244,6 +310,7 @@ function row(item) {
   return `<div class="save-row"><button class="save-open" data-item="${item.id}" aria-label="${item.has_context ? "Review" : "Add context to"} ${esc(title)}"><span class="source-mark">${item.has_context ? icon(item.kind === "project" ? "spark" : "file") : "in"}</span><span class="save-text"><span class="save-title">${esc(title)}</span><span class="save-meta">${esc(item.author || "LinkedIn")}<span>·</span>${esc(dateLabel(item.saved_at))}${item.project_id ? `<span>·</span><span class="row-project">${esc(projectName(item.project_id))}</span>` : ""}</span></span><span class="pill ${esc(item.kind)}">${esc(category(item))}</span></button><button class="notes-button ${(item.has_note ?? Boolean(item.note)) ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${(item.has_note ?? Boolean(item.note)) ? "Edit your notes" : "Add notes"}">${icon("note")}</button></div>`;
 }
 function table(items) {
+  if (searchFeedback()) return searchFeedback();
   return `<div class="save-list">${items.length ? items.map(row).join("") : empty("Nothing here yet", search ? "Try a different search." : "Your saves will appear here as they move through your workspace.")}</div>`;
 }
 function inbox() {
@@ -252,12 +319,12 @@ function inbox() {
   const waiting = scope.filter((item) => !item.has_context);
   const items = scope.filter((item) =>
     (filter === "all" || (filter === "review" && reviews.some((review) => review.id === item.id)) || (filter === "context" && !item.has_context)) &&
-    `${item.title} ${item.excerpt || item.content || ""} ${item.note || ""} ${projectName(item.project_id)} ${(item.tags || []).join(" ")}`.toLowerCase().includes(search.toLowerCase())
+    matchesSearch(item)
   );
   if (!state.items.length) return heading("Good ideas deserve a next step.", "A calmer home for the things you want to build and learn.") + `<div class="welcome"><div class="welcome-mark">${icon("inbox")}</div><h2>Start with your saved posts.</h2><p>Import your LinkedIn archive. Recover the useful bits.<br>Leave with a few things worth doing.</p><button class="button primary" data-action="import">${icon("upload")}Import LinkedIn archive</button>${hosted ? '<button class="quiet-link" data-action="capture">Or add one saved link</button>' : `<a class="quiet-link" href="/?workspace=demo">Take a look around first ${icon("arrow")}</a>`}<div class="welcome-note">Your archive stays on your device.</div></div>`;
   return heading(projectFilter ? esc(projectName(projectFilter)) : "Your saves, with somewhere to go.", projectFilter ? "Related ideas. One useful next step at a time." : `${state.items.length} saves · ${reviews.length} to review · ${waiting.length} waiting for content`, `<button class="button" data-action="capture">${icon("plus")}Add a link</button>`) +
     (projectFilter ? `<button class="quiet-link back-link" data-view="projects">← All projects</button>` : pipeline()) +
-    `<div class="toolbar"><div class="tabs" aria-label="Filter saves">${[["review", "To review", reviews.length], ["all", "All saves", scope.length], ["context", "Waiting", waiting.length]].map(([key,label,count]) => `<button class="tab ${filter === key ? "selected" : ""}" data-filter="${key}" aria-pressed="${filter === key}">${label}<span>${count}</span></button>`).join("")}</div><label class="search">${icon("search")}<input id="search" placeholder="Search saves" aria-label="Search saves" value="${esc(search)}"><kbd>/</kbd></label></div>` + table(items.slice(0,visibleLimit)) + `${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25,items.length-visibleLimit)} more</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "save" : "saves"}${projectFilter ? " in this project" : ""}</span>${waiting.length && filter !== "context" && !projectFilter ? '<button class="quiet-link" data-action="retrieve">Process more saves ↗</button>' : ""}</div>`;
+    `<div class="toolbar"><div class="tabs" aria-label="Filter saves">${[["review", "To review", reviews.length], ["all", "All saves", scope.length], ["context", "Waiting", waiting.length]].map(([key,label,count]) => `<button class="tab ${filter === key ? "selected" : ""}" data-filter="${key}" aria-pressed="${filter === key}">${label}<span>${count}</span></button>`).join("")}</div><label class="search">${icon("search")}<input id="search" maxlength="200" placeholder="Search saves" aria-label="Search saves" value="${esc(search)}"><kbd>/</kbd></label></div>` + table(items.slice(0,visibleLimit)) + `${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25,items.length-visibleLimit)} more</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "save" : "saves"}${projectFilter ? " in this project" : ""}</span>${waiting.length && filter !== "context" && !projectFilter ? '<button class="quiet-link" data-action="retrieve">Process more saves ↗</button>' : ""}</div>`;
 }
 function orderedTiles(items) {
   const rank = new Map((state.board_order || []).map((id,index) => [id,index]));
@@ -903,7 +970,8 @@ document.addEventListener("dragstart", event => {
 document.addEventListener("input", (e) => {
   if (e.target.id === "search") {
     const cursor = e.target.selectionStart;
-    search = e.target.value;
+    search = e.target.value.slice(0, 200);
+    scheduleHostedSearch();
     visibleLimit = 25;
     if (isReadingView()) syncLibraryRoute();
     render();
@@ -977,7 +1045,20 @@ $("#modal").addEventListener("click", (e) => {
       e.target.close();
   }
 });
-if (hosted) hosted.start({open: refresh, reset: resetHostedState, modal, toast, refresh});
+if (hosted) {
+  hosted.start({open: refresh, reset: resetHostedState, modal, toast, refresh});
+  let returnTimer;
+  const refreshOnReturn = () => {
+    clearTimeout(returnTimer);
+    returnTimer = setTimeout(() => {
+      if (document.hidden || document.body.dataset.hostedGate || $('#modal').open || draggedTile ||
+          document.activeElement?.matches('input:not(#search), textarea, select, [contenteditable="true"]')) return;
+      void refresh().catch(error => toast(error.message));
+    }, 300);
+  };
+  window.addEventListener('focus', refreshOnReturn);
+  document.addEventListener('visibilitychange', refreshOnReturn);
+}
 else refresh().catch((error) => {
   $("#main").innerHTML =
     `<div class="empty"><h3>Could not open the workbench</h3><p>${esc(error.message)} Make sure server.py is running, then reload.</p></div>`;

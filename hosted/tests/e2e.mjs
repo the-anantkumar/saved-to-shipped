@@ -83,10 +83,19 @@ try {
   await page.getByRole('button', { name: 'Save context', exact: true }).click(); await closeModal();
   assert.equal((await fullItem(learning.id)).content, source);
   assert.match((await fullItem(learning.id)).note, /Alice private takeaway/);
+  await action('library-back').click();
+  await page.locator('#search').fill('private takeaway');
+  await page.waitForFunction(() => document.querySelectorAll('.reading-row').length === 1);
+  await page.reload(); await memberReady(page, 'alice');
+  await page.waitForFunction(() => document.querySelectorAll('.reading-row').length === 1);
+  assert.equal(await page.locator('#search').inputValue(), 'private takeaway');
+  await page.locator(`.reading-row [data-item="${learning.id}"]`).click();
+  passed('Note-only search finds the same save after reload without hydrating its source');
   await action('reading-status').click();
   await page.waitForFunction(id => state.items.find(item => item.id === id)?.reading?.status === 'read', learning.id);
   await page.screenshot({ path: resolve(evidence, 'learning-dark-desktop.png'), fullPage: true });
   await action('library-back').click();
+  await page.locator('#search').fill('');
   await page.locator(`.reading-row [data-item="${project.id}"]`).click();
   await action('reading-organize').click();
   await page.locator('#f-kind').selectOption('project');
@@ -157,6 +166,15 @@ try {
   assert.equal(await second.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
   await second.screenshot({ path: resolve(evidence, 'learning-dark-mobile.png'), fullPage: true });
   await returning.close();
+  await page.bringToFront();
+  // Headless Chromium can leave both contexts focused. Exercise the same return
+  // event explicitly; headed acceptance checks also cover native tab switching.
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await page.waitForFunction(id => !state.items.find(item => item.id === id)?.note?.includes('reproduce'), learning.id);
+  await page.locator(`[data-action="notes"][data-id="${learning.id}"]`).click();
+  await page.locator('#modal').waitFor({ state: 'visible' });
+  assert.match(await page.locator('#f-note').inputValue(), /confirmed from a second browser/);
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
   passed('A new browser resumes saved work; mobile layout fits and conflicts preserve the unsaved draft');
 
   const downloadPromise = page.waitForEvent('download'); await action('export').click();

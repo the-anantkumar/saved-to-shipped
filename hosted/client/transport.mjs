@@ -22,11 +22,13 @@ export class HostedTransport {
     this.controllers = new Set(); this.items = new Map(); this.details = new Set(); this.serial = new Map();
     this.epoch = 0; this.uid = null; this.capability = ''; this.expiresAt = 0; this.summary = null;
     this.loaded = false; this.listDirty = false; this.sessionPromise = null;
+    this.libraryRevision = null; this.statePromise = null; this.mutations = 0;
   }
 
   reset(uid = null) {
     this.epoch++; this.uid = uid; this.capability = ''; this.expiresAt = 0;
     this.sessionPromise = null; this.summary = null; this.loaded = false; this.listDirty = false;
+    this.libraryRevision = null; this.statePromise = null; this.mutations = 0;
     this.items.clear(); this.details.clear(); this.serial.clear();
     for (const controller of this.controllers) controller.abort();
     this.controllers.clear(); this.onReset();
@@ -49,6 +51,7 @@ export class HostedTransport {
     try {
       const response = await this.fetcher(path, {
         method: data === undefined ? 'GET' : 'POST', cache: 'no-store', credentials: 'omit', redirect: 'error',
+        keepalive: path === '/api/reading' && data !== undefined,
         signal: controller.signal,
         headers: { Authorization: `Bearer ${token}`, ...(session ? { 'X-Workspace-Session': this.capability } : {}),
           ...(data === undefined ? {} : { 'Content-Type': 'application/json' }) },
@@ -103,7 +106,7 @@ export class HostedTransport {
   remember(item, detail = false) {
     if (!item || typeof item.id !== 'string') return;
     const previous = this.items.get(item.id);
-    const sameRevision = previous?.revision === item.revision;
+    const sameRevision = previous?.revision === item.revision && previous?.cache_revision === item.cache_revision;
     if (!sameRevision) this.details.delete(item.id);
     this.items.set(item.id, sameRevision ? { ...previous, ...item } : { ...item });
     if (detail || Object.hasOwn(item, 'content')) this.details.add(item.id);
@@ -113,32 +116,72 @@ export class HostedTransport {
     await this.user();
     if (!force && this.hasDetail(id)) return this.items.get(id);
     const epoch = this.epoch;
-    const item = await this.request(`/api/item?id=${encodeURIComponent(id)}`);
-    if (epoch !== this.epoch) throw new ClientError('Account changed.', 'ACCOUNT_CHANGED');
-    this.remember(item.item || item, true); return this.items.get(id);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const previous = this.items.get(id), revision = this.libraryRevision, mutations = this.mutations;
+      const result = await this.request(`/api/item?id=${encodeURIComponent(id)}`);
+      if (epoch !== this.epoch) throw new ClientError('Account changed.', 'ACCOUNT_CHANGED');
+      if (previous && !this.items.has(id)) throw new ClientError('This save was removed. Return to your library.', 'NOT_FOUND', 404);
+      if (previous !== this.items.get(id) || revision !== this.libraryRevision || mutations !== this.mutations) {
+        if (!attempt) continue;
+        throw new ClientError('This save changed while opening it. Please open it again.', 'REVISION_CONFLICT', 409);
+      }
+      const item = result.item || result;
+      if (!previous || previous.revision !== item.revision || previous.cache_revision !== item.cache_revision) {
+        // A detail can discover a remote edit ahead of metadata. Invalidate any
+        // list read already in flight so it cannot install an older snapshot.
+        this.mutations++; this.listDirty = true;
+      }
+      this.remember(item, true); return this.items.get(id);
+    }
   }
 
   async loadState() {
-    await this.user(); const epoch = this.epoch;
-    const summary = await this.request('/api/state');
-    if (epoch !== this.epoch) throw new ClientError('Account changed.', 'ACCOUNT_CHANGED');
-    if (!this.loaded || this.listDirty) {
-      const seen = new Set(), cursors = new Set(); let cursor = null;
-      do {
-        const page = await this.request(`/api/items?limit=${READ_LIMIT}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
-        if (epoch !== this.epoch) throw new ClientError('Account changed.', 'ACCOUNT_CHANGED');
-        if (!Array.isArray(page.items) || page.items.length > READ_LIMIT) throw new ClientError('The library page was invalid.');
-        for (const item of page.items) { if (seen.has(item.id)) throw new ClientError('The library changed while loading. Refresh it.'); seen.add(item.id); this.remember(item); }
-        if (seen.size > MAX_ITEMS) throw new ClientError('The library exceeds this beta’s limit.');
-        cursor = page.next_cursor || null;
-        if (cursor && cursors.has(cursor)) throw new ClientError('The library cursor did not advance.');
-        cursors.add(cursor);
-      } while (cursor);
-      for (const id of this.items.keys()) if (!seen.has(id)) { this.items.delete(id); this.details.delete(id); }
-      this.loaded = true; this.listDirty = false;
-    }
-    this.summary = summary;
-    return { version: 1, projects: [], imports: [], ...summary, items: [...this.items.values()] };
+    await this.user();
+    if (this.statePromise) return this.statePromise;
+    const epoch = this.epoch;
+    const promise = (async () => {
+      // Stage every page before touching the visible cache. Retry only reads when
+      // a concurrent edit invalidates a cursor or overlaps this snapshot.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const mutations = this.mutations;
+        try {
+          const summary = await this.request('/api/state');
+          if (epoch !== this.epoch) throw new ClientError('Account changed.', 'ACCOUNT_CHANGED');
+          const revision = summary.library_revision ?? summary.revision;
+          let staged = null;
+          if (!this.loaded || this.listDirty || revision !== this.libraryRevision) {
+            staged = new Map();
+            const cursors = new Set(); let cursor = null;
+            do {
+              const page = await this.request(`/api/items?limit=${READ_LIMIT}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+              if (epoch !== this.epoch) throw new ClientError('Account changed.', 'ACCOUNT_CHANGED');
+              if (page.library_revision !== undefined && page.library_revision !== revision) throw new ClientError('The library changed while loading. Try again.', 'REVISION_CONFLICT');
+              if (!Array.isArray(page.items) || page.items.length > READ_LIMIT) throw new ClientError('The library page was invalid.');
+              for (const item of page.items) {
+                if (typeof item.id !== 'string' || staged.has(item.id)) throw new ClientError('The library page was invalid.');
+                staged.set(item.id, item);
+              }
+              if (staged.size > MAX_ITEMS) throw new ClientError('The library exceeds this beta’s limit.');
+              cursor = page.next_cursor || null;
+              if (cursor && cursors.has(cursor)) throw new ClientError('The library cursor did not advance.');
+              cursors.add(cursor);
+            } while (cursor);
+          }
+          if (mutations !== this.mutations) throw new ClientError('The library changed while loading. Try again.', 'REVISION_CONFLICT');
+          if (staged) {
+            for (const item of staged.values()) this.remember(item);
+            for (const id of this.items.keys()) if (!staged.has(id)) { this.items.delete(id); this.details.delete(id); }
+            this.loaded = true; this.listDirty = false; this.libraryRevision = revision;
+          }
+          this.summary = summary;
+          return { version: 1, projects: [], imports: [], ...summary, items: [...this.items.values()] };
+        } catch (error) {
+          if (epoch !== this.epoch || error.code !== 'REVISION_CONFLICT' || attempt) throw error;
+        }
+      }
+    })();
+    this.statePromise = promise;
+    try { return await promise; } finally { if (this.statePromise === promise) this.statePromise = null; }
   }
 
   async api(route, input, query = '') {
@@ -153,6 +196,7 @@ export class HostedTransport {
         const item = this.items.get(data.id) || await this.detail(data.id);
         data.expected_revision ??= item.revision;
       }
+      const previousItem = this.items.get(data.id), previousLibrary = this.libraryRevision, previousMutations = this.mutations;
       let result;
       try { result = await this.request(route, data); }
       catch (error) {
@@ -160,11 +204,29 @@ export class HostedTransport {
         throw error;
       }
       if (epoch !== this.epoch || uid !== this.getUser()?.uid) throw new ClientError('Account changed.', 'ACCOUNT_CHANGED');
+      const superseded = previousItem !== this.items.get(data.id) || previousLibrary !== this.libraryRevision || previousMutations !== this.mutations ||
+        (this.libraryRevision !== null && result.library_revision < this.libraryRevision) ||
+        (this.summary && result.workspace_revision < this.summary.revision);
+      this.mutations++;
+      if (superseded) {
+        // The write succeeded, but another snapshot arrived while its response
+        // was in flight. Keep that cache and reconcile with a read, never replay.
+        this.listDirty = true; return { ...result, superseded: true };
+      }
       if (result.item) this.remember(result.item, true);
       if (result.reading && data.id && this.items.has(data.id)) this.remember({ ...this.items.get(data.id), reading: result.reading, revision: result.revision ?? this.items.get(data.id).revision }, this.hasDetail(data.id));
       if (result.project && this.summary) this.summary.projects = [...(this.summary.projects || []).filter(p => p.id !== result.project.id), result.project];
       if (this.summary && result.workspace_revision !== undefined) this.summary.revision = result.workspace_revision;
-      if (route === '/api/delete' && result.deleted) { this.items.delete(data.id); this.details.delete(data.id); }
+      if (route === '/api/delete' && result.deleted) {
+        // A replay can refer to a URL that has since been imported again. The
+        // server returns that current item; the old receipt must not hide it.
+        if (!result.item) { this.items.delete(data.id); this.details.delete(data.id); }
+        if (result.replayed) this.listDirty = true;
+      }
+      // Advance only a complete, contiguous local edit. A revision gap includes
+      // another browser's changes and requires a fresh metadata snapshot.
+      if (this.loaded && !this.listDirty && !result.replayed && result.library_revision === this.libraryRevision + 1 &&
+          (result.item || result.reading || (route === '/api/delete' && result.deleted))) this.libraryRevision = result.library_revision;
       if (['/api/import', '/api/restore', '/api/classify', '/api/triage'].includes(route)) this.listDirty = true;
       if (['/api/retrieve/poll', '/api/jobs/poll'].includes(route)) {
         const job = result.job || result;

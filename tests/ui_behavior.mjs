@@ -4,7 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 // Exercise rendering and navigation as application code, without a browser or providers.
-function app(data = {}) {
+function app(data = {}, hosted = null) {
   const nodes = new Map();
   const events = {};
   const classes = () => {
@@ -33,7 +33,7 @@ function app(data = {}) {
     URLSearchParams, console,
     location: { search: "", hash: "" },
     history: { state: null, pushState(state, _unused, hash) { this.state = state; context.location.hash = hash; }, replaceState(state, unused, hash) { this.pushState(state, unused, hash); } },
-    window: { scrollY: 0, innerHeight: 900, requestAnimationFrame() {}, matchMedia: () => ({ matches: false }), getSelection: () => selection, scrollTo() {}, addEventListener(type, callback) { events[type] = callback; } },
+    window: { Save2ShipHosted: hosted, scrollY: 0, innerHeight: 900, requestAnimationFrame() {}, matchMedia: () => ({ matches: false }), getSelection: () => selection, scrollTo() {}, addEventListener(type, callback) { events[type] = callback; } },
     document: {
       documentElement: root, body: { appendChild() {} }, elementFromPoint: () => null,
       querySelector: node, querySelectorAll: () => [],
@@ -372,4 +372,30 @@ test("existing section choices ignore a previously entered new name", () => {
   const ui = app();
   ui.context.form = new Map([["project_id", "databases"], ["new_project_name", "An abandoned draft"]]);
   assert.deepEqual(JSON.parse(ui.run("JSON.stringify(organizationPayload(form))")), {project_id: "databases"});
+});
+
+test('late missing-reader recovery removes only its original save after navigation', async () => {
+  const items = [{ ...draft, id: 'a', kind: 'learning' }, { ...draft, id: 'b', kind: 'learning' }];
+  let rejectDetail, started;
+  const opening = new Promise(resolve => { started = resolve; });
+  const adapter = { epoch: 1, start() {}, api: async () => ({ items, projects: [], imports: [] }),
+    detail: async () => new Promise((_resolve, reject) => { rejectDetail = reject; started(); }) };
+  const ui = app({ items }, adapter);
+  ui.run('initialLoad = false; view = "learning"; readerId = "a"; render = () => {}; scheduleRetrieval = () => {};');
+  const refreshing = ui.run('refresh()');
+  await opening;
+  ui.run('readerId = "b"');
+  rejectDetail(Object.assign(new Error('Removed remotely'), { code: 'NOT_FOUND' }));
+  await refreshing;
+  assert.equal(ui.run('readerId'), 'b');
+  assert.equal(ui.run('JSON.stringify(state.items.map(item => item.id))'), '["b"]');
+});
+
+test('superseded hosted reading replies do not replace more recent progress in the UI', async () => {
+  const item = { ...draft, revision: 3, reading: { status: 'reading', progress: 70 } };
+  const adapter = { epoch: 1, start() {}, api: async () => ({ superseded: true, revision: 2, reading: { status: 'reading', progress: 20 } }) };
+  const ui = app({ items: [item] }, adapter);
+  await ui.run('changeReading("draft", {progress: 20})');
+  assert.equal(ui.run('state.items[0].reading.progress'), 70);
+  assert.equal(ui.run('state.items[0].revision'), 3);
 });

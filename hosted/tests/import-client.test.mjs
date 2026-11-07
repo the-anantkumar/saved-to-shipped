@@ -147,3 +147,167 @@ test('conflicts preserve edits, invalidate stale details and normal polling does
   await assert.rejects(client.api('/api/item', input), /edits are still here/);
   assert.equal(input.note, 'unsaved user draft'); assert.equal(client.hasDetail('one'), false);
 });
+
+test('metadata refresh discovers remote changes but job-only revisions retain the cache', async () => {
+  let library = 1, revision = 1, rows = [{ id: 'one', revision: 1, title: 'Original' }];
+  const { client, calls } = fixture(async url => {
+    if (url === '/api/state') return Response.json({ revision, library_revision: library });
+    if (url.startsWith('/api/items')) return Response.json({ items: rows, library_revision: library });
+    throw new Error(url);
+  });
+  await client.loadState();
+  client.remember({ ...rows[0], note: 'private detail' }, true);
+  revision++;
+  await client.loadState();
+  assert.equal(calls.filter(c => c.url.startsWith('/api/items')).length, 1);
+  library++; revision++; rows = [{ id: 'two', revision: 1, title: 'Remote addition' }];
+  const updated = await client.loadState();
+  assert.deepEqual(updated.items.map(i => i.id), ['two']);
+  assert.equal(client.hasDetail('one'), false);
+});
+
+test('failed pagination never exposes a partial library and snapshot conflicts retry reads once', async () => {
+  let library = 1, stage = 'initial', pages = 0;
+  const { client } = fixture(async url => {
+    if (url === '/api/state') return Response.json({ revision: library, library_revision: library });
+    if (url === '/api/items?limit=50') {
+      pages++;
+      return Response.json({ items: [{ id: stage === 'initial' ? 'old' : 'new', revision: 1 }], library_revision: library, next_cursor: stage === 'initial' ? null : 'next' });
+    }
+    if (url.includes('cursor=next')) {
+      if (stage === 'fail') throw new Error('offline');
+      if (stage === 'conflict') { stage = 'fixed'; library++; return Response.json({ code: 'REVISION_CONFLICT' }, { status: 409 }); }
+      return Response.json({ items: [{ id: 'last', revision: 1 }], library_revision: library });
+    }
+    throw new Error(url);
+  });
+  await client.loadState();
+  library++; stage = 'fail';
+  await assert.rejects(client.loadState(), /connect/);
+  assert.deepEqual([...client.items.keys()], ['old']);
+  assert.equal(client.libraryRevision, 1);
+  stage = 'conflict'; pages = 0;
+  const state = await client.loadState();
+  assert.deepEqual(state.items.map(i => i.id), ['new', 'last']);
+  assert.equal(pages, 2);
+});
+
+test('local mutation revision gaps do not conceal another browser edit', async () => {
+  let library = 1;
+  const { client, calls } = fixture(async url => {
+    if (url === '/api/state') return Response.json({ revision: library, library_revision: library });
+    if (url.startsWith('/api/items')) return Response.json({ library_revision: library, items: [{ id: 'one', revision: library }, ...(library === 3 ? [{ id: 'remote', revision: 1 }] : [])] });
+    if (url === '/api/reading') { library = 3; return Response.json({ item: { id: 'one', revision: 3, reading: { progress: 42 } }, library_revision: 3 }); }
+    throw new Error(url);
+  });
+  await client.loadState();
+  await client.api('/api/reading', { id: 'one', progress: 42 });
+  assert.equal(calls.find(c => c.url === '/api/reading').options.keepalive, true);
+  assert.equal(client.libraryRevision, 1);
+  assert.deepEqual((await client.loadState()).items.map(i => i.id), ['one', 'remote']);
+});
+
+test('a local mutation overlapping pagination cannot be overwritten by the stale snapshot', async () => {
+  let library = 1, resolvePage, held = false;
+  const { client } = fixture(async url => {
+    if (url === '/api/state') return Response.json({ library_revision: library });
+    if (url.startsWith('/api/items')) {
+      if (!held) { held = true; return new Promise(resolve => { resolvePage = resolve; }); }
+      return Response.json({ library_revision: library, items: [{ id: 'one', revision: 2, title: 'Saved edit' }] });
+    }
+    if (url === '/api/item') { library = 2; return Response.json({ library_revision: library, item: { id: 'one', revision: 2, title: 'Saved edit' } }); }
+    throw new Error(url);
+  });
+  await client.session(); client.remember({ id: 'one', revision: 1, title: 'Original' });
+  const loading = client.loadState();
+  while (!resolvePage) await new Promise(resolve => setTimeout(resolve, 0));
+  await client.api('/api/item', { id: 'one', title: 'Saved edit' });
+  resolvePage(Response.json({ library_revision: 1, items: [{ id: 'one', revision: 1, title: 'Stale' }] }));
+  assert.equal((await loading).items[0].title, 'Saved edit');
+});
+
+test('an idempotent receipt replay does not hide a remote addition behind its current revision', async () => {
+  let library = 1;
+  const { client } = fixture(async url => {
+    if (url === '/api/state') return Response.json({ library_revision: library });
+    if (url.startsWith('/api/items')) return Response.json({ library_revision: library, items: [{ id: 'one', revision: 1 }, ...(library === 2 ? [{ id: 'remote', revision: 1 }] : [])] });
+    if (url === '/api/item') { library = 2; return Response.json({ replayed: true, library_revision: 2, item: { id: 'one', revision: 1, note: 'Earlier saved note' } }); }
+    throw new Error(url);
+  });
+  await client.loadState();
+  await client.api('/api/item', { id: 'one', note: 'Earlier saved note', request_id: 'already-applied' });
+  assert.equal(client.libraryRevision, 1);
+  assert.deepEqual((await client.loadState()).items.map(i => i.id), ['one', 'remote']);
+});
+
+test('slow detail reads cannot overwrite a newer metadata snapshot or resurrect a removed save', async () => {
+  let library = 1, rows = [{ id: 'one', revision: 1 }], finish, detailReads = 0;
+  const { client } = fixture(async url => {
+    if (url === '/api/state') return Response.json({ library_revision: library });
+    if (url.startsWith('/api/items')) return Response.json({ library_revision: library, items: rows });
+    if (url === '/api/item?id=one') {
+      detailReads++;
+      if (detailReads === 1 || detailReads === 3) return new Promise(resolve => { finish = resolve; });
+      return Response.json({ id: 'one', revision: 2, content: 'Current source' });
+    }
+    throw new Error(url);
+  });
+  await client.loadState();
+  let pending = client.detail('one');
+  while (!finish) await new Promise(resolve => setTimeout(resolve, 0));
+  library = 2; rows = [{ id: 'one', revision: 2 }]; await client.loadState();
+  finish(Response.json({ id: 'one', revision: 1, content: 'Stale source' }));
+  assert.equal((await pending).content, 'Current source'); assert.equal(detailReads, 2);
+  finish = null; pending = client.detail('one', true);
+  while (!finish) await new Promise(resolve => setTimeout(resolve, 0));
+  library = 3; rows = []; await client.loadState();
+  finish(Response.json({ id: 'one', revision: 2, content: 'Deleted source' }));
+  await assert.rejects(pending, error => error.code === 'NOT_FOUND');
+  assert.deepEqual((await client.loadState()).items, []);
+});
+
+test('same URL reincarnation discards old hydrated notes even when numeric revisions match', async () => {
+  let library = 1, incarnation = 'original';
+  const { client } = fixture(async url => {
+    if (url === '/api/state') return Response.json({ library_revision: library });
+    if (url.startsWith('/api/items')) return Response.json({ library_revision: library, items: [{ id: 'one', revision: 1, cache_revision: incarnation }] });
+    if (url === '/api/item?id=one') return Response.json({ id: 'one', revision: 1, cache_revision: incarnation, note: 'Old annotation' });
+    throw new Error(url);
+  });
+  await client.loadState(); await client.detail('one');
+  library = 3; incarnation = 'reimported';
+  const current = await client.loadState();
+  assert.equal(current.items[0].note, undefined); assert.equal(client.hasDetail('one'), false);
+});
+
+test('deletion receipt replay preserves a currently reimported item', async () => {
+  const current = { id: 'one', revision: 1, cache_revision: 'new-instance', note: 'New note' };
+  const { client } = fixture(async url => {
+    if (url === '/api/state') return Response.json({ library_revision: 3 });
+    if (url.startsWith('/api/items')) return Response.json({ library_revision: 3, items: [current] });
+    if (url === '/api/delete') return Response.json({ deleted: true, replayed: true, library_revision: 3, item: current });
+    throw new Error(url);
+  });
+  await client.loadState();
+  await client.api('/api/delete', { id: 'one', request_id: 'old-delete' });
+  assert.equal(client.items.get('one').note, 'New note');
+  assert.deepEqual((await client.loadState()).items, [current]);
+});
+
+test('a late committed mutation response cannot replace a newer remote snapshot', async () => {
+  let library = 1, finish;
+  const { client } = fixture(async url => {
+    if (url === '/api/state') return Response.json({ library_revision: library });
+    if (url.startsWith('/api/items')) return Response.json({ library_revision: library, items: [{ id: 'one', revision: library, title: library === 3 ? 'Newer remote edit' : 'Original' }] });
+    if (url === '/api/item') return new Promise(resolve => { finish = resolve; });
+    throw new Error(url);
+  });
+  await client.loadState();
+  const mutation = client.api('/api/item', { id: 'one', title: 'Earlier committed edit' });
+  while (!finish) await new Promise(resolve => setTimeout(resolve, 0));
+  library = 3; await client.loadState();
+  finish(Response.json({ item: { id: 'one', revision: 2, title: 'Earlier committed edit' }, library_revision: 2 }));
+  assert.equal((await mutation).superseded, true);
+  assert.equal(client.items.get('one').title, 'Newer remote edit');
+  assert.equal((await client.loadState()).items[0].title, 'Newer remote edit');
+});
