@@ -2,7 +2,13 @@
 
 The hosted beta is still under development. These steps prepare the operator accounts for the cloud checks in the [production plan](PRODUCTION_PLAN.md); they do not deploy the application. The local application needs neither account.
 
-## Cloudflare
+## Your part right now
+
+Create or sign in to a [Cloudflare account](https://dash.cloudflare.com/) on the Free plan and stay signed in. Approve the scoped browser connection prompt when it appears. You do not need to install tools, create a database, copy credentials or run terminal commands yourself.
+
+The operator handles the technical steps below. Firebase can wait until the Google sign-in phase. Cloudflare account connection and a Free-plan dashboard check have now succeeded for the current project; the synthetic cloud probe is a separate reviewed step.
+
+## Operator reference: Cloudflare
 
 1. Create or sign in to a [Cloudflare account](https://dash.cloudflare.com/).
 2. Confirm that Workers uses the **Free** plan. Record the account ID and the plan name for the deployment evidence. Do not activate Workers Paid, R2 or another billing-enabled product for this beta.
@@ -18,7 +24,7 @@ The hosted beta is still under development. These steps prepare the operator acc
 
 SQLite-backed Durable Objects are available on Workers Free. Its hard limits stop operations instead of charging for overages. Account-wide usage still needs checking before the bounded synthetic probe. An alert on a paid account does not meet this project's requirement. See [Durable Objects pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/) and [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/).
 
-## Firebase
+## Later: Firebase
 
 1. Create a dedicated save2ship project in the [Firebase console](https://console.firebase.google.com/) and keep it on **Spark**. Do not link a Cloud Billing account. Analytics is optional and is not needed by the planned authentication flow.
 2. In Authentication, enable **Google** as the sign-in provider. Choose the project's support email. Do not enable phone/SMS authentication for this beta.

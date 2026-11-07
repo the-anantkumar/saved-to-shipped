@@ -91,6 +91,8 @@ Cloudflare exposes database size and transactional storage APIs, but P1 must ver
 
 The P1 experiment found that `sql.databaseSize` excludes allocated free pages. A successful used-page quota check therefore does not prove the 8 MB physical allocation budget. It also found that full-text indexes with varied vocabulary leave too little edit headroom, and local FTS row counters cannot certify account metering. Keep the physical-budget gate open; use the [P1 evidence](evidence/P1.md) for the provisional no-FTS search design, maintenance margin and bounded ingestion proposal. These constraints must be verified against the final schema and cloud meter before P2 freezes the production storage contract.
 
+Cloudflare read-only access and the Free plan are now verified. A separate, independently reviewed 50-save probe and operator tooling are ready for the narrowly scoped cloud connection/deployment step. See [cloud probe preparation](evidence/P1-CLOUD.md); readiness is not a live measurement or P1 completion.
+
 ### P2: Implement contracts and user-owned storage
 
 - Owner: `beta_platform`; reviewer: `beta_reviewer`.

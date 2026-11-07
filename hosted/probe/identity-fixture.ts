@@ -1,0 +1,11 @@
+// Public, synthetic benchmark fixture. The private signing key was discarded.
+// The fixed validation clock is intentional: this token is never an operator credential.
+export const SYNTHETIC_PUBLIC_KEY = {
+  "kty": "RSA",
+  "n": "iCCzVu2G4s4v7e9NErx6wngZMsjLS3v44wOWg_NjpckcjuMzXl8cL9sGUwnpnAZjzSAdZ7JBApO3xrhjx_tQy689Q1ZfxcVRMMiqTtA99LzLkAkz_CKtSBBMIBSVmA5hSGRmnW1jcLhyxGSDVjOjvtlfqY0LW-UgVubrGoVtmMHs2JUba6PFBbu2bIKNtAoKiDcmu7Y0gWz689JUaGBkuV9KocdX0oG_nfejtws1FlyLwxCqNw3GsveuT3BpTNo8T5U0EqYTmDD1c-IU9vUdn64uiX_rzOCMe4lTm8n31bvO-tvI9axHKxFhoH6YMbEd8oW-2JLRrf7m1g7u-5hETQ",
+  "e": "AQAB",
+  "kid": "save2ship-synthetic-benchmark-only"
+};
+export const SYNTHETIC_TOKEN = "eyJhbGciOiJSUzI1NiIsImtpZCI6InNhdmUyc2hpcC1zeW50aGV0aWMtYmVuY2htYXJrLW9ubHkifQ.eyJzdWIiOiJzeW50aGV0aWMtcHJvYmUtbWVtYmVyIiwiYXV0aF90aW1lIjoxNzY3MjI1NjAwLCJmaXJlYmFzZSI6eyJzaWduX2luX3Byb3ZpZGVyIjoiZ29vZ2xlLmNvbSJ9LCJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vc3ludGhldGljLXByb2JlLXByb2plY3QiLCJhdWQiOiJzeW50aGV0aWMtcHJvYmUtcHJvamVjdCIsImlhdCI6MTc2NzIyNTYwMCwiZXhwIjoxNzY3MjI5MjAwfQ.DuLmJJgZvjKRx8cbP2uiCLG6zo7ZAi9ZbhTTEQrvfQ3Mlk9ONO--QlyV6TkWvpEuNS-CP5rTVm1YLzT51ac7_LsAVkPclxmzpMKLTef1HymhhEDXKZwoj_uHciN-FeSlNfGzVnGELpN8InFJgf3-tDkD7U92wozpunFi0uY-7iiQhI4JbAZRhKkc00NBb4Lbga6PgNk0rPl1MHdB8sOO9APc_HAiGqDUN4Ac4Y_qH_6GKXyRFgtWGTHAo_ojCXUFQb3kcUI6Bxsx0AP5cM9yoVd_P_EZrenzkc5U2dbcCIZIunfFEZmeAqszcvPWygdUeag_ibkWLfK93q4v6ScvGQ";
+export const SYNTHETIC_PROJECT = 'synthetic-probe-project';
+export const SYNTHETIC_NOW = new Date('2026-01-01T00:10:00Z');

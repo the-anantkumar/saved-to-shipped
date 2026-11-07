@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["src/**/*.ts", "tests/harness-worker.ts"]
+  "include": ["src/**/*.ts", "probe/**/*.ts", "tests/harness-worker.ts"]
 }

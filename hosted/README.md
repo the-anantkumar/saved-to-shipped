@@ -38,3 +38,7 @@ The used-page interpretation matches the [pinned workerd implementation](https:/
 `npm run capacity` writes a reproducible synthetic report to ignored `.local/capacity-report.json` and prints it. The report records local package versions, database sizes, SQL counters and elapsed request times. Elapsed times include local HTTP overhead; they are **not** deployed Worker CPU, active object duration, cold-start guarantees or confirmation that 500 members can be served. P1's remaining remote measurements and admission model are tracked in [the production plan](../docs/PRODUCTION_PLAN.md) and its evidence.
 
 No personal archives, workspace content, authentication state, API keys or provider responses belong in this directory or in committed evidence. The only test identities and content are generated synthetically.
+
+## Bounded cloud experiment
+
+The separate `wrangler.probe.jsonc` and `probe/` entrypoint provide a secret-protected, fixed 50-save experiment. The application entrypoint remains closed. `npm run probe:dryrun` validates that bundle without deployment; its committed expiry is in the past and no secret is included. See [probe design](probe/README.md) and [preparation evidence](../docs/evidence/P1-CLOUD.md) before using the operator scripts. Creating local probe credentials does not deploy resources or start any provider request.

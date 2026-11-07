@@ -48,6 +48,8 @@ jobs:
         run: npm run capacity
       - name: Validate deployment bundle without deploying
         run: npm run dryrun
+      - name: Validate bounded probe bundle without deploying
+        run: npm run probe:dryrun
       - name: Stage synthetic measurement report
         run: cp .local/capacity-report.json "$RUNNER_TEMP/save2ship-capacity-report.json"
       - name: Keep synthetic local measurements for review
