@@ -24,6 +24,7 @@
     "uat": "npm run build && npm run build:client && node tests/uat.mjs",
     "test:uat": "npm run build && npm run build:client && node tests/uat-controls.mjs",
     "test:auth-ui": "npm run build && npm run build:client && node tests/auth-ui.mjs",
+    "test:mfa-ui": "npm run build:client && node tests/mfa-ui.mjs",
     "firebase:local": "node scripts/firebase-local.mjs",
     "release:check": "npm run app:dryrun && node scripts/check-release.mjs",
     "capacity:workspace": "node tests/capacity/workspace.mjs"
@@ -31,7 +32,8 @@
   "dependencies": {
     "fflate": "0.8.3",
     "firebase": "13.2.0",
-    "jose": "6.2.15"
+    "jose": "6.2.15",
+    "qrcode": "1.5.4"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261106.1",

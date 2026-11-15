@@ -1,6 +1,6 @@
 import { jwtVerify, type JWTVerifyGetKey } from 'jose';
 
-/** Firebase Google and verified email/password identity. Key caching is in session.ts. */
+/** Google identity or verified email/password plus TOTP. Key caching is in session.ts. */
 export async function verifyGoogleToken(
   token: string,
   projectId: string,
@@ -16,7 +16,7 @@ export async function verifyGoogleToken(
     currentDate: now,
   });
   const seconds = Math.floor(now.getTime() / 1000);
-  const firebase = payload.firebase as { sign_in_provider?: unknown } | undefined;
+  const firebase = payload.firebase as { sign_in_provider?: unknown; sign_in_second_factor?: unknown } | undefined;
   if (
     payload.aud !== projectId || typeof protectedHeader.kid !== 'string' || !protectedHeader.kid ||
     typeof payload.sub !== 'string' || !payload.sub || payload.sub.length > 128 ||
@@ -24,7 +24,8 @@ export async function verifyGoogleToken(
     typeof payload.auth_time !== 'number' || payload.auth_time > seconds ||
     payload.auth_time < 0 || payload.iat < 0 ||
     !(firebase?.sign_in_provider === 'google.com' ||
-      (firebase?.sign_in_provider === 'password' && payload.email_verified === true))
+      (firebase?.sign_in_provider === 'password' && payload.email_verified === true &&
+        firebase.sign_in_second_factor === 'totp'))
   ) throw new Error('Invalid identity');
   return { uid: payload.sub };
 }

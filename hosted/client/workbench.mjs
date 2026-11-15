@@ -1,8 +1,10 @@
 import { HostedTransport } from './transport.mjs';
 import { ARCHIVE_LIMIT, exportZIP, syntheticZIP, restoreChunks } from './archive.mjs';
+import { showTotpEnrollment, showTotpChallenge } from './mfa-ui.mjs';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 let authentication, currentUser = null, hooks, starting = false, worker = null, parsedImport = null, emailView = 'closed';
+let clearMfa = () => {}, opening = null;
 const transport = new HostedTransport({ getUser: () => currentUser, onReset: () => hooks?.reset() });
 
 function emailControls() {
@@ -17,6 +19,8 @@ function passwordConfirmation() {
 }
 
 function gate(title, message, { login = false, retry = false, deletion = false, verification = false } = {}) {
+  clearMfa(); clearMfa = () => {};
+  const modal = document.querySelector('#modal'); if (modal?.open) modal.close();
   document.body.dataset.hostedGate = 'true';
   document.querySelector('#sidebar').innerHTML = '';
   document.querySelector('#main').classList.remove('board-page', 'reading-page');
@@ -66,7 +70,7 @@ async function submitEmail(form) {
     }
     else await authentication.signInWithEmail(email, password);
   } catch (error) {
-    if (form.isConnected) authStatus(authMessage(error));
+    if (!startMfaChallenge(error) && form.isConnected) authStatus(authMessage(error));
   } finally { if (form.isConnected) for (const button of form.querySelectorAll('button')) button.disabled = false; }
 }
 
@@ -114,26 +118,89 @@ function authMessage(error) {
   if (code === 'auth/network-request-failed') return 'Check your connection, then try again.';
   if (code === 'auth/operation-not-allowed') return 'This sign-in method is not configured yet.';
   if (code === 'auth/account-exists-with-different-credential') return 'Use the sign-in method you previously used for this email.';
+  if (['auth/invalid-verification-code', 'auth/invalid-totp-code'].includes(code)) return 'That code was not accepted. Check your authenticator and try a fresh code.';
+  if (['auth/invalid-multi-factor-session', 'auth/missing-multi-factor-session', 'auth/code-expired'].includes(code)) return 'This security check expired. Sign in or start authenticator setup again.';
+  if (code === 'auth/requires-recent-login') return 'Sign out and sign in again before changing your authenticator.';
+  if (code === 'auth/unsupported-first-factor') return 'Sign in with your email and password to set up the authenticator.';
   return error?.message && !String(code).startsWith('auth/') ? error.message : 'Sign-in could not finish. Please try again.';
 }
 
 async function loginWithGoogle() {
   const button = document.querySelector('#hosted-sign-in'); if (button) button.disabled = true;
   try { await authentication.signIn(); }
-  catch (error) { if (button?.isConnected) authStatus(authMessage(error)); }
+  catch (error) { if (!startMfaChallenge(error) && button?.isConnected) authStatus(authMessage(error)); }
   finally { if (button?.isConnected) button.disabled = false; }
 }
 
-async function openWorkspace() {
+function mfaMount() {
+  const mount = document.createElement('div'); mount.className = 'hosted-mfa';
+  document.querySelector('#hosted-auth-status').before(mount); return mount;
+}
+
+function startMfaChallenge(error) {
+  let challenge;
+  try { challenge = authentication.challenge?.(error); }
+  catch (unsupported) { authStatus(authMessage(unsupported)); return true; }
+  if (!challenge) return false;
+  gate('One more security check.', 'Enter the six-digit code from your authenticator to finish signing in.');
+  const epoch = transport.epoch;
+  clearMfa = showTotpChallenge({ mount: mfaMount(), challenge, message: authMessage,
+    current: () => transport.epoch === epoch,
+    complete: () => openWorkspace() });
+  // This is available even while Firebase has not yet produced a signed-in user.
+  if (!currentUser) {
+    const cancel = document.createElement('button'); cancel.className = 'quiet-link'; cancel.textContent = 'Back to sign in';
+    cancel.addEventListener('click', logout); document.querySelector('#hosted-auth-status').after(cancel);
+  }
+  return true;
+}
+
+function enrollmentGate(user, epoch) {
+  gate('Protect your saved ideas.', 'Email sign-in requires two-factor authentication. Set up an authenticator before opening your workspace.');
+  clearMfa = showTotpEnrollment({ mount: mfaMount(), user, authentication, message: authMessage,
+    current: () => currentUser?.uid === user.uid && transport.epoch === epoch,
+    complete: async () => {
+      // Native enrollment issues a new token. Open immediately only when that
+      // token proves TOTP; otherwise require a fresh second-factor sign-in.
+      const security = await authentication.securityState(user);
+      if (currentUser?.uid !== user.uid || transport.epoch !== epoch) return;
+      if (security.verified) return openWorkspace();
+      await logout();
+      gate('Two-factor authentication is ready.', 'Sign in again with your password and a fresh authenticator code to open your workspace.', { login: true });
+    } });
+}
+
+async function openWorkspaceOnce() {
   if (!currentUser) return gate('Make room for what matters.', 'Sign in to keep your saves, projects and reading together.', { login: true });
   if (authentication.needsVerification?.(currentUser)) return verificationGate();
-  const uid = currentUser.uid, epoch = transport.epoch;
-  try { await transport.session(); if (currentUser?.uid === uid && transport.epoch === epoch) { delete document.body.dataset.hostedGate; await hooks.open(); } }
+  const user = currentUser, uid = user.uid, epoch = transport.epoch;
+  try {
+    const security = await authentication.securityState?.(user);
+    if (currentUser?.uid !== uid || transport.epoch !== epoch) return;
+    if (security?.required && !security.verified) {
+      if (!security.enrolled) return enrollmentGate(user, epoch);
+      await logout();
+      return gate('One more security check.', 'Sign in again with your password and authenticator code.', { login: true });
+    }
+    await transport.session();
+    if (currentUser?.uid === uid && transport.epoch === epoch) {
+      clearMfa(false); clearMfa = () => {};
+      delete document.body.dataset.hostedGate; await hooks.open();
+    }
+  }
   catch (error) {
     if (currentUser?.uid !== uid || transport.epoch !== epoch) return;
     if (error.code === 'ACCOUNT_DELETING') deletionGate(error.message);
     else gate(error.code === 'BETA_FULL' ? 'A little room is opening soon.' : 'Could not open your workspace.', error.message, { retry: error.code !== 'BETA_FULL' });
   }
+}
+
+function openWorkspace() {
+  const key = `${currentUser?.uid || ''}:${transport.epoch}`;
+  if (opening?.key === key) return opening.promise;
+  const attempt = { key, promise: null }; opening = attempt;
+  attempt.promise = openWorkspaceOnce().finally(() => { if (opening === attempt) opening = null; });
+  return attempt.promise;
 }
 
 async function start(callbacks) {
@@ -166,11 +233,15 @@ async function start(callbacks) {
 }
 
 async function logout() {
+  clearMfa(); clearMfa = () => {};
   worker?.terminate(); worker = null; parsedImport = null;
   // Discard private browser state immediately, even if Firebase's local sign-out fails.
   currentUser = null; emailView = 'closed'; transport.reset();
   history.replaceState(null, '', '/');
-  try { await authentication.signOut(); } finally { gate('See you when you are ready.', 'Your saved workspace will be here when you sign in again.', { login: true }); }
+  gate('See you when you are ready.', 'Your saved workspace will be here when you sign in again.', { login: true });
+  const epoch = transport.epoch;
+  try { await authentication.signOut(); }
+  catch { if (!currentUser && transport.epoch === epoch) authStatus('This browser could not finish signing out. Try signing out again before closing it.'); }
 }
 
 function accountDialog() {
@@ -189,7 +260,21 @@ function takePassword() {
 async function deleteAccount(apifyToken = '', password = '') {
   if (!currentUser) return;
   const user = currentUser, epoch = transport.epoch;
-  await authentication.reauthenticate(user, password);
+  try { await authentication.reauthenticate(user, password); }
+  catch (error) {
+    const challenge = authentication.challenge?.(error); if (!challenge) throw error;
+    await new Promise((resolve, reject) => {
+      hooks.modal('Confirm your authenticator', '<p>Enter your authenticator code to confirm deletion.</p><div id="hosted-reauth-mfa"></div>', '<button class="button" data-action="close">Cancel</button>');
+      const modal = document.querySelector('#modal');
+      let cleanup = () => {};
+      const closed = () => { cleanup(); if (clearMfa === cleanup) clearMfa = () => {}; };
+      cleanup = showTotpChallenge({ mount: document.querySelector('#hosted-reauth-mfa'), challenge, message: authMessage,
+        current: () => currentUser?.uid === user.uid && transport.epoch === epoch,
+        complete: () => { modal.removeEventListener('close', closed); clearMfa = () => {}; modal.close(); resolve(); },
+        cancel: () => { modal.removeEventListener('close', closed); reject(new Error('Security confirmation was cancelled.')); } });
+      clearMfa = cleanup; modal.addEventListener('close', closed, { once: true });
+    });
+  }
   if (currentUser?.uid !== user.uid || epoch !== transport.epoch) throw new Error('Account changed. Open account settings again.');
   // Paused deletion cannot obtain a workspace session. This endpoint accepts only
   // the freshly verified identity and cannot read or mutate ordinary workspace data.

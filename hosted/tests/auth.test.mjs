@@ -22,7 +22,7 @@ export async function signingFixture() {
   };
 }
 
-test('maintained token verifier accepts Google or verified password identities and rejects invalid claims and signatures', async t => {
+test('maintained token verifier accepts Google or verified password with TOTP and rejects invalid claims and signatures', async t => {
   const rt = await runtime(); t.after(() => rt.dispose());
   const signer = await signingFixture();
   async function verify(token, publicKey = signer.publicKey) {
@@ -33,7 +33,7 @@ test('maintained token verifier accepts Google or verified password identities a
     return { status: response.status, body: await response.json() };
   }
   assert.deepEqual(await verify(await signer.token()), { status: 200, body: { uid: 'synthetic-member' } });
-  assert.deepEqual(await verify(await signer.token({ firebase: { sign_in_provider: 'password' }, email_verified: true })),
+  assert.deepEqual(await verify(await signer.token({ firebase: { sign_in_provider: 'password', sign_in_second_factor: 'totp' }, email_verified: true })),
     { status: 200, body: { uid: 'synthetic-member' } });
   for (const overrides of [
     { aud: 'another-project' }, { aud: ['synthetic-project', 'another-project'] },
@@ -43,6 +43,13 @@ test('maintained token verifier accepts Google or verified password identities a
     { auth_time: signer.now + 3600 }, { auth_time: -1 },
     { sub: '' }, { sub: 'x'.repeat(129) },
     { firebase: { sign_in_provider: 'password' } },
+    { firebase: { sign_in_provider: 'password' }, email_verified: true },
+    { firebase: { sign_in_provider: 'password', sign_in_second_factor: 'phone' }, email_verified: true },
+    { firebase: { sign_in_provider: 'password', sign_in_second_factor: ['totp'] }, email_verified: true },
+    { firebase: { sign_in_provider: 'password', sign_in_second_factor: true }, email_verified: true },
+    { firebase: { sign_in_provider: 'password' }, email_verified: true, sign_in_second_factor: 'totp' },
+    { firebase: { sign_in_provider: 'password', sign_in_second_factor: 'totp' }, email_verified: false },
+    { firebase: { sign_in_provider: 'password', sign_in_second_factor: 'totp' }, email_verified: 'true' },
     { firebase: { sign_in_provider: 'password' }, email_verified: false },
     { firebase: { sign_in_provider: 'password' }, email_verified: 'true' },
     { firebase: { sign_in_provider: 'anonymous' }, email_verified: true },

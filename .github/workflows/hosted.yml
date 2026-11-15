@@ -65,6 +65,8 @@ jobs:
         run: node tests/uat-controls.mjs
       - name: Test email verification, password reset and account reauthentication
         run: node tests/auth-ui.mjs
+      - name: Test required TOTP enrollment, sign-in and cancelled authentication
+        run: node tests/mfa-ui.mjs
       - name: Measure synthetic local capacity
         run: npm run capacity
       - name: Measure final workspace capacity, churn and recovery

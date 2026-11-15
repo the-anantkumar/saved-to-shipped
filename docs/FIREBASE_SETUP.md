@@ -1,6 +1,6 @@
 # Firebase development setup
 
-The hosted workbench uses Firebase Authentication for Google and verified Email/password accounts, and Firestore for authoritative private data. A Cloudflare Worker runs the trusted API and provider jobs. The account-free Python application still runs independently with `python3 server.py`.
+The hosted workbench uses Firebase Authentication for Google and verified Email/password accounts, and Firestore for authoritative private data. Email/password sign-in requires authenticator-app TOTP two-factor authentication before workspace access. A Cloudflare Worker runs the trusted API and provider jobs. The account-free Python application still runs independently with `python3 server.py`.
 
 ## This project's configuration
 
@@ -13,6 +13,7 @@ The hosted workbench uses Firebase Authentication for Google and verified Email/
 | Edition | Enterprise, Native mode with Core access |
 | Location | Mumbai, `asia-south1` |
 | Billing | Disabled, Spark, free-tier database |
+| Authentication | Identity Platform on Spark; TOTP enabled, SMS disabled |
 | Development origin | `http://localhost:8012` |
 
 The project, app, providers, database, rules and indexes are configured. Its dedicated runtime service account has `roles/datastore.user` with an IAM condition restricting it to this database. It has no Authentication administration or project-owner role. Its key stays in an ignored local file and must become a server secret when deploying.
@@ -26,7 +27,7 @@ npm ci
 npm run firebase:local
 ```
 
-Open [localhost:8012](http://localhost:8012/). Google opens an account picker and returns to the app. Email registration sends a verification email; verify it and select **I've verified my email** before opening a workspace. Password reset and verification resend are explicit actions.
+Open [localhost:8012](http://localhost:8012/). Google opens an account picker and returns to the app. Email registration sends a verification email; verify it and select **I verified my email**. Then confirm your password, scan the locally generated QR code or enter the setup key into an authenticator, protect a backup, and confirm its six-digit code. Only a Firebase token proving TOTP opens the workspace. Later email sign-ins require the password and an authenticator code. Password reset and verification resend are explicit actions.
 
 The launcher reads these ignored files under `hosted/.local/firebase-project/`:
 
@@ -45,6 +46,7 @@ npm run firebase:local -- --processing
 
 1. Sign in with `npx -y firebase-tools@latest login --interactive`, select your project, register a web app, and fetch its SDK configuration. Keep billing disabled. Select the database edition and permanent region before creating it.
 2. Enable Email/password and Google. Firebase CLI supports an `auth.providers` block with `emailPassword: true` and `googleSignIn` containing your display name, support email, and authorized redirect URIs. Deploy it with `npx -y firebase-tools@latest deploy --only auth --project YOUR_PROJECT`. Use `http://localhost` without a port in the provider setup; the app's origin includes its port.
+   In Authentication > Sign-in method, upgrade **Authentication** to Identity Platform while retaining **Spark**. This feature upgrade is irreversible and introduces a 3,000 daily-active-user limit; it does not require enabling billing. Do not choose the separate billing-plan upgrade. Enable TOTP using the official [Admin SDK or configuration REST endpoint](https://firebase.google.com/docs/auth/web/totp-mfa#enable_totp_mfa), with MFA state `ENABLED` and provider configuration `{ "state": "ENABLED", "totpProviderConfig": { "adjacentIntervals": 1 } }`. Keep SMS providers disabled. Enabling ordinary email/password alone is insufficient for this application's mandatory TOTP policy.
 3. Update `hosted/.firebaserc` and `firebase.json` for your project/database. Deploy this repository's rules and indexes with `npx -y firebase-tools@latest deploy --only firestore --project YOUR_PROJECT`. Direct browser database access is intentionally denied. All workspace access passes through the authenticated API.
 4. Create a dedicated runtime service account and grant only `roles/datastore.user`, conditioned on `resource.name=="projects/YOUR_PROJECT/databases/YOUR_DATABASE"`. Store its JSON key in the ignored local path above. Do not use a project-owner key or commit credentials.
 5. Create the local public configuration, run the launcher, sign in, and add the intended UID to the local allowlist. Deploying a hosted instance is a separate step in the [shipping plan](SHIP_PLAN.md).
@@ -61,6 +63,14 @@ Enterprise Core document operations are used for atomic commits, checkpoint read
 
 Production uses distinct `FirebaseWorkspace` and `FirebaseRegistry` Durable Object namespaces. Roll back only to a Firestore-compatible build. Switching a namespace back to SQL mode is rejected after Firestore use. Older local/SQL workspaces are not migrated automatically: export a version-1 backup and restore it into the chosen hosted identity. Never point this launcher at a personal Python data directory.
 
+## Authentication and authenticator recovery
+
+The API checks Firebase's signed `firebase.sign_in_second_factor == "totp"` claim for every password-authenticated request, in addition to verified email, issuer, signature, expiry, membership and ownership. Existing workspace capabilities and client-provided verification flags cannot replace that proof. Google-only sign-in is unchanged; an identity linked to both providers may also receive Firebase's MFA challenge during Google sign-in after enrollment.
+
+QR codes are generated locally. The application holds enrollment keys and pending challenges only in memory and clears the screen on completion or sign-out; they are not Firestore workspace fields or backup contents. Firebase manages the actual MFA enrollment. Auth operations are serialized and stale native sign-in state is rejected before persistence, so a cancelled response cannot sign the user back in or overwrite a newer account.
+
+Keep an encrypted backup in the authenticator or a protected copy of the setup key. The app does not issue recovery codes. Losing both requires a project administrator to verify ownership out of band, remove that user's TOTP enrollment through Firebase Admin, and revoke existing refresh tokens. Never bypass recovery with a custom client flag or direct workspace access. Password reset does not remove MFA. After an administrator reset, password sign-in remains gated until a new authenticator is enrolled. Do not reset the project owner's factors merely to test this procedure.
+
 ## Verification and capacity
 
 Use Java 21+ for the Firebase emulator. These tests use `demo-save2ship` and synthetic data:
@@ -70,6 +80,7 @@ npm run typecheck
 npm test
 npx -y firebase-tools@latest emulators:exec --only firestore --project demo-save2ship "node --test tests/firestore-emulator.test.mjs tests/firestore-workspace.test.mjs tests/firestore-rules.test.mjs tests/firestore-app.test.mjs"
 npm run test:auth-ui
+npm run test:mfa-ui
 npm run test:e2e
 ```
 

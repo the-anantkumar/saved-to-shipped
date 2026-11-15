@@ -539,6 +539,12 @@ body[data-hosted-gate] #main { margin: 0; max-width: none; }
 .hosted-auth-form .field { margin-bottom: 18px; }
 .hosted-auth-form > .button { width: 100%; }
 .hosted-auth-form .hosted-auth-options { justify-content: space-between; margin-top: 18px; }
+.hosted-mfa { max-width: 400px; }
+.hosted-mfa .field { margin: 18px 0; }
+.hosted-totp-qr { display: block; max-width: 100%; height: auto; border-radius: 8px; }
+.hosted-auth-check { display: flex; align-items: flex-start; gap: 10px; margin: 18px 0; font-size: 14px; line-height: 1.5; }
+.hosted-auth-check input { width: auto; margin-top: 4px; flex-shrink: 0; }
+.hosted-mfa #hosted-totp-key { font-family: var(--font-mono, monospace); font-size: 13px; }
 .hosted-gate #hosted-auth-status { font-size: 14px; max-width: 400px; }
 .hosted-gate #hosted-auth-status:empty { display: none; }
 .topbar-actions { display: flex; align-items: center; gap: 18px; }

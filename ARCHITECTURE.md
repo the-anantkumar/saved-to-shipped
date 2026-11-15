@@ -107,7 +107,7 @@ The TypeScript implementation is now present under `hosted/`, with a separate de
 
 | Component | Responsibility |
 | --- | --- |
-| `client/bootstrap.mjs`, `firebase-auth.mjs` | Google and verified Email/password sign-in, managed persistence, verification/reset and provider-aware reauthentication |
+| `client/bootstrap.mjs`, `firebase-auth.mjs`, `mfa-ui.mjs` | Google and verified Email/password sign-in, mandatory TOTP for password sessions, local enrollment QR, managed persistence, verification/reset and provider-aware reauthentication |
 | `client/transport.mjs` | Memory-only workspace capability, paged metadata, on-demand details, revisioned writes and account-change cancellation |
 | `client/archive.mjs`, `import-worker.mjs` | Bounded ZIP/CSV parsing in the browser, chunked restore and v1 backup assembly |
 | `src/app.ts` | Verified identity, strict origin/body limits, API routing and operator boundaries |

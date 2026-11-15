@@ -12,7 +12,7 @@ Run it locally. Bring your own extractor API key. Add an optional AI key for mor
 
 > **Development preview:** real archive import, a ten-post live provider dataset, and optional OpenAI classification have been checked. Synthetic tests cover the complete workflow and provider failures. Attachment fidelity, inaccessible posts, billing, and fresh-developer setup still need live validation. See the [live check and its limits](docs/LIVE_CHECK.md). This package has not been published to PyPI.
 
-The separate **hosted beta** adds persistent Google or verified Email/password sign-in and private Firestore storage. See [Firebase setup](docs/FIREBASE_SETUP.md) to run it locally against your own project. The hosted application is not publicly deployed, and its free-tier capacity is still being measured. The one-command Python workflow below remains account-free.
+The separate **hosted beta** adds persistent Google or verified Email/password sign-in and private Firestore storage. Email sign-in requires authenticator-app two-factor authentication. See [Firebase setup](docs/FIREBASE_SETUP.md) to run it locally against your own project. The hosted application is not publicly deployed, and its free-tier capacity is still being measured. The one-command Python workflow below remains account-free.
 
 ## Start in one command
 

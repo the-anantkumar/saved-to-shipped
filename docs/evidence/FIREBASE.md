@@ -58,3 +58,26 @@ The selected Google account completed the real popup flow and opened the workben
 ## Remaining release evidence
 
 Real email verification/reset delivery, deployed Worker behavior, production Firestore operation/storage metering and a measured cohort limit remain outstanding. Live paid provider behavior was not tested in this phase. The earlier 500-member SQLite allocation cannot be advertised for a database with 1 GiB total free storage. This checkpoint completes the configured Firebase development backend; it does not certify a public beta or its capacity.
+
+## Phase F3: Required authenticator two-factor authentication
+
+Date: 2026-11-15. Based on `7df4342` and added to the same Firebase task branch. The user explicitly selected required authenticator-app MFA for Email/password accounts. Google-only sign-in remains available.
+
+The API now requires a verified email and the signed nested Firebase TOTP claim on every password-authenticated request. The browser gates enrollment before requesting a seat, creates QR codes locally, confirms a code and backup acknowledgement, and clears the setup key. Native enrollment can open the workspace immediately when its updated token proves TOTP; a token without that proof requires a fresh sign-in. Later sign-ins and sensitive reauthentication handle native TOTP challenges, retries and cancellation. The app never handles SMS or implements its own TOTP validator.
+
+Cloud configuration actually performed: upgraded Authentication to Identity Platform while retaining Spark; enabled TOTP with one adjacent interval; retained disabled SMS providers. Console and API checks confirmed billing is disabled. This feature upgrade is irreversible and introduces the documented Spark limit of 3,000 daily active users. Neither the project owner's factors nor provider credentials were changed.
+
+Independent review found and reproduced a cancelled-resolver race before this checkpoint: Firebase could publish and persist an old identity after the user left the challenge screen. The fix serializes auth operations, rejects stale identity changes through Firebase's blocking observer, signs out the native user immediately, and suppresses stale token notifications from reauthentication. Newer sign-ins wait for outstanding work; late first-factor errors cannot replace them. The final review found no unresolved findings.
+
+A temporary synthetic account passed six live assertions using Firebase's native modular SDK and the actual production Worker entrypoint:
+
+1. A real verified password-only token is rejected.
+2. Native TOTP enrollment succeeds; an incorrect enrollment code is rejected.
+3. A fresh password-plus-TOTP sign-in produces trusted second-factor proof.
+4. The Worker saves and reads a synthetic private note in Firestore, while the password-only token cannot export it even with a valid workspace capability.
+5. The workspace and temporary MFA identity are removed through verified deletion.
+6. Billing remains disabled afterward.
+
+Native enrollment was also observed to issue a token carrying TOTP proof, allowing immediate workspace opening without a redundant second sign-in. A fresh code interval was used for the separate sign-in assertion. No real email delivery, paid provider or personal archive was used. Authenticator-loss recovery remains an operator procedure requiring identity verification; it was not simulated by weakening a real account. Local reports retain only assertion names, not secrets or tokens.
+
+Final F3 verification: TypeScript/build passed; the hosted suite passed 119 tests with 14 emulator-dependent checks explicitly skipped because the emulator was stopped. The authenticator browser suite passed 11 checks, including native-adapter cancellation before persistence, account ordering, immediate enrollment with proof, and the no-proof fallback. Existing email verification/reset browser checks passed five checks; the nine general end-to-end and ten UAT-control checks also passed. The deployment dry run and nine-artifact boundary checks passed. Independent review passed the focused authentication suite and the cancellation reproductions, with no unresolved findings; the final immediate-enrollment change was also reviewed. These checks do not certify authenticator-loss support staffing, real mail delivery or a public deployment.
