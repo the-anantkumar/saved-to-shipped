@@ -85,8 +85,16 @@ async function changeReading(id, patch) {
     return api("/api/reading", {id, ...patch});
   }).then(result => {
     if (hosted && (hosted.epoch !== epoch || result.superseded)) return result.reading;
-    const item = state.items.find(item => item.id === id);
-    if (item) { item.reading = result.reading; if (result.revision !== undefined) item.revision = result.revision; }
+    const position = state.items.findIndex(item => item.id === id);
+    const item = state.items[position];
+    const revision = result.item?.revision ?? result.revision;
+    if (item && !(hosted && revision !== undefined && item.revision > revision)) {
+      // Hosted reading writes hydrate the transport cache. Keep the visible item
+      // in sync so opening it can safely skip a second detail request.
+      if (hosted && result.item?.id === id) state.items[position] = result.item;
+      state.items[position].reading = result.reading;
+      if (revision !== undefined) state.items[position].revision = revision;
+    }
     return result.reading;
   });
   readingRequests.set(id, request);

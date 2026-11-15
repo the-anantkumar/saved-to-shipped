@@ -67,6 +67,8 @@ jobs:
         run: node tests/auth-ui.mjs
       - name: Test required TOTP enrollment, sign-in and cancelled authentication
         run: node tests/mfa-ui.mjs
+      - name: Test queued-reader content and account-switch hydration
+        run: node tests/reading-regression.mjs
       - name: Measure synthetic local capacity
         run: npm run capacity
       - name: Measure final workspace capacity, churn and recovery

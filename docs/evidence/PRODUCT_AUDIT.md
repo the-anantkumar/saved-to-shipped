@@ -20,6 +20,8 @@ One actual reading defect blocks the core promise and should be fixed before own
 
 ### P1: Queuing a read can make its source text and notes disappear from the reader
 
+**Resolved after this audit:** [R1 refinement evidence](PRODUCT_REFINEMENTS.md) records the rendered-content regression, stale-response guards and independent review. The reproduction below describes the original defect.
+
 **Observed defect.** Alice > Learning > bookmark “How to read an unfamiliar codebase” for Read next > Start reading. The article displays its title/byline, an empty body, and “Only your notes are available for this save.” The source excerpt existed in the library, and the seed has eight paragraphs plus a note. Reloading the same reader URL restores all eight paragraphs and the note. Data is retained; the visible reading state is wrong.
 
 **Cause:** `hosted/client/transport.mjs:216` remembers the full item returned by a reading mutation and marks it hydrated. `saved_to_shipped/web/reading.js:80` updates only reading/revision on the UI's existing metadata object. `reading.js:100` then skips hydration when the transport claims to have detail, leaving the UI object without content or note.
