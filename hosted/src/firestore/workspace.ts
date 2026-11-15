@@ -280,6 +280,7 @@ export class FirestoreWorkspace<Env extends FirestoreWorkspaceEnv = FirestoreWor
     let authority = checkpoint(doc, access);
     check(['deleting', 'deleted'].includes(authority.status), 'INVALID_TRANSITION', 'Freeze this workspace before deleting it.', 409);
     if (authority.status === 'deleted') { await this.clearProjection(); return { ok: true, data: { deleted: true } }; }
+    if (authority.purging !== true) this.assertBillingClosed();
     await this.ctx.storage.put('firestore-access', access);
     await this.ctx.storage.setAlarm(Date.now() + 1000);
     // A frozen generation cannot accept new writes. Restartable batches avoid

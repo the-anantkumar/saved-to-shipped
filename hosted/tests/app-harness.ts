@@ -4,14 +4,17 @@ import { makeApp, Registry, Workspace as AppWorkspace, type AppEnv } from '../sr
 import { verifyGoogleToken } from '../src/auth/token';
 import { reconcileJob } from '../src/jobs/orchestrator';
 import { Fault, type Access } from '../src/contracts';
+import { billingFixtureControl, billingFixtureFetch, syntheticBillingBindings } from './billing-fixture';
 export { Registry };
 
 const fixtureRows = [1, 2, 3].map(n => ({ url: `https://www.linkedin.com/feed/update/urn:li:activity:90000000000000000${n}`,
   text: `Learn to build a small SQLite experiment ${n}. Keep a record of the results.`, author: { name: 'Synthetic author' } }));
 let providerMode = 'success';
+let billingFlags: Record<string, string> = {};
 const providerCalls = { starts: 0, polls: 0, aborts: 0, classifications: 0 };
 export const fixtureFetch: typeof fetch = async (input, init) => {
   const url = new URL(String(input));
+  if (url.hostname === 'api.razorpay.com') return billingFixtureFetch(input, init);
   if (url.hostname === 'api.apify.com') {
     if (url.pathname.endsWith('/abort')) {
       providerCalls.aborts++;
@@ -62,6 +65,12 @@ interface Env extends AppEnv { WORKSPACES: DurableObjectNamespace<Workspace>; TE
 export default {
   async fetch(request: Request<unknown, IncomingRequestCfProperties>, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/__fixture__/billing') {
+      const input = request.method === 'POST' ? await request.json() as Record<string, unknown> : {};
+      if (input.flags && typeof input.flags === 'object') billingFlags = Object.fromEntries(Object.entries(input.flags).filter(([key, value]) =>
+        ['HOSTED_ENABLED', 'BILLING_ENABLED', 'ENTITLEMENTS_ENABLED', 'PROCESSING_OPEN'].includes(key) && typeof value === 'string')) as Record<string, string>;
+      return Response.json(billingFixtureControl(input));
+    }
     if (url.pathname === '/__fixture__/provider') {
       if (request.method === 'POST') {
         const data = await request.json() as { mode: string };
@@ -98,7 +107,8 @@ export default {
       checkAccount: async token => {
         if (JSON.parse(env.TEST_REVOKED_UIDS ?? '[]').includes(decodeJwt(token).sub)) throw new Fault(401, 'SIGN_IN_EXPIRED', 'Please sign in again.');
       }, providerFetch: fixtureFetch,
+      billingBindings: (env as unknown as { TEST_REAL_BILLING_BINDINGS?: string }).TEST_REAL_BILLING_BINDINGS === 'true' ? undefined : syntheticBillingBindings,
     });
-    return app.fetch!(request, env, ctx);
+    return app.fetch!(request, { ...env, ...billingFlags }, ctx);
   },
 } satisfies ExportedHandler<Env>;

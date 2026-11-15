@@ -8,6 +8,8 @@ import { encryptCredential, decryptCredential, parseKeyring, rotateCredential, t
 import { classificationBatch, createApify } from './providers';
 import { LIMITS, Fault, failure, object, string, integer, type Access, type Input, type Result, type Membership, type StoredJob, type Ciphertext } from './contracts';
 import { publicJob, selectTargets, reconcileJob, stopJob, unwrap, type WorkspacePort } from './jobs/orchestrator';
+import { createBillingService, type BillingEnv } from './billing/service';
+import type { BillingBindings } from './billing/bindings';
 /** The old SQL mode remains available only for explicit legacy/synthetic configurations. */
 export class Registry extends SqlRegistry {
   private readonly firebaseEnv: AppEnv;
@@ -43,7 +45,7 @@ export class Workspace extends FirestoreWorkspace<AppEnv> {
 export class FirebaseWorkspace extends Workspace {}
 export class FirebaseRegistry extends Registry {}
 
-export interface AppEnv extends FirestoreWorkspaceEnv, FirestoreRegistryEnv {
+export interface AppEnv extends FirestoreWorkspaceEnv, FirestoreRegistryEnv, BillingEnv {
   ASSETS: Fetcher;
   WORKSPACES: DurableObjectNamespace<Workspace>;
   REGISTRY: DurableObjectNamespace<Registry>;
@@ -55,6 +57,7 @@ interface Dependencies {
   verifyIdentity?: (token: string, project: string) => Promise<{ uid: string }>;
   checkAccount?: (token: string, apiKey: string) => Promise<void>;
   providerFetch?: typeof fetch;
+  billingBindings?: BillingBindings;
 }
 const verifyGoogle = googleVerifier();
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: {
@@ -65,6 +68,15 @@ function workspace(env: AppEnv, access: Access): WorkspacePort {
   return env.WORKSPACES.get(env.WORKSPACES.idFromName(`workspace:${access.uid}:${access.generation}`));
 }
 function registry(env: AppEnv) { return env.REGISTRY.get(env.REGISTRY.idFromName('members-v1')); }
+function billing(env: AppEnv, dependencies: Dependencies = {}) {
+  return createBillingService(env, {
+    fetcher: dependencies.providerFetch,
+    bindings: dependencies.billingBindings,
+    workspaceFor: access => workspace(env, access),
+    membershipFor: async uid => checked<Membership | null>(await registry(env).invoke('lookup', { uid })),
+    reserveWork: async (access, id, units) => grant(env, access, 'completion', id, units),
+  });
+}
 async function body(request: Request): Promise<Input> {
   if (!request.headers.get('Content-Type')?.toLowerCase().startsWith('application/json')) throw new Fault(415, 'INVALID_INPUT', 'Send a JSON request.');
   const reader = request.body?.getReader(); if (!reader) throw new Fault(400, 'INVALID_INPUT', 'Request body is missing.');
@@ -91,7 +103,8 @@ function publicConfig(env: AppEnv) {
   } catch { /* Configuration remains unavailable. */ }
   const storageReady = env.FIRESTORE_ENABLED !== 'true' || Boolean(env.FIRESTORE_DATABASE_ID && (env.FIRESTORE_SERVICE_ACCOUNT || env.FIRESTORE_EMULATOR_HOST));
   const enabled = env.HOSTED_ENABLED === 'true' && storageReady && Boolean(firebase.apiKey && firebase.authDomain && firebase.projectId && env.SESSION_SIGNING_KEY && env.CREDENTIAL_KEYS);
-  return { mode: 'hosted', enabled, firebase, retrieval_limit: 25, item_limit: LIMITS.items, logical_limit: LIMITS.logicalBytes };
+  const billingRecovery = Boolean(firebase.apiKey && firebase.projectId && env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+  return { mode: 'hosted', enabled, billing_recovery: billingRecovery, firebase, retrieval_limit: 25, item_limit: LIMITS.items, logical_limit: LIMITS.logicalBytes };
 }
 const checkFirebaseAccount = firebaseAccountChecker();
 async function grant(env: AppEnv, access: Access, kind: string, id: string, units: number) {
@@ -119,19 +132,32 @@ async function saveSettings(env: AppEnv, access: Access, store: WorkspacePort, i
   const settings: Input = { request_id: requestId(input) };
   if (input.goals !== undefined) settings.goals = string(input.goals, 'Goals', 2000);
   if (input.model !== undefined) settings.model = string(input.model, 'Model', 100, false);
+  if (input.weekly_hours !== undefined) {
+    if (typeof input.weekly_hours !== 'number' || !Number.isFinite(input.weekly_hours) || input.weekly_hours < .25 || input.weekly_hours > 168)
+      throw new Fault(400, 'INVALID_INPUT', 'Weekly time budget must be between 0.25 and 168 hours.');
+    settings.weekly_hours = input.weekly_hours;
+  }
   settings.credential_fingerprint = await credentialRequestFingerprint({ ...input, credential_fingerprint: undefined, credential_updates: undefined }, env.SESSION_SIGNING_KEY);
   settings.credential_updates = updates; // atomic internal bundle; no plaintext enters the object.
   return checked(await store.invoke(access, 'settings', settings));
 }
 async function start(env: AppEnv, access: Access, store: WorkspacePort, input: Input, kind: 'retrieval' | 'classification', ctx: ExecutionContext, fetcher?: typeof fetch) {
   if (env.PROCESSING_OPEN !== 'true') throw new Fault(429, 'PROCESSING_PAUSED', 'Processing is temporarily paused.');
-  const id = requestId(input), limit = kind === 'retrieval' ? integer(input.limit ?? 10, 'Batch size', 1, 25) : 20;
+  const id = requestId(input);
+  let limit = kind === 'retrieval' ? integer(input.limit ?? 10, 'Batch size', 1, 25) : integer(input.limit ?? 20, 'Batch size', 1, 20);
   const previous = checked<StoredJob | null>(await store.invoke(access, 'job.get'));
   if (previous?.request_id === id) return publicJob(previous);
   const provider = kind === 'retrieval' ? 'apify' : 'openai';
   if (!checked(await store.invoke(access, 'credential.get', { provider }))) throw new Fault(400, 'PROVIDER_KEY_REQUIRED', 'Add your own provider key in Settings.');
   if (input.retry !== undefined && typeof input.retry !== 'boolean') throw new Fault(400, 'INVALID_INPUT', 'Retry must be true or false.');
-  let selected = await selectTargets(store, access, kind, limit, input.retry === true);
+  const summary = checked<Input>(await store.invoke(access, 'state'));
+  if (kind === 'classification' && env.ENTITLEMENTS_ENABLED === 'true' && input.ids === undefined) {
+    const entitlements = object(summary.entitlements), points = object(entitlements.points);
+    const remaining = Number(points.remaining);
+    if (!Number.isSafeInteger(remaining) || remaining < 1) throw new Fault(409, 'AI_POINTS_LIMIT', 'Your organization points are used or reserved. Manual organization remains available.');
+    limit = Math.min(limit, remaining);
+  }
+  let selected = await selectTargets(store, access, kind, limit, input.retry === true, input.ids);
   if (kind === 'classification') {
     const selectedIds = new Set(classificationBatch(selected).map(item => item.id));
     selected = selected.filter(item => selectedIds.has(item.id));
@@ -140,7 +166,6 @@ async function start(env: AppEnv, access: Access, store: WorkspacePort, input: I
   const charge = kind === 'retrieval' ? Number(input.max_charge ?? 1) : 0;
   if (kind === 'retrieval' && (typeof (input.max_charge ?? 1) !== 'number' || !Number.isFinite(charge) || charge < .01 || charge > 20))
     throw new Fault(400, 'INVALID_INPUT', 'Choose a provider charge cap between $0.01 and $20.');
-  const summary = checked<Input>(await store.invoke(access, 'state'));
   await grant(env, access, 'ingestion', id, 16 * selected.length + 32);
   await grant(env, access, 'completion', `${id}:completion`, 2000);
   const now = new Date().toISOString();
@@ -192,12 +217,19 @@ export function makeApp(dependencies: Dependencies = {}): ExportedHandler<AppEnv
     }
     try {
       const origin = env.APP_ORIGIN || url.origin;
+      if (url.pathname === '/api/billing/webhook') {
+        if (url.origin !== origin) throw new Fault(403, 'ORIGIN_REJECTED', 'Invalid webhook destination.');
+        return billing(env, dependencies).webhook(request);
+      }
       if (url.origin !== origin || (request.headers.has('Origin') && request.headers.get('Origin') !== origin) || request.headers.get('Sec-Fetch-Site') === 'cross-site')
         throw new Fault(403, 'ORIGIN_REJECTED', 'Open the workbench directly to continue.');
       for (const field of ['uid', 'owner', 'workspace', 'generation']) if (url.searchParams.has(field)) throw new Fault(400, 'INVALID_INPUT', 'Workspace selectors are not accepted.');
       if (url.pathname === '/api/config' && request.method === 'GET') return json(publicConfig(env));
       const config = publicConfig(env);
-      if (!config.enabled) throw new Fault(503, 'HOSTED_NOT_READY', 'The hosted beta is being configured.');
+      const billingCancellation = url.pathname === '/api/billing/cancel' && request.method === 'POST';
+      const billingReconciliation = url.pathname === '/api/admin/billing/reconcile' && request.method === 'POST';
+      if (!config.enabled && !((billingCancellation || billingReconciliation) && config.firebase.apiKey && env.FIREBASE_PROJECT_ID))
+        throw new Fault(503, 'HOSTED_NOT_READY', 'The hosted beta is being configured.');
       if (!['GET', 'POST'].includes(request.method)) throw new Fault(405, 'METHOD_NOT_ALLOWED', 'This method is not supported.');
       const authorization = request.headers.get('Authorization') ?? '';
       if (!authorization.startsWith('Bearer ') || authorization.length > 16_400) throw new Fault(401, 'SIGN_IN_REQUIRED', 'Sign in to open your workspace.');
@@ -213,17 +245,44 @@ export function makeApp(dependencies: Dependencies = {}): ExportedHandler<AppEnv
         if (field === 'workspace' && url.pathname === '/api/restore') continue; // bounded backup metadata, never an owner selector
         if (field in input) throw new Fault(400, 'INVALID_INPUT', 'Workspace selectors are not accepted.');
       }
+      if (billingCancellation) {
+        if (Object.keys(input).length) throw new Fault(400, 'INVALID_INPUT', 'Billing identifiers are managed by the server.');
+        await (dependencies.checkAccount ?? checkFirebaseAccount)(token, String(config.firebase.apiKey));
+        if (Math.floor(Date.now() / 1000) - Number(decodeJwt(token).auth_time) > 300)
+          throw new Fault(401, 'RECENT_SIGN_IN_REQUIRED', 'Confirm your sign-in before cancelling renewal.');
+        const member = checked<Membership | null>(await registry(env).invoke('lookup', { uid }));
+        if (!member || ['deleted', 'reserved'].includes(member.state)) return json({ cancelled: true });
+        const access = { uid, generation: member.generation };
+        checked(await registry(env).invoke('cleanup.grant', { ...access, id: `billing-cancel:${crypto.randomUUID()}`, units: 64 }));
+        return json(await billing(env, dependencies).cancel(access, workspace(env, access)));
+      }
       if (url.pathname.startsWith('/api/admin/')) {
         await (dependencies.checkAccount ?? checkFirebaseAccount)(token, String(config.firebase.apiKey));
-        return json(await admin(env, uid, url.pathname, input, request.method));
+        return json(await admin(env, uid, url.pathname, input, request.method, dependencies, token));
       }
       if (url.pathname === '/api/account/delete' && request.method === 'POST') {
         await (dependencies.checkAccount ?? checkFirebaseAccount)(token, String(config.firebase.apiKey));
         if (Math.floor(Date.now() / 1000) - Number(decodeJwt(token).auth_time) > 300) throw new Fault(401, 'RECENT_SIGN_IN_REQUIRED', 'Sign in again before deleting this account.');
-        return json(await deleteAccount(env, uid, input, dependencies.providerFetch));
+        return json(await deleteAccount(env, uid, input, dependencies));
       }
       const access = await verifySession(request.headers.get('X-Workspace-Session') ?? '', uid, env.SESSION_SIGNING_KEY);
       const store = workspace(env, access);
+      if (url.pathname === '/api/billing' || url.pathname.startsWith('/api/billing/')) {
+        const service = billing(env, dependencies);
+        if (url.pathname === '/api/billing' && request.method === 'GET') {
+          await grant(env, access, 'interactive', `billing-info:${crypto.randomUUID()}`, 32);
+        } else if (request.method === 'POST') {
+          await (dependencies.checkAccount ?? checkFirebaseAccount)(token, String(config.firebase.apiKey));
+          await grant(env, access, 'interactive', `billing-change:${crypto.randomUUID()}`, 256);
+          if (url.pathname === '/api/billing/checkout') return json(await service.checkout(access, store, input));
+          if (Object.keys(input).length) throw new Fault(400, 'INVALID_INPUT', 'Billing identifiers are managed by the server.');
+          if (url.pathname === '/api/billing/sync') await service.sync(access, store);
+          else throw new Fault(404, 'NOT_FOUND', 'Not found.');
+        } else throw new Fault(404, 'NOT_FOUND', 'Not found.');
+        const snapshot = checked<Input>(await store.invoke(access, 'state'));
+        return json({ ...await service.info(access, store), entitlements: snapshot.entitlements,
+          mode: env.RAZORPAY_MODE === 'live' ? 'live' : 'test' });
+      }
       if (request.method === 'GET') {
         if (url.pathname === '/api/state') return json(checked(await store.invoke(access, 'state')));
         if (url.pathname === '/api/search') return json(checked(await store.invoke(access, 'search', { query: string(url.searchParams.get('q') ?? '', 'Search query', 200) })));
@@ -260,7 +319,9 @@ export function makeApp(dependencies: Dependencies = {}): ExportedHandler<AppEnv
           patch: { status: job.kind === 'classification' ? 'APPLYING' : 'RUNNING', poll_count: 0, reconciliation_count: 0, completion_units_remaining: 1872, next_poll_at: Date.now() + 1000, lease_until: 0 } }))));
       }
       if (url.pathname === '/api/import/plan') return json(checked(await store.invoke(access, 'import.plan', input)));
-      const operation = ({ '/api/capture': 'capture', '/api/item': 'item', '/api/delete': 'delete', '/api/move': 'move', '/api/reading': 'reading',
+      if (url.pathname === '/api/preferences' && Object.keys(input).some(key => !['request_id', 'weekly_hours'].includes(key)))
+        throw new Fault(400, 'INVALID_INPUT', 'Choose a supported preference.');
+      const operation = ({ '/api/preferences': 'settings', '/api/capture': 'capture', '/api/item': 'item', '/api/delete': 'delete', '/api/move': 'move', '/api/reading': 'reading',
         '/api/project': 'project', '/api/settings': 'settings', '/api/classify': 'classify', '/api/triage': 'triage', '/api/import': 'import', '/api/restore': 'restore' } as Record<string, string>)[url.pathname];
       if (!operation) throw new Fault(404, 'NOT_FOUND', 'Not found.');
       const count = Array.isArray(input.rows) ? input.rows.length : Array.isArray(input.items) ? input.items.length : operation === 'classify' ? 25 : 1;
@@ -278,7 +339,7 @@ export function makeApp(dependencies: Dependencies = {}): ExportedHandler<AppEnv
   } };
 }
 
-async function deleteAccount(env: AppEnv, uid: string, input: Input, fetcher: typeof fetch = fetch): Promise<Input> {
+async function deleteAccount(env: AppEnv, uid: string, input: Input, dependencies: Dependencies = {}): Promise<Input> {
   const member = checked<Membership | null>(await registry(env).invoke('lookup', { uid }));
   if (!member) return { deleted: true };
   const access = { uid, generation: member.generation }, store = workspace(env, access);
@@ -315,11 +376,13 @@ async function deleteAccount(env: AppEnv, uid: string, input: Input, fetcher: ty
   if (prepared.ok) {
     const pending = prepared.data as { job: StoredJob | null; credential: Ciphertext | null; cleanup_units: number };
     checked(await registry(env).invoke('deleting', access));
+    try { await billing(env, dependencies).closeForDeletion(access, store); }
+    catch { throw new Fault(409, 'BILLING_DELETION_PENDING', 'Your workspace is frozen while subscription cancellation is confirmed. Retry deletion after checking its status; your data has been retained.'); }
     if (pending.job?.kind === 'retrieval' && pending.job.run_id) {
       if (!pending.credential) throw new Fault(409, 'ACCOUNT_DELETING', 'Supply a working Apify key to finish stopping the known run and deleting this workspace.');
       try {
         const token = await decryptCredential(access, 'apify', pending.credential, parseKeyring(env.CREDENTIAL_KEYS));
-        await createApify(fetcher).abort(String(pending.job.run_id), token);
+        await createApify(dependencies.providerFetch).abort(String(pending.job.run_id), token);
       } catch {
         throw new Fault(409, 'ACCOUNT_DELETING', 'Deletion is paused because the known provider run could not be stopped. Retry, or supply a working Apify key for the same provider account.');
       }
@@ -332,10 +395,22 @@ async function deleteAccount(env: AppEnv, uid: string, input: Input, fetcher: ty
   checked(await registry(env).invoke('deleted', access));
   return { deleted: true };
 }
-async function admin(env: AppEnv, uid: string, path: string, input: Input, method: string): Promise<unknown> {
+async function admin(env: AppEnv, uid: string, path: string, input: Input, method: string, dependencies: Dependencies, token: string): Promise<unknown> {
   let operators: string[] = [];
   try { operators = JSON.parse(env.OPERATOR_UIDS ?? '[]'); } catch { /* Deny by default. */ }
   if (!Array.isArray(operators) || !operators.includes(uid)) throw new Fault(404, 'NOT_FOUND', 'Not found.');
+  if (path === '/api/admin/billing/reconcile' && method === 'POST') {
+    const authenticatedAt = Number(decodeJwt(token).auth_time), now = Math.floor(Date.now() / 1000);
+    if (!Number.isSafeInteger(authenticatedAt) || authenticatedAt > now + 60 || now - authenticatedAt > 300)
+      throw new Fault(401, 'RECENT_SIGN_IN_REQUIRED', 'Confirm your operator sign-in before reconciling billing.');
+    if (Object.keys(input).some(key => !['target', 'subscription_id'].includes(key)))
+      throw new Fault(400, 'INVALID_INPUT', 'Send only the member and merchant subscription reference.');
+    const member = checked<Membership | null>(await registry(env).invoke('lookup', { uid: string(input.target, 'Member', 128, false) }));
+    if (!member || ['reserved', 'deleted'].includes(member.state)) throw new Fault(404, 'NOT_FOUND', 'Not found.');
+    const access = { uid: member.uid, generation: member.generation };
+    checked(await registry(env).invoke('cleanup.grant', { ...access, id: `billing-reconcile:${crypto.randomUUID()}`, units: 256 }));
+    return billing(env, dependencies).reconcileUncertain(access, workspace(env, access), string(input.subscription_id, 'Merchant subscription', 100, false));
+  }
   if (path === '/api/admin/stats' && method === 'GET') return checked(await registry(env).invoke('stats'));
   if (path === '/api/admin/reconcile' && method === 'POST') {
     const pending = checked<Membership[]>(await registry(env).invoke('pending'));

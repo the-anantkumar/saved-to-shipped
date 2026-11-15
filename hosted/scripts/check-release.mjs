@@ -31,6 +31,10 @@ assert.ok(!Object.hasOwn(config.vars, 'CREDENTIAL_KEYS'));
 assert.ok(!Object.hasOwn(config.vars, 'FIRESTORE_SERVICE_ACCOUNT'));
 assert.equal(config.vars.FIRESTORE_ENABLED, 'true');
 assert.equal(config.vars.FIRESTORE_DATABASE_ID, 'save2ship');
+assert.equal(config.vars.ENTITLEMENTS_ENABLED, 'true');
+assert.equal(config.vars.BILLING_ENABLED, 'false');
+assert.equal(config.vars.RAZORPAY_MODE, 'test');
+for (const secret of ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET']) assert.ok(!Object.hasOwn(config.vars, secret));
 assert.deepEqual(config.durable_objects.bindings, [
   { name: 'WORKSPACES', class_name: 'FirebaseWorkspace' }, { name: 'REGISTRY', class_name: 'FirebaseRegistry' },
 ]);

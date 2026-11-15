@@ -9,7 +9,7 @@ export function unwrap<T = Input>(result: Result): T {
   return result.data as T;
 }
 const ACTIVE = new Set(['QUEUED', 'STARTING', 'RUNNING', 'APPLYING', 'UNCERTAIN', 'QUOTA_BLOCKED']);
-const BLOCKED = new Set(['QUOTA_EXCEEDED', 'PHYSICAL_LIMIT', 'STORAGE_PRESSURE', 'ITEM_STORAGE_LIMIT', 'LOGICAL_LIMIT', 'RESULT_LIMIT', 'GROUP_LIMIT', 'GROUP_STORAGE_LIMIT']);
+const BLOCKED = new Set(['QUOTA_EXCEEDED', 'PHYSICAL_LIMIT', 'STORAGE_PRESSURE', 'ITEM_STORAGE_LIMIT', 'LOGICAL_LIMIT', 'RESULT_LIMIT', 'GROUP_LIMIT', 'GROUP_STORAGE_LIMIT', 'PLAN_SAVE_LIMIT', 'PLAN_SECTION_LIMIT']);
 export function publicJob(job: Input | null): Input {
   if (!job) return { idle: true };
   const fields = ['id', 'kind', 'status', 'created_at', 'updated_at', 'selected_count', 'applied_count', 'classified',
@@ -34,7 +34,17 @@ async function targets(workspace: WorkspacePort, access: Access, ids: string[]):
   }
   return result;
 }
-export async function selectTargets(workspace: WorkspacePort, access: Access, kind: string, limit: number, retry = false): Promise<Input[]> {
+export async function selectTargets(workspace: WorkspacePort, access: Access, kind: string, limit: number, retry = false, selectedIds?: unknown): Promise<Input[]> {
+  if (selectedIds !== undefined) {
+    if (!Array.isArray(selectedIds) || selectedIds.length < 1 || selectedIds.length > limit ||
+      selectedIds.some(id => typeof id !== 'string' || !id.trim() || id.length > 50) || new Set(selectedIds).size !== selectedIds.length)
+      throw new Fault(400, 'INVALID_INPUT', `Choose between one and ${limit} different saves.`);
+    const selected = await targets(workspace, access, selectedIds as string[]);
+    if (selected.length !== selectedIds.length) throw new Fault(404, 'NOT_FOUND', 'Save not found.');
+    const matches = selected.every(item => kind === 'retrieval' ? eligible(item, retry) : item.kind === 'untriaged' && item.status === 'inbox' && Boolean(String(item.content ?? '').trim() || String(item.note ?? '').trim()));
+    if (!matches) throw new Fault(409, 'SELECTED_SAVES_CHANGED', 'Some selected saves changed. Review your selection before starting.');
+    return selected;
+  }
   const ids: string[] = []; let cursor: string | undefined;
   do {
     const page = await call<{ items: Input[]; next_cursor: string | null }>(workspace, access, 'list', { cursor, limit: 50 });

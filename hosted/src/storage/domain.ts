@@ -7,7 +7,13 @@ export type Item = Input & {
   definition_of_done: string; effort_hours: number; tags: string[];
   impact: number; relevance: number; novelty: number;
 };
-export type Group = { id: string; name: string; description: string; created_at: string };
+export type GroupKind = 'project' | 'learning' | 'experience';
+export type Group = { id: string; name: string; description: string; created_at: string; kind?: GroupKind };
+export function groupKind(value: unknown): GroupKind {
+  check(['project', 'learning', 'experience'].includes(String(value)), 'INVALID_INPUT', 'Choose Projects, Learning or Experiences for this section.');
+  return value as GroupKind;
+}
+export function inferredGroupKind(item: Item): GroupKind { return item.kind === 'experience' ? 'experience' : ['learning', 'reference'].includes(item.kind) ? 'learning' : 'project'; }
 export const now = () => new Date().toISOString();
 export const size = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
 export const hasContext = (item: Item) => Boolean((item.content + item.note).trim());
