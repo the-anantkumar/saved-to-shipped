@@ -45,6 +45,10 @@ If something fails, record the account, screen, action, expected result and actu
 
 ## Automated checks and shipping boundary
 
+The [2026-11-15 product audit](evidence/PRODUCT_AUDIT.md) completed a synthetic first-use journey and identified three unresolved trust issues: queuing an unopened read can leave its reader visibly empty until reload, a new empty topic is hidden, and the weekly time budget resets on reload. Reproduce and resolve these before owner acceptance. Existing broad end-to-end checks do not cover the queue-before-open order that exposed the reader issue.
+
+For the next product pass, choose five relevant saves rather than processing an entire archive. Complete one read with a takeaway or one project action, then return the next day without instructions. Check whether continuing useful work takes less effort than reopening LinkedIn Saved Items. The audit contains the detailed delivery order and proposed acceptance targets; those targets are not measured results.
+
 `npm run test:e2e` runs the application journeys; `npm run test:uat` runs the visible test-account controls, reload/sign-out behavior, token renewal and mobile/dark layout. Both use only generated identities and mocked providers. Reports live in ignored `hosted/.local/` directories.
 
 See the [UAT development evidence](evidence/UAT.md) for the tested checkpoint and findings. User sign-off is pending until the checklist is exercised and accepted. Real Google authentication, authorized bounded provider calls, final cloud storage/CPU accounting and deployed rollback remain separate gates in the [shipping plan](SHIP_PLAN.md). Passing this local UAT must not be presented as proof that the hosted beta supports 500 members.

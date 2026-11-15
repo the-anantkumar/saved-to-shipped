@@ -32,12 +32,13 @@ The committed manifest remains disabled with a zero-member cap. Before a real pr
 | Gate | Required evidence |
 | --- | --- |
 | Free accounts | Current Cloudflare Workers Free and Firebase Spark settings, with no billing upgrade or linked Cloud Billing account |
-| Identity configuration | Google sign-in enabled, exact authorized origin, public app configuration and verified operator UIDs |
+| Identity configuration | Google and Email/password enabled, mandatory TOTP for password sessions, Identity Platform on Spark with billing and SMS disabled, exact authorized origin, public app configuration and verified operator UIDs |
 | Restricted preview | `ADMISSION_UIDS` names only designated test identities; allowed/unlisted identity checks pass before opening a small cap |
 | Secrets and artifacts | Platform-only signing/encryption secrets, recovery custody, reviewed deployment configuration and exact artifact hashes |
 | Live authentication | Real Google login, refresh, sign-out, account switch, two-browser resume, expiry/revocation and immediate app suspension |
 | Storage and recovery | Final-schema allocated-storage/cloud-meter evidence, cumulative deleted-workspace/reclamation policy, rejected-write behavior, export/restore, frozen-deletion recovery and compatible deployed rollback |
 | External providers | Separately authorized small live retrieval/classification checks, source fidelity and unavailable outcomes, actual charges and uncertain-submission reconciliation |
+| Product acceptance | Resolve the three trust issues in the [product audit](evidence/PRODUCT_AUDIT.md), then demonstrate a first useful read/action and next-day continuation with a small chosen portion of the owner's archive |
 
 The P1 probe verified a small synthetic cloud path and was retired. Its physical-storage accounting and some metering results remain unresolved. The [final-schema local experiment](evidence/P6-LOCAL-CAPACITY.md) accepted 1,000 typical saves but hit limits at 931 Unicode, 847 richer and 163 long-note saves. Every complete backup restored to a fresh workspace; Unicode churn exposed reduced reinsertion headroom in the original. A typical 1,000-save source retained about 10.7 MB across local database/WAL/shared-memory files, and the pre-UAT close implementation retained allocation. The [UAT fix](evidence/UAT.md) now purges deleted workspaces to an unchanged empty local baseline; cloud-meter evidence remains open. The 7 MB used-page guard does not prove an 8 MB physical bound. Require actual cloud metering/reclamation and a cumulative deleted-workspace policy before admitting members or growing seats; revise the storage design, allocation or cap if the evidence requires it.
 
