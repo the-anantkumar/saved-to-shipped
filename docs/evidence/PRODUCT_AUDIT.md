@@ -2,6 +2,8 @@
 
 Date: 2026-11-15. Baseline: `7df4342` workspace flows; auth is being changed concurrently and was deliberately excluded from this review. Scope: the hosted workbench as used by a developer who has hundreds of LinkedIn bookmarks, short available sessions, and trouble returning to previously saved ideas.
 
+Update after implementation: the original observations and verdict below remain the historical baseline. Resolution markers point to [product refinement evidence](PRODUCT_REFINEMENTS.md) for the reader, empty sections, persisted weekly preference, Today, global Find and deliberate retrieval changes. Their synthetic acceptance checks have passed; real-archive owner UAT and timed usefulness targets remain open. The unbounded short-list and reminder gaps are not claimed as resolved.
+
 ## Verdict
 
 The product is a credible organizer with a useful focused reader and task board. Its return-to-action loop is incomplete. It currently asks the user to process a backlog before enjoying it, and it lacks a persistent, cross-space answer to “I have 15 minutes; what should I do with something I already saved?” I would use it for a deliberate cleanup session today, but would still need to remember to open it and choose where to go tomorrow.
@@ -30,6 +32,8 @@ One actual reading defect blocks the core promise and should be fixed before own
 
 ### P1: Return visits do not offer one coherent next action across all saved work
 
+**Implemented and synthetically checked:** Today now offers an unfinished/queued read and an active project step, with 5/15/30-minute choices and an explanation of each continuation. Empty workspaces still start with import. [R2 evidence](PRODUCT_REFINEMENTS.md) covers return visits and mobile/dark navigation; whether this improves a real user's next-day return remains an owner-UAT question.
+
 **Observed landing plus product gap.** Alice opened `/` on Projects although she also has unread Learning and Experiences. Root navigation chooses Projects whenever any project exists (`saved_to_shipped/web/app.js:249`). The Saves “UP NEXT” block prioritizes project review, then classification, then missing content (`onboarding.js:25`), so remaining archive processing can become the persistent attention sink. Learning has a useful continue-reading choice, but it is only visible after choosing that space.
 
 **User impact:** I solved storage/organization but still have to remember the system, choose a destination, and decide what matters. A large archive can become a second guilt-producing inbox.
@@ -40,6 +44,8 @@ One actual reading defect blocks the core promise and should be fixed before own
 
 ### P1: The user cannot deliberately choose which posts incur retrieval work
 
+**Resolved for the scoped selection behavior:** retrieval previews normalized saved dates and original URLs, defaults to latest-saved choices, allows exact selection, and sends only the approved owned IDs with the chosen provider charge cap. Hosted runs remain bounded to 25. [R2 evidence](PRODUCT_REFINEMENTS.md) includes browser selection and API ownership checks; real LinkedIn recovery fidelity is still separate.
+
 **Observed UI plus code.** After importing Bob's three link-only rows, the list shows three indistinguishable “Saved LinkedIn post” entries. “Process 3 saves” opens a run-size/charge form, with no selected URLs or selection criteria. The run-size dropdown says 10 saves despite only three being eligible. `archive.mjs:84` imports URL/date only; `app.js:308` shows generic title/author/date. `jobs/orchestrator.ts:37` selects the first eligible records from the list; `storage/workspace.ts:232` lists by hashed item ID, not recency or user relevance.
 
 **User impact:** the product promises less friction but asks me to authorize paid recovery on an opaque slice of my bookmarks. I cannot start with the ten recent posts I actually care about, or see what the next run contains.
@@ -47,6 +53,8 @@ One actual reading defect blocks the core promise and should be fixed before own
 **Smallest fix:** show a bounded selection preview and a clear default such as latest saved, with an explicit “retrieve selected” action. Display URL-derived source hints only as identifiers, never invented post summaries. Let me choose a small worthwhile slice and leave the rest dormant.
 
 ### P2: “This week” is not a saved plan
+
+**Resolved by persisting and relabeling the supported behavior:** the available-time preference now survives reload and account switching, including the 0.25–168-hour boundaries. The view is called Weekly suggestions. Explicit committed task lists/calendar planning remain unimplemented; the interface no longer claims that behavior. See [R2 evidence](PRODUCT_REFINEMENTS.md).
 
 **Observed defect/expectation mismatch.** Set the weekly budget from 6h to 2h; the displayed breathing room updates. Reload the same `#week` URL; it resets to 6h. `app.js:47` initializes an in-memory `hours=6`. `app.js:350` dynamically chooses up to two tasks by score, ignores explicit board order and offers no “commit these two to this week” control.
 
@@ -56,6 +64,8 @@ One actual reading defect blocks the core promise and should be fixed before own
 
 ### P2: A newly created empty topic disappears immediately
 
+**Resolved:** typed empty sections stay visible in their own space after reload, while legacy empty/mixed groups remain usable. The existing inline create-and-assign flow remains available. [R2 evidence](PRODUCT_REFINEMENTS.md) covers the rendered groups and separate source/notes behavior.
+
 **Observed defect.** Learning > New reading topic > create “Synthetic systems notes.” A success toast appears, but the topic is absent from Your topics. `reading.js:57` shows only sections containing items; the board's filter has the same used-only pattern (`app.js:342`).
 
 **User impact:** I create a place for future learning, receive confirmation, then cannot find it. This is especially confusing during initial organization.
@@ -63,6 +73,8 @@ One actual reading defect blocks the core promise and should be fixed before own
 **Smallest fix:** keep empty sections visible with an empty state and a direct “add existing saves” path, or route creation through assigning the current save so there is a visible result. Preserve Projects/Learning/Experiences distinction; the shared generic group list currently offers every section in assignment dropdowns (`app.js:423`).
 
 ### P2: Large-archive onboarding creates many repeated provider/organization decisions
+
+**Partly addressed:** the first screen invites import, retrieval is an explicit selected slice, and Today lets a user continue something useful while the rest waits. No automatic whole-archive run or bulk spending plan was added. The five-save/one-outcome experience and time-to-usefulness have not been measured with a real archive. See [remaining evidence](PRODUCT_REFINEMENTS.md).
 
 **Code-derived gap.** Hosted retrieval accepts 10 or 25 per explicit run, AI organization up to 20 per batch (`onboarding.js:140`, `app.js:597`). Processing an illustrative 500 saves takes at least 20 retrieval starts at the larger batch size, or 50 at the default 10, plus 25 AI starts if all become readable. Import itself chunks automatically; retrieval/classification deliberately require separate actions to control cost.
 
@@ -72,11 +84,15 @@ One actual reading defect blocks the core promise and should be fixed before own
 
 ### P2: Useful content can still become a second unbounded reading queue
 
+**Still open in part:** Today explains its reading choice and prioritizes continuation, but there is no enforced three-item queue, explicit queue ordering, skip/replace workflow, reminder or completed-session summary. Those original product proposals remain distinct from the tested return surface.
+
 **Code-derived gap.** Read next is a boolean per item with no deliberate short-list size/order. Reading priority is unfinished first, queued next, then saved date (`reading.js:31`). The same unfinished or newest item wins the sidebar indefinitely; old valuable content does not reappear unless searched or manually scoped. No return intent, review date or small completed-session summary is stored.
 
 **Smallest fix:** keep Read next intentionally small (for example three), explain why a suggestion appears, and let the user replace/skip today's choice. After reading, preserve a takeaway and offer one related action; stop there. An optional return reminder can come later, after the in-app return path is useful.
 
 ### P2: Finding a forgotten item assumes remembering its category or wording
+
+**Resolved for cross-space discoverability:** the visible Find a saved idea entry searches source text and notes across Projects, Learning and Experiences, with result kind/topic context. Global and section-scoped searches survive reload. Semantic/synonym search was not added. See [R2 evidence](PRODUCT_REFINEMENTS.md).
 
 **Code-derived gap.** Search is full text and includes notes, which is strong. It is surfaced inside Saves or the current reading library, without a universal search affordance. A user who remembers an idea but not whether it was Learning, Experience or a project must first choose the correct space or know that Saves is the global collection. Keyword matching also cannot infer a forgotten synonym.
 

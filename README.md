@@ -14,6 +14,8 @@ Run it locally. Bring your own extractor API key. Add an optional AI key for mor
 
 The separate **hosted beta** adds persistent Google or verified Email/password sign-in and private Firestore storage. Email sign-in requires authenticator-app two-factor authentication. See [Firebase setup](docs/FIREBASE_SETUP.md) to run it locally against your own project. The hosted application is not publicly deployed, and its free-tier capacity is still being measured. The one-command Python workflow below remains account-free.
 
+Hosted Free/Pro plans and Razorpay checkout now have synthetic test coverage. Free starts at 100 saves, 3 sections and 20 organization points per UTC month; Pro at 1,000 saves, 25 sections and 200 points per verified paid monthly period. Only successfully AI-organized saves consume points. Manual organization, notes, reading and exports use none, and Apify/OpenAI fees remain separate on your own accounts. The price is undecided; no merchant account, real test payment or live checkout is active. See [billing setup](docs/BILLING_SETUP.md) for the test-only configuration and remaining launch gates.
+
 ## Start in one command
 
 From a checkout of this version, with **Python 3.10+** installed:
@@ -144,7 +146,7 @@ In a source checkout, state defaults to `data/items.json`. An installed package 
 
 ## Data, privacy, and costs
 
-The application is MIT licensed and has no hosted application subscription. The selected extraction provider and optional AI provider charge under your own accounts.
+The local MIT application has no subscription requirement. The separate hosted implementation includes Free/Pro allowances and test-mode subscription checkout, with live payments still disabled. The selected extraction provider and optional AI provider charge under your own accounts in either workflow.
 
 Saving settings or importing an archive does not start a paid request. Starting retrieval sends selected URLs to Apify. AI classification sends the selected titles, retrieved or supplied text, notes, goals, coverage, and existing project names to OpenAI. The raw ZIP and unrelated account records are excluded.
 
@@ -206,6 +208,6 @@ npm run uat
 
 Open the loopback URL it prints. This disposable preview has visible Alice, Bob and Charlie test-account controls and mocks all providers; use only test content and dummy keys. Its data disappears when stopped. It exercises the same interface and API paths as the hosted build, with a separate test-only identity entrypoint. Use the [UAT checklist](docs/UAT.md) to exercise it.
 
-Hosted batches contain at most 25 retrieval links. Workspaces enforce 1,000 saves, 5 MB logical storage and a 128 KiB per-save limit; actual hosted capacity is still unverified. Hosted exports contain the v1 JSON backup and a CSV, and **Import** can restore the backup. Provider credentials are encrypted on the server and excluded from exports. See the [hosted guide](hosted/README.md), [shipping plan](docs/SHIP_PLAN.md) and [production execution plan](docs/PRODUCTION_PLAN.md) for the remaining live sign-in, capacity and release checks.
+Hosted batches contain at most 25 retrieval links. Plan allowances sit below hard workspace ceilings of 1,000 saves, 5 MB logical storage and a 128 KiB per-save limit; actual hosted capacity is still unverified. Hosted exports contain the v1 JSON backup and a CSV, and **Import** can restore the backup. Provider credentials and billing records are excluded from exports. Provider credentials are encrypted on the server. See the [hosted guide](hosted/README.md), [billing setup](docs/BILLING_SETUP.md), [shipping plan](docs/SHIP_PLAN.md) and [production execution plan](docs/PRODUCTION_PLAN.md) for the remaining live sign-in, payment, capacity and release checks.
 
 Existing CLI commands remain available through `python3 saved_to_shipped.py --help` or the installed `saved-to-shipped-cli` command. Future source adapters can reuse the normalized save contract. Native Reddit and Instagram archive support is outside the current web release.
