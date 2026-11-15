@@ -13,7 +13,7 @@ One actual reading defect blocks the core promise and should be fixed before own
 - Read current architecture, UAT instructions, shared browser code, hosted archive/transport and storage/job contracts.
 - Started a disposable synthetic UAT server at loopback, then used native Safari through CUA. No personal archives, Google account, real provider account or cloud data were used.
 - Used Alice's three seeded examples to inspect landing, reading queue, reader, topics and weekly budget. Used Bob's empty workspace for a genuine first-use import of a three-row synthetic Saved Items CSV, provider setup, mocked retrieval and AI classification, opening the resulting Learning article, saving a takeaway and marking it read.
-- Source recovery/classification quality against real LinkedIn was not evaluated. Hundreds-of-saves workload counts below are extrapolations from configured batch limits, not a timed 482-post benchmark.
+- Source recovery/classification quality against real LinkedIn was not evaluated. Workload counts below use an illustrative 500-post archive and configured batch limits, not a timed large-archive benchmark.
 - Browser evidence consists of observed accessibility state and a synthetic reader screenshot in the tool transcript. No authenticated browser state or personal data was written as evidence. The disposable server stopped during the environment reset and no listener remains; Safari has no audit tab open. A final note-search edge case was interrupted and is excluded from confirmed findings.
 
 ## Findings, in priority order
@@ -62,7 +62,7 @@ One actual reading defect blocks the core promise and should be fixed before own
 
 ### P2: Large-archive onboarding creates many repeated provider/organization decisions
 
-**Code-derived gap.** Hosted retrieval accepts 10 or25 per explicit run, AI organization up to20 per batch (`onboarding.js:140`, `app.js:597`). If a user tries to process all482 saves, that is at least20 retrieval starts at the larger batch size, or49 at the default10, plus25 AI starts if all become readable. Import itself chunks automatically; retrieval/classification deliberately require separate actions to control cost.
+**Code-derived gap.** Hosted retrieval accepts 10 or 25 per explicit run, AI organization up to 20 per batch (`onboarding.js:140`, `app.js:597`). Processing an illustrative 500 saves takes at least 20 retrieval starts at the larger batch size, or 50 at the default 10, plus 25 AI starts if all become readable. Import itself chunks automatically; retrieval/classification deliberately require separate actions to control cost.
 
 **User impact:** the cost controls are valuable, but there is no visible “you can stop after five useful items” outcome. Users may infer that making the archive useful requires repeated administrative work.
 
