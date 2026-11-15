@@ -9,7 +9,7 @@ export function unwrap<T = Input>(result: Result): T {
   return result.data as T;
 }
 const ACTIVE = new Set(['QUEUED', 'STARTING', 'RUNNING', 'APPLYING', 'UNCERTAIN', 'QUOTA_BLOCKED']);
-const BLOCKED = new Set(['QUOTA_EXCEEDED', 'PHYSICAL_LIMIT', 'STORAGE_PRESSURE', 'ITEM_STORAGE_LIMIT', 'LOGICAL_LIMIT', 'RESULT_LIMIT', 'GROUP_LIMIT', 'GROUP_STORAGE_LIMIT', 'PLAN_SAVE_LIMIT', 'PLAN_SECTION_LIMIT']);
+const BLOCKED = new Set(['QUOTA_EXCEEDED', 'PHYSICAL_LIMIT', 'STORAGE_PRESSURE', 'ITEM_STORAGE_LIMIT', 'LOGICAL_LIMIT', 'RESULT_LIMIT', 'GROUP_LIMIT', 'GROUP_STORAGE_LIMIT']);
 export function publicJob(job: Input | null): Input {
   if (!job) return { idle: true };
   const fields = ['id', 'kind', 'status', 'created_at', 'updated_at', 'selected_count', 'applied_count', 'classified',

@@ -12,6 +12,27 @@ const integration = (name, callback) => test(name, { skip: !host }, callback);
 const env = { FIREBASE_PROJECT_ID: 'demo-save2ship', FIRESTORE_DATABASE_ID: 'save2ship', FIRESTORE_ENABLED: 'true', FIRESTORE_EMULATOR_HOST: host };
 const row = (n, content = 'Synthetic source text') => ({ url: `https://www.linkedin.com/feed/update/urn:li:activity:900000000000${String(n).padStart(5, '0')}`, title: `Synthetic ${n}`, saved_at: '2026-01-02', content });
 const pathFor = access => `s2sWorkspaces/${createHash('sha256').update(`${access.uid}\0${access.generation}`).digest('hex')}`;
+const recordSize = (path, data) => Buffer.byteLength(path) + Buffer.byteLength(JSON.stringify(data)) + 256;
+async function retainIncompatibleState(rt, status = 'deleting', wakeAt) {
+  const client = new FirestoreClient(env), path = pathFor(rt.access);
+  const records = (await client.list(`${path}/records`, { pageSize: 100 })).documents;
+  const checkpoint = await client.read(path), workspace = records.find(record => record.data.table === 'workspace');
+  const oldControl = JSON.parse(workspace.data.row);
+  const data = JSON.stringify({ version: 1, subscription: { id: 'sub_synthetic_legacy', closed: false } });
+  const ledgerRow = { _rowid: 2, id: 'billing', data, bytes: Buffer.byteLength(data) };
+  const ledgerPath = `${path}/records/${Buffer.from('settings\0billing').toString('base64url')}`;
+  const ledger = { table: 'settings', key: 'billing', row: JSON.stringify(ledgerRow) };
+  const control = { ...workspace.data, row: JSON.stringify({ ...oldControl, logical_bytes: oldControl.logical_bytes + ledgerRow.bytes, status }) };
+  await client.commit([
+    { path: ledgerPath, data: ledger, currentDocument: { exists: false } },
+    { path: workspace.path, data: control, currentDocument: { updateTime: workspace.updateTime } },
+    { path, data: { ...checkpoint.data, checkpoint: Number(checkpoint.data.checkpoint) + 1, commitId: randomUUID(), status,
+      ...(wakeAt === undefined ? {} : { wakeAt }), recordCount: Number(checkpoint.data.recordCount) + 1,
+      storedBytes: Number(checkpoint.data.storedBytes) + recordSize(ledgerPath, ledger) + recordSize(workspace.path, control) - recordSize(workspace.path, workspace.data) },
+      currentDocument: { updateTime: checkpoint.updateTime } },
+  ]);
+  return { client, path, authority: await client.read(path), records: await client.list(`${path}/records`, { pageSize: 100 }) };
+}
 async function cleanup(access) {
   const client = new FirestoreClient(env), path = pathFor(access);
   for (;;) {
@@ -198,4 +219,39 @@ integration('Firestore namespaces reject a configuration downgrade to SQLite aut
   await rt.dispose(); rt = await runtime({ persist, access, limits: { FIRESTORE_ENABLED: 'false' } });
   assert.equal((await rt.invoke('detail', { id: saved.id })).code, 'STORAGE_BACKEND_MISMATCH');
   assert.equal((await rt.invoke('capture', { ...row(10), request_id: 'forbidden-downgrade' })).code, 'STORAGE_BACKEND_MISMATCH');
+});
+
+integration('Firestore free beta refuses incompatible retained private state after cache loss without purging it', async t => {
+  const rt = await runtime(); t.after(async () => { await rt.dispose(); await cleanup(rt.access); });
+  await rt.call('provision'); const saved = await rt.mutate('capture', row(11));
+  const { client, path, authority, records } = await retainIncompatibleState(rt);
+  await rt.call('test.wipe');
+  for (const operation of ['state', 'delete.prepare', 'close'])
+    assert.equal((await rt.invoke(operation)).code, 'WORKSPACE_BUILD_MISMATCH', operation);
+  assert.equal((await rt.invoke('detail', { id: saved.id })).code, 'WORKSPACE_BUILD_MISMATCH');
+  assert.deepEqual(await client.read(path), authority);
+  assert.deepEqual(await client.list(`${path}/records`, { pageSize: 100 }), records);
+});
+
+integration('Firestore incompatible active workspace quarantines due alarms and explicit repairs without changing remote state', async t => {
+  const rt = await runtime(); t.after(async () => { await rt.dispose(); await cleanup(rt.access); });
+  await rt.call('provision'); const saved = await rt.mutate('capture', row(12, ''));
+  await rt.mutate('job.begin', { job: { id: 'old-active-job', kind: 'retrieval', status: 'QUEUED',
+    selected_ids: [saved.id], selected_revisions: { [saved.id]: saved.revision }, reserved_bytes: 10000,
+    next_poll_at: Date.now() + 3600000 } });
+  const retained = await retainIncompatibleState(rt, 'active', Date.now() - 1);
+  await rt.call('test.alarm', { due: true });
+  let inspected = await rt.call('test.inspect');
+  assert.equal(inspected.alarm, null); assert.equal(inspected.reconciliations, 0);
+  assert.deepEqual(inspected.authority, retained.authority);
+  assert.deepEqual(await rt.call('test.repair'), { repaired: false });
+  inspected = await rt.call('test.inspect');
+  assert.equal(inspected.alarm, null); assert.equal(inspected.reconciliations, 0);
+  await rt.call('test.wipe');
+  assert.deepEqual(await rt.call('test.repair'), { repaired: false });
+  inspected = await rt.call('test.inspect');
+  assert.equal(inspected.alarm, null); assert.equal(inspected.reconciliations, 0);
+  assert.equal((await rt.invoke('state')).code, 'WORKSPACE_BUILD_MISMATCH');
+  assert.deepEqual(await retained.client.read(retained.path), retained.authority);
+  assert.deepEqual(await retained.client.list(`${retained.path}/records`, { pageSize: 100 }), retained.records);
 });

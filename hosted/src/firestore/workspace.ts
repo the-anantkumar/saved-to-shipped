@@ -164,6 +164,7 @@ export class FirestoreWorkspace<Env extends FirestoreWorkspaceEnv = FirestoreWor
     if (authority.purging === true) { this.current = doc; return doc; }
     const meta = this.localMeta(), own = this.control();
     if (meta?.checkpoint === doc.updateTime && !meta.pending && own?.uid === access.uid && own.generation === access.generation) {
+      this.assertCompatibleWorkspace();
       this.current = doc; return doc;
     }
     // Core document listing is used to reconstruct a consistent local projection,
@@ -188,6 +189,7 @@ export class FirestoreWorkspace<Env extends FirestoreWorkspaceEnv = FirestoreWor
         const bytes = records.reduce((total, record) => total + recordBytes(recordPath(this.path, record.table, record.key), recordData(record)), CONTROL_RESERVE);
         if (bytes !== authority.storedBytes) invalid();
         this.install(after, records);
+        this.assertCompatibleWorkspace();
         await this.rememberAccess(access);
         return after;
       }
@@ -280,7 +282,7 @@ export class FirestoreWorkspace<Env extends FirestoreWorkspaceEnv = FirestoreWor
     let authority = checkpoint(doc, access);
     check(['deleting', 'deleted'].includes(authority.status), 'INVALID_TRANSITION', 'Freeze this workspace before deleting it.', 409);
     if (authority.status === 'deleted') { await this.clearProjection(); return { ok: true, data: { deleted: true } }; }
-    if (authority.purging !== true) this.assertBillingClosed();
+    if (authority.purging !== true) this.assertCompatibleWorkspace();
     await this.ctx.storage.put('firestore-access', access);
     await this.ctx.storage.setAlarm(Date.now() + 1000);
     // A frozen generation cannot accept new writes. Restartable batches avoid
@@ -336,27 +338,39 @@ export class FirestoreWorkspace<Env extends FirestoreWorkspaceEnv = FirestoreWor
     });
   }
   /** Trusted cron repair can rebuild scheduler state after local cache loss. */
-  async repair(access: Access): Promise<void> {
-    if (!this.enabled()) return;
-    await this.serialized(async () => {
-      const doc = await this.synchronize(access);
-      if (doc?.data.status === 'deleting' && doc.data.purging === true) await this.purge(access, doc);
-      else await this.applyWake(doc ?? undefined);
+  async repair(access: Access): Promise<boolean> {
+    if (!this.enabled()) return true;
+    return this.serialized(async () => {
+      try {
+        const doc = await this.synchronize(access);
+        if (doc?.data.status === 'deleting' && doc.data.purging === true) await this.purge(access, doc);
+        else await this.applyWake(doc ?? undefined);
+        return true;
+      } catch (error) {
+        if (!(error instanceof Fault) || error.code !== 'WORKSPACE_BUILD_MISMATCH') throw error;
+        await this.ctx.storage.deleteAlarm();
+        return false;
+      }
     });
   }
   override async alarm(): Promise<void> {
     if (!this.enabled()) { this.assertLegacyNamespace(); return super.alarm(); }
     const access = await this.ctx.storage.get<Access>('firestore-access');
     if (!access) return;
-    const active = await this.serialized(async () => {
-      const doc = await this.synchronize(access);
-      if (doc?.data.status === 'deleting' && doc.data.purging === true) { await this.purge(access, doc); return false; }
-      await this.applyWake(doc ?? undefined);
-      return doc?.data.status === 'active' && Number(doc.data.wakeAt ?? 0) > 0;
-    });
-    // Reconciliation invokes storage operations itself. Holding the queue while
-    // running it would deadlock and could turn a paid submission into a retry.
-    if (active) await this.reconcile(access);
-    await this.repair(access);
+    try {
+      const active = await this.serialized(async () => {
+        const doc = await this.synchronize(access);
+        if (doc?.data.status === 'deleting' && doc.data.purging === true) { await this.purge(access, doc); return false; }
+        await this.applyWake(doc ?? undefined);
+        return doc?.data.status === 'active' && Number(doc.data.wakeAt ?? 0) > 0;
+      });
+      // Reconciliation invokes storage operations itself. Holding the queue while
+      // running it would deadlock and could turn a paid submission into a retry.
+      if (active) await this.reconcile(access);
+      await this.repair(access);
+    } catch (error) {
+      if (!(error instanceof Fault) || error.code !== 'WORKSPACE_BUILD_MISMATCH') throw error;
+      await this.ctx.storage.deleteAlarm();
+    }
   }
 }

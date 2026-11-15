@@ -54,7 +54,7 @@ jobs:
           distribution: temurin
           java-version: "21"
       - name: Test Firestore authority, recovery and isolation in the emulator
-        run: npx -y firebase-tools@latest emulators:exec --only firestore --project demo-save2ship "node --test tests/firestore-emulator.test.mjs tests/firestore-workspace.test.mjs tests/firestore-rules.test.mjs tests/firestore-app.test.mjs tests/firestore-billing.test.mjs"
+        run: npx -y firebase-tools@latest emulators:exec --only firestore --project demo-save2ship "node --test tests/firestore-emulator.test.mjs tests/firestore-workspace.test.mjs tests/firestore-rules.test.mjs tests/firestore-app.test.mjs"
       - name: Build hosted browser assets
         run: npm run build:client
       - name: Install the pinned Chromium test browser
@@ -71,8 +71,6 @@ jobs:
         run: node tests/reading-regression.mjs
       - name: Test focus, sections, preferences and deliberate retrieval
         run: node tests/product-flow.mjs
-      - name: Test subscription checkout and cancellation with mocked payments
-        run: node tests/billing-ui.mjs
       - name: Measure synthetic local capacity
         run: npm run capacity
       - name: Measure final workspace capacity, churn and recovery

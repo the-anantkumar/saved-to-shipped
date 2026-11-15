@@ -19,7 +19,6 @@ export const LIMITS = Object.freeze({
 export const KINDS = ['untriaged', 'project', 'learning', 'experience', 'reference', 'skip'] as const;
 export const STATUSES = ['inbox', 'ready', 'doing', 'done', 'parked'] as const;
 export interface StorageEnv {
-  ENTITLEMENTS_ENABLED?: string;
   CREDENTIAL_KEYS?: string;
   WORKSPACE_ITEM_LIMIT?: string;
   WORKSPACE_LOGICAL_LIMIT?: string;

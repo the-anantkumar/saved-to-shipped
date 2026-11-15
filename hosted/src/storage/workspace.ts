@@ -2,14 +2,13 @@ import { DurableObject } from 'cloudflare:workers';
 import { Fault, LIMITS, failure, integer, object, string, type Access, type Input, type Result, type StorageEnv, type StoredJob } from '../contracts';
 import { boundedJson, check, classification, digest, editItem, editReading, finite, groupKind, inferredGroupKind, hasContext, importedItem, localClassification, metadata, now, readingState, size, type Group, type GroupKind, type Item } from './domain';
 import { foldName } from './casefold';
-import { enabled as entitlementsEnabled, initialBilling, plan, PLAN_LIMITS, publicEntitlements, reservePoints, settlePoint, billingTransition, type BillingState, type EntitlementEnv, type PointReservation } from '../billing/policy';
 
 export type Control = { uid: string; generation: string; status: string; revision: number; library_revision: number; logical_bytes: number; item_count: number; lifecycle_epoch: number };
 type ItemRow = { id: string; source: string; revision: number; meta: string; bytes: number; origin_job: string; origin_quality: number; source_revision: number; incarnation: string };
 type RecordRow = { id: string; data: string; bytes: number };
 type Table = 'groups' | 'settings' | 'imports' | 'jobs' | 'credentials' | 'receipts';
 const TABLES: Table[] = ['groups', 'settings', 'imports', 'jobs', 'credentials', 'receipts'];
-export const WORKSPACE_READS = new Set(['state', 'list', 'search', 'detail', 'details', 'export', 'import.plan', 'credential.get', 'job.get', 'billing.get']);
+export const WORKSPACE_READS = new Set(['state', 'list', 'search', 'detail', 'details', 'export', 'import.plan', 'credential.get', 'job.get']);
 const TERMINAL = new Set(['COMPLETE', 'COMPLETED', 'DISMISSED', 'CANCELLED', 'DELETED', 'FAILED']);
 const USER_MUTATIONS = new Set(['capture', 'item', 'delete', 'move', 'reading', 'project', 'settings', 'classify', 'triage', 'import', 'restore', 'credential.set', 'job.begin']);
 
@@ -84,8 +83,8 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
       try {
         const current = this.control();
         check(current && current.uid === access.uid && current.generation === access.generation, 'NOT_FOUND', 'Workspace not found.', 404);
+        this.assertCompatibleWorkspace();
         check(['deleting', 'closed'].includes(current.status), 'INVALID_TRANSITION', 'Freeze this workspace before deleting it.', 409);
-        this.assertBillingClosed();
         await this.ctx.storage.deleteAlarm();
         // deleteAll is atomic and deallocates SQL, KV and internal object metadata.
         // A SQL tombstone would retain allocation; Registry owns the terminal state.
@@ -99,14 +98,14 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
     const control = this.control();
     if (!control || control.uid !== access.uid || control.generation !== access.generation)
       throw new Fault(404, 'NOT_FOUND', 'Workspace not found.');
+    this.assertCompatibleWorkspace();
     if (control.status === 'closed') throw new Fault(410, 'WORKSPACE_DELETED', 'This workspace was deleted.');
     if (control.status !== 'active' && !allowSuspended) throw new Fault(403, 'MEMBERSHIP_SUSPENDED', 'This workspace is suspended.');
     return control;
   }
   private limits() {
     const limit = (value: string | undefined, max: number) => value && /^\d+$/.test(value) ? Math.min(max, Math.max(1, Number(value))) : max;
-    const allowance = this.entitlementsOn() ? PLAN_LIMITS[plan(this.billing())].saves : LIMITS.items;
-    return { items: limit(this.env.WORKSPACE_ITEM_LIMIT, allowance), logicalBytes: limit(this.env.WORKSPACE_LOGICAL_LIMIT, LIMITS.logicalBytes), itemBytes: LIMITS.itemBytes,
+    return { items: limit(this.env.WORKSPACE_ITEM_LIMIT, LIMITS.items), logicalBytes: limit(this.env.WORKSPACE_LOGICAL_LIMIT, LIMITS.logicalBytes), itemBytes: LIMITS.itemBytes,
       sqliteUsedBytes: limit(this.env.WORKSPACE_USED_LIMIT, LIMITS.sqliteUsedBytes) };
   }
   protected usage() {
@@ -117,7 +116,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
   private reserved(): number { return this.records<StoredJob>('jobs').reduce((sum, job) => sum + (this.active(job) ? Number(job.reserved_bytes ?? 0) : 0), 0); }
   private adjust(bytes: number, items = 0) {
     const control = this.control()!, limits = this.limits();
-    check(items <= 0 || control.item_count + items <= limits.items, this.entitlementsOn() ? 'PLAN_SAVE_LIMIT' : 'ITEM_LIMIT', 'Your saved-item limit is reached.', 409);
+    check(items <= 0 || control.item_count + items <= limits.items, 'ITEM_LIMIT', 'Your saved-item limit is reached.', 409);
     check(control.logical_bytes + bytes + this.reserved() - this.reservationCredit <= limits.logicalBytes, 'LOGICAL_LIMIT', 'Your workspace storage limit is reached.', 409);
     this.sql('UPDATE workspace SET logical_bytes=logical_bytes+?, item_count=item_count+? WHERE singleton=1', bytes, items);
   }
@@ -136,8 +135,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
     check(bytes <= max, 'INVALID_INPUT', 'The stored operation is too large.');
     const previous = this.sql<RecordRow>(`SELECT * FROM ${table} WHERE id=?`, id)[0];
     if (table === 'groups') {
-      const maximum = this.entitlementsOn() ? PLAN_LIMITS[plan(this.billing())].sections : LIMITS.groups;
-      if (!previous) check(this.records('groups').length < maximum, this.entitlementsOn() ? 'PLAN_SECTION_LIMIT' : 'GROUP_LIMIT', 'Your section limit is reached.', 409);
+      if (!previous) check(this.records('groups').length < LIMITS.groups, 'GROUP_LIMIT', 'Your section limit is reached.', 409);
       const total = this.sql<{ bytes: number }>('SELECT COALESCE(SUM(bytes),0) AS bytes FROM groups')[0]!.bytes;
       check(total + bytes - (previous?.bytes ?? 0) <= 65_536, 'GROUP_STORAGE_LIMIT', 'Section descriptions need to fit within 64 KiB in total.', 409);
     }
@@ -186,17 +184,12 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
     check(input.expected_revision === row.revision, 'REVISION_CONFLICT', 'This save changed. Reload it before saving your edit.', 409);
   }
   private settings(): Input { return { weekly_hours: 6, ...(this.record('settings', 'workspace') ?? { goals: '', model: 'gpt-4.1-mini', board_order: [] }) }; }
-  private entitlementsOn() { return entitlementsEnabled(this.env as Env & EntitlementEnv); }
-  private billing(): BillingState { return this.record<BillingState>('settings', 'billing') ?? initialBilling(); }
-  private saveBilling(value: BillingState) { this.put('settings', 'billing', value, 8192); }
-  /** Retain financial reconciliation state until future charging is stopped. */
-  protected assertBillingClosed() {
+  /** The beta must not bypass lifecycle requirements of another application build. */
+  protected assertCompatibleWorkspace() {
     // Legacy terminal workspaces can predate the settings table entirely.
     if (!this.sql("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'").length) return;
-    const billing = this.billing();
-    check(!billing.subscription || billing.subscription.closed, 'BILLING_ACTIVE', 'Cancel the subscription before deleting this workspace.', 409);
-    check(!billing.checkout || !['CREATING', 'UNCERTAIN'].includes(billing.checkout.status) || billing.subscription?.closed,
-      'BILLING_UNCERTAIN', 'Reconcile the pending checkout before deleting this workspace.', 409);
+    check(!this.sql("SELECT id FROM settings WHERE id='billing'").length, 'WORKSPACE_BUILD_MISMATCH',
+      'This workspace requires its original application build. Recover or export it there before using this beta.', 409);
   }
   private group(name: unknown, description: unknown = '', kind?: GroupKind): Group {
     const clean = string(name, 'Section name', 100, false), groups = this.records<Group>('groups');
@@ -230,8 +223,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
       goals: settings.goals ?? '', weekly_hours: settings.weekly_hours, board_order: settings.board_order ?? [], settings: { ...publicSettings, weekly_hours: settings.weekly_hours },
       ai: { available: publicSettings.ai_available, model: settings.model },
       retrieval_jobs: this.records<StoredJob>('jobs').map(job => this.publicJob(job)),
-      jobs: this.records<StoredJob>('jobs').map(job => this.publicJob(job)), usage: this.usage(),
-      entitlements: publicEntitlements(this.env as Env & EntitlementEnv, this.billing(), this.control()!.item_count, this.records('groups').length) };
+      jobs: this.records<StoredJob>('jobs').map(job => this.publicJob(job)), usage: this.usage() };
   }
   private publicJob(job: StoredJob) {
     return Object.fromEntries(['id', 'kind', 'status', 'revision', 'created_at', 'updated_at', 'selected_count', 'applied_count', 'classified',
@@ -304,8 +296,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
       const fingerprint = USER_MUTATIONS.has(operation) ? await digest(JSON.stringify({ operation, input: receiptInput })) : '';
       const outcome = this.ctx.storage.transactionSync((): Result => {
         this.reservationCredit = 0;
-        this.owned(access, ['suspend', 'resume', 'delete.prepare', 'delete.key', 'billing.get', 'billing.cancel', 'billing.closed',
-          'checkout.complete', 'checkout.reconcile', 'checkout.uncertain', 'checkout.failed'].includes(operation));
+        this.owned(access, ['suspend', 'resume', 'delete.prepare', 'delete.key'].includes(operation));
         if (!this.schemaReady) this.schema();
         if (!WORKSPACE_READS.has(operation)) this.beforeMutation();
         if (operation === 'delete.key') {
@@ -380,7 +371,6 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
       return input.ids.map(id => this.detail(id));
     }
     if (operation === 'credential.get') return this.record('credentials', this.provider(input.provider)) ?? null;
-    if (operation === 'billing.get') return { ...this.billing(), workspace_status: this.control()!.status };
     if (operation === 'job.get') {
       if (input.id) return this.job(input.id);
       const jobs = this.records<StoredJob>('jobs'); return jobs.find(job => this.active(job)) ?? jobs[0] ?? null;
@@ -447,14 +437,6 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
       return { ok: true };
     }
     if (operation.startsWith('job.')) return this.jobs(operation, input);
-    if (operation.startsWith('billing.') || operation.startsWith('checkout.')) {
-      const billing = this.billing();
-      const cleanup = (['billing.cancel', 'billing.closed'].includes(operation) && billing.subscription) ||
-        (['checkout.complete', 'checkout.reconcile', 'checkout.uncertain', 'checkout.failed'].includes(operation) && billing.checkout);
-      check(this.entitlementsOn() || cleanup, 'ENTITLEMENTS_DISABLED', 'Hosted subscriptions are not enabled.', 503);
-      const transition = billingTransition(billing, operation, input);
-      this.saveBilling(transition.state); return transition.result;
-    }
     throw new Fault(404, 'NOT_FOUND', 'Operation not found.');
   }
   private move(item: Item, beforeValue: unknown) {
@@ -571,12 +553,6 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
         selected_ids: selected, selected_revisions: revisions as Record<string, number>, selected_source_revisions: Object.fromEntries(selected.map(id => [id, this.row(id)!.source_revision])),
         selected_incarnations: Object.fromEntries(selected.map(id => [id, this.row(id)!.incarnation])),
         reserved_bytes: reserved, created_at: at, updated_at: at };
-      // Only trusted accounting written here may reserve organization points.
-      delete job.entitlement_points;
-      if (this.entitlementsOn() && job.kind === 'classification') {
-        const points = reservePoints(this.billing(), selected.length);
-        job.entitlement_points = points.reservation; this.saveBilling(points.state);
-      }
       this.put('jobs', id, job, 65_536); this.prune('jobs', LIMITS.jobs);
       return job;
     }
@@ -612,7 +588,7 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
         }
         const other = { ...patch }; delete other.pending_candidates;
         check(size(other) <= 32_768, 'INVALID_INPUT', 'Job metadata is too large.');
-        for (const key of ['id', 'kind', 'selected_ids', 'selected_source_revisions', 'selected_incarnations', 'created_at', 'revision', 'reserved_bytes', 'entitlement_points']) check(!(key in patch), 'INVALID_INPUT', 'Immutable job identity.');
+        for (const key of ['id', 'kind', 'selected_ids', 'selected_source_revisions', 'selected_incarnations', 'created_at', 'revision', 'reserved_bytes']) check(!(key in patch), 'INVALID_INPUT', 'Immutable job identity.');
         if (patch.status === 'STARTING') check(['QUEUED', 'STARTING'].includes(job.status), 'JOB_UNCERTAIN', 'A submitted job cannot restart.', 409);
         if (patch.status === 'QUEUED') check(job.status === 'QUEUED', 'JOB_UNCERTAIN', 'A submitted job cannot restart.', 409);
         if (patch.status !== undefined) check(['QUEUED', 'STARTING', 'RUNNING', 'APPLYING', 'UNCERTAIN', 'QUOTA_BLOCKED', ...TERMINAL].includes(String(patch.status)));
@@ -639,14 +615,13 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
         for (const value of input.candidates) {
           const candidate = object(value), id = string(candidate.id, 'Candidate ID', 50, false);
           check(selected.has(id), 'NOT_FOUND', 'Save not found.', 404);
-          if (!this.row(id) || object(job.selected_incarnations ?? {})[id] !== this.row(id)!.incarnation) { skipped++; this.settleJobPoint(job, id, false); continue; }
+          if (!this.row(id) || object(job.selected_incarnations ?? {})[id] !== this.row(id)!.incarnation) { skipped++; continue; }
           const { item, row } = this.get(id), patch = object(candidate.patch); let next: Item;
           if (job.kind === 'classification') {
-            if (row.revision !== job.selected_revisions[id] || (candidate.expected_revision !== undefined && candidate.expected_revision !== row.revision)) { skipped++; this.settleJobPoint(job, id, false); continue; }
+            if (row.revision !== job.selected_revisions[id] || (candidate.expected_revision !== undefined && candidate.expected_revision !== row.revision)) { skipped++; continue; }
             next = classification(item, patch); next.classification_method = 'OpenAI';
             if (patch.project_name) next.project_id = this.group(patch.project_name, '', inferredGroupKind(next)).id;
             this.save(next, { job: row.origin_job, quality: row.origin_quality });
-            this.settleJobPoint(job, id, true);
           } else {
             const quality = typeof candidate.quality === 'number' && Number.isFinite(candidate.quality) ? Math.max(0, Math.min(1_000_000, candidate.quality)) : String(patch.content ?? '').length;
             const sameJobUpgrade = row.origin_job === job.id && quality > row.origin_quality;
@@ -683,19 +658,11 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
         delete job.lease_id; delete job.lease_until;
       } else throw new Fault(404, 'NOT_FOUND', 'Job operation not found.');
     }
-    if (!this.active(job)) {
-      job.reserved_bytes = 0;
-      for (const id of job.selected_ids) this.settleJobPoint(job, id, false);
-    }
+    if (!this.active(job)) job.reserved_bytes = 0;
     job.revision++; job.updated_at = now();
     if (this.active(job)) job.reserved_bytes = Math.max(0, Number(job.reserved_bytes ?? 0) - Math.max(0, size(job) - originalJobBytes));
     this.reservationCredit = originalReserved;
     this.put('jobs', job.id, job, 230_000); this.reservationCredit = 0; return job;
-  }
-  private settleJobPoint(job: StoredJob, id: string, consumed: boolean) {
-    if (job.kind !== 'classification' || !job.entitlement_points) return;
-    const points = settlePoint(this.billing(), job.entitlement_points as PointReservation, id, consumed);
-    job.entitlement_points = points.reservation; this.saveBilling(points.state);
   }
   protected async schedule(): Promise<void> {
     const control = this.control();
@@ -710,8 +677,16 @@ export class Workspace<Env extends StorageEnv = StorageEnv> extends DurableObjec
   async alarm(): Promise<void> {
     const control = this.control();
     if (!control || control.status !== 'active') return;
-    if (await this.reconcile({ uid: control.uid, generation: control.generation })) await this.schedule();
-    else if (this.control()) await this.ctx.storage.deleteAlarm();
+    try {
+      this.assertCompatibleWorkspace();
+      if (await this.reconcile({ uid: control.uid, generation: control.generation })) await this.schedule();
+      else if (this.control()) await this.ctx.storage.deleteAlarm();
+    } catch (error) {
+      if (!(error instanceof Fault) || error.code !== 'WORKSPACE_BUILD_MISMATCH') throw error;
+      // This build cannot recover that workspace. Stop local retries and leave
+      // its data intact for the compatible build's explicit recovery path.
+      await this.ctx.storage.deleteAlarm();
+    }
   }
   /** Called inside the same SQL transaction as every non-close mutation. */
   protected beforeMutation(): void {}

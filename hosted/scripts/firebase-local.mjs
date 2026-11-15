@@ -10,7 +10,11 @@ const directory = resolve(root, '.local/firebase-project');
 const args = process.argv.slice(2);
 const prepareOnly = args.includes('--prepare-only');
 const processing = args.includes('--processing');
-const billingTest = args.includes('--billing-test');
+for (let index = 0; index < args.length; index++) {
+  if (args[index] === '--port') { index++; if (index < args.length) continue; }
+  else if (['--prepare-only', '--processing'].includes(args[index])) continue;
+  throw new Error('Supported options: --prepare-only, --processing, --port <number>.');
+}
 const portFlag = args.indexOf('--port');
 const port = portFlag < 0 ? 8012 : Number(args[portFlag + 1]);
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Choose a local port between 1024 and 65535.');
@@ -38,17 +42,7 @@ if (!Array.isArray(members) || members.length > 2 || members.some(uid => typeof 
 const uniqueMembers = [...new Set(members)];
 const operators = await localJson('operators.json', []);
 if (!Array.isArray(operators) || operators.length > 2 || operators.some(uid => typeof uid !== 'string' || !uniqueMembers.includes(uid)))
-  throw new Error('Local operator UIDs must be explicitly admitted members. See docs/BILLING_SETUP.md.');
-let merchant = null;
-if (billingTest) {
-  merchant = await localJson('billing-test.json', null);
-  if (!merchant || !/^rzp_test_[A-Za-z0-9]{1,64}$/.test(merchant.keyId) ||
-    typeof merchant.keySecret !== 'string' || !/^[\x21-\x7e]{1,256}$/.test(merchant.keySecret) ||
-    typeof merchant.webhookSecret !== 'string' || !/^[\x21-\x7e]{32,256}$/.test(merchant.webhookSecret) ||
-    !/^plan_[A-Za-z0-9]{1,64}$/.test(merchant.planId) || !Number.isSafeInteger(merchant.amountPaise) || merchant.amountPaise < 1 ||
-    !Number.isSafeInteger(merchant.totalCount) || merchant.totalCount < 1 || merchant.totalCount > 1200)
-    throw new Error('Choose valid Razorpay test credentials, a monthly INR plan, price, cycles and a webhook secret of at least 32 characters. See docs/BILLING_SETUP.md.');
-}
+  throw new Error('Local operator UIDs must be explicitly admitted members. See docs/FIREBASE_SETUP.md.');
 const signingFile = resolve(directory, 'local-secrets.json');
 let secrets = await localJson('local-secrets.json', null);
 if (!secrets) {
@@ -65,16 +59,13 @@ const config = {
   vars: { ...template.vars, HOSTED_ENABLED: 'true', FIRESTORE_ENABLED: 'true', FIRESTORE_DATABASE_ID: database,
     FIREBASE_PROJECT_ID: firebase.projectId, FIREBASE_PUBLIC_CONFIG: JSON.stringify(firebase), APP_ORIGIN: origin,
     ADMISSION_OPEN: uniqueMembers.length ? 'true' : 'false', ADMISSION_UIDS: JSON.stringify(uniqueMembers),
-    BETA_CAP: String(uniqueMembers.length), OPERATOR_UIDS: JSON.stringify([...new Set(operators)]), PROCESSING_OPEN: String(processing),
-    BILLING_ENABLED: String(billingTest), RAZORPAY_MODE: 'test',
-    ...(merchant ? { RAZORPAY_PLAN_ID: merchant.planId, RAZORPAY_AMOUNT_PAISE: String(merchant.amountPaise), RAZORPAY_TOTAL_COUNT: String(merchant.totalCount) } : {}) },
+    BETA_CAP: String(uniqueMembers.length), OPERATOR_UIDS: JSON.stringify([...new Set(operators)]), PROCESSING_OPEN: String(processing) },
 };
 // Wrangler's dotenv parser preserves JSON and escaped PEM newlines inside single quotes.
 const dotenv = Object.entries({
   SESSION_SIGNING_KEY: secrets.session,
   CREDENTIAL_KEYS: JSON.stringify({ active: 'v1', keys: { v1: secrets.credential } }),
   FIRESTORE_SERVICE_ACCOUNT: JSON.stringify(serviceAccount),
-  ...(merchant ? { RAZORPAY_KEY_ID: merchant.keyId, RAZORPAY_KEY_SECRET: merchant.keySecret, RAZORPAY_WEBHOOK_SECRET: merchant.webhookSecret } : {}),
 }).map(([name, value]) => {
   if (/[\r\n']/.test(value)) throw new Error(`Unsupported local secret encoding: ${name}.`);
   return `${name}='${value}'`;
@@ -84,7 +75,6 @@ await chmod(resolve(directory, '.dev.vars'), 0o600);
 const configFile = resolve(directory, 'wrangler.jsonc');
 await writeFile(configFile, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
 console.log(`Firebase project ${firebase.projectId}, database ${database}. Local access: ${uniqueMembers.length} admitted account(s).`);
-if (billingTest) console.log('Razorpay TEST checkout is enabled. The amount comes from your configured test plan.');
 if (processing) console.log('Import is enabled. Retrieval and AI use real user-owned provider accounts only after an explicit request.');
 else console.log('Import and paid provider processing are paused. Manual saves and editing remain available.');
 if (!prepareOnly) {

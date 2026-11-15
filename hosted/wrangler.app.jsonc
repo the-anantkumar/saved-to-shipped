@@ -9,8 +9,7 @@
   "vars": {
     "HOSTED_ENABLED": "false", "ADMISSION_OPEN": "false", "ADMISSION_UIDS": "[]", "PROCESSING_OPEN": "false", "BETA_CAP": "0",
     "FIREBASE_PROJECT_ID": "", "FIREBASE_PUBLIC_CONFIG": "{}", "OPERATOR_UIDS": "[]",
-    "FIRESTORE_ENABLED": "true", "FIRESTORE_DATABASE_ID": "save2ship",
-    "ENTITLEMENTS_ENABLED": "true", "BILLING_ENABLED": "false", "RAZORPAY_MODE": "test"
+    "FIRESTORE_ENABLED": "true", "FIRESTORE_DATABASE_ID": "save2ship"
   },
   "durable_objects": { "bindings": [
     { "name": "WORKSPACES", "class_name": "FirebaseWorkspace" },

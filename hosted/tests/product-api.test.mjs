@@ -7,7 +7,7 @@ const write = (rt, member, path, data) => rt.request(path, { ...member, data: { 
 const url = n => `https://www.linkedin.com/feed/update/urn:li:activity:90000000000000000${n}`;
 
 test('preferences remain private and validated; retrieval uses only explicitly selected owned sources', async t => {
-  const rt = await appRuntime({ variables: { ENTITLEMENTS_ENABLED: 'true' } }); t.after(() => rt.dispose());
+  const rt = await appRuntime(); t.after(() => rt.dispose());
   const alice = await rt.member(), bob = await rt.member('synthetic-bob');
   ok(await write(rt, alice, '/api/preferences', { weekly_hours: 2.5 }));
   assert.equal(ok(await rt.request('/api/state', alice)).weekly_hours, 2.5);
@@ -27,17 +27,23 @@ test('preferences remain private and validated; retrieval uses only explicitly s
   assert.equal(ok(await rt.request('/__fixture__/provider')).starts, 0, 'selection alone does not submit external work');
 });
 
-test('AI batches fit the remaining allowance and a zero balance rejects before provider submission', async t => {
-  const rt = await appRuntime({ variables: { ENTITLEMENTS_ENABLED: 'true' } }); t.after(() => rt.dispose());
+test('AI organization uses ordinary bounded batches without a subscription or monthly credit allowance', async t => {
+  const rt = await appRuntime(); t.after(() => rt.dispose());
   const alice = await rt.member();
+  const config = ok(await rt.request('/api/config'));
+  assert.equal(config.edition, 'free-beta');
+  assert.equal('billing_recovery' in config, false);
+  assert.equal('entitlements' in ok(await rt.request('/api/state', alice)), false);
+  for (const path of ['/api/billing/checkout', '/api/billing/sync', '/api/billing/cancel', '/api/billing/webhook', '/api/admin/billing/reconcile'])
+    assert.equal((await rt.request(path, { ...alice, data: {} })).status, 404, path);
+  assert.deepEqual(ok(await rt.request('/__fixture__/provider')), { mode: 'success', starts: 0, polls: 0, aborts: 0, classifications: 0 });
   ok(await write(rt, alice, '/api/settings', { openai_key: 'synthetic-key' }));
-  for (let n = 1; n <= 21; n++) ok(await write(rt, alice, '/api/capture', { url: `https://www.linkedin.com/posts/synthetic-credit-${n}`, content: 'Learn SQLite with a reproducible experiment.' }));
-  ok(await write(rt, alice, '/api/classify-ai', { limit: 1 }));
-  ok(await write(rt, alice, '/api/jobs/poll', {}));
-  assert.equal(ok(await rt.request('/api/state', alice)).entitlements.points.remaining, 19);
-  const second = ok(await write(rt, alice, '/api/classify-ai', {})); assert.equal(second.selected_count, 19);
-  ok(await write(rt, alice, '/api/jobs/poll', {}));
-  assert.equal(ok(await rt.request('/api/state', alice)).entitlements.points.remaining, 0);
-  assert.equal((await write(rt, alice, '/api/classify-ai', {})).body.code, 'AI_POINTS_LIMIT');
+  for (let n = 1; n <= 21; n++) ok(await write(rt, alice, '/api/capture', { url: `https://www.linkedin.com/posts/synthetic-beta-${n}`, content: 'Learn SQLite with a reproducible experiment.' }));
+  assert.equal(ok(await write(rt, alice, '/api/classify-ai', {})).selected_count, 20);
+  assert.equal(ok(await write(rt, alice, '/api/jobs/poll', {})).applied_count, 20);
+  assert.equal(ok(await write(rt, alice, '/api/classify-ai', {})).selected_count, 1);
+  assert.equal(ok(await write(rt, alice, '/api/jobs/poll', {})).applied_count, 1);
+  assert.equal((await write(rt, alice, '/api/classify-ai', {})).body.code, 'NOTHING_TO_PROCESS');
   assert.equal(ok(await rt.request('/__fixture__/provider')).classifications, 2);
+  assert.equal(ok(await rt.request('/api/items', alice)).items.length, 21);
 });

@@ -31,10 +31,7 @@ assert.ok(!Object.hasOwn(config.vars, 'CREDENTIAL_KEYS'));
 assert.ok(!Object.hasOwn(config.vars, 'FIRESTORE_SERVICE_ACCOUNT'));
 assert.equal(config.vars.FIRESTORE_ENABLED, 'true');
 assert.equal(config.vars.FIRESTORE_DATABASE_ID, 'save2ship');
-assert.equal(config.vars.ENTITLEMENTS_ENABLED, 'true');
-assert.equal(config.vars.BILLING_ENABLED, 'false');
-assert.equal(config.vars.RAZORPAY_MODE, 'test');
-for (const secret of ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET', 'RAZORPAY_WEBHOOK_SECRET']) assert.ok(!Object.hasOwn(config.vars, secret));
+for (const key of Object.keys(config.vars)) assert.doesNotMatch(key, /^(?:RAZORPAY_|BILLING_|ENTITLEMENTS_)/, 'Paid configuration in free beta');
 assert.deepEqual(config.durable_objects.bindings, [
   { name: 'WORKSPACES', class_name: 'FirebaseWorkspace' }, { name: 'REGISTRY', class_name: 'FirebaseRegistry' },
 ]);
@@ -65,6 +62,7 @@ assert.ok(browserInputs.includes('client/bootstrap.mjs'));
 assert.ok(browserInputs.some(path => path.includes('@firebase/auth/')));
 for (const path of browserInputs) {
   assert.ok(path.startsWith('client/') || path.startsWith('node_modules/'), `Unexpected browser input: ${path}`);
+  assert.doesNotMatch(path, /billing-ui|(?:^|\/)billing(?:\/|\.)/, 'Paid dependency in free beta browser');
   assert.doesNotMatch(path, /(?:^|\/)(?:tests?|probe)(?:\/|-)|(?:test|uat)-bootstrap|@firebase\/firestore|@grpc\//, `Nonproduction dependency: ${path}`);
 }
 for (const output of browserBuild.outputFiles) assert.equal(hash(await readFile(output.path)), hash(output.contents), `Stale browser bundle: ${relative(root, output.path)}`);
@@ -79,6 +77,7 @@ for (let n = 0; n < map.sources.length; n++) {
   const source = resolve(map.sourceRoot ? resolve(root, map.sourceRoot) : dirname(serverBundle), map.sources[n]);
   const path = relative(root, source).replaceAll('\\', '/');
   assert.ok(path.startsWith('src/') || path.startsWith('node_modules/'), `Unexpected server input: ${path}`);
+  assert.doesNotMatch(path, /(?:^|\/)billing\//, 'Paid dependency in free beta Worker');
   assert.doesNotMatch(path, /(?:^|\/)(?:tests?|probe)(?:\/|-)|harness|fixture/, `Test input in server bundle: ${path}`);
   assert.equal(hash(await readFile(source)), hash(map.sourcesContent[n]), `Stale dry-run source: ${path}`);
   serverInputs.push(path);
@@ -86,6 +85,7 @@ for (let n = 0; n < map.sources.length; n++) {
 assert.ok(serverInputs.includes('src/app.ts'));
 assert.ok(serverInputs.includes('src/auth/session.ts'));
 const worker = await readFile(serverBundle);
+assert.doesNotMatch(worker.toString('utf8'), /api\.razorpay\.com|https:\/\/rzp\.io/, 'Merchant calls in free beta Worker');
 assert.ok(!/__fixture__|TEST_PRIVATE_KEY|TEST_JWKS|syntheticRun1/.test(worker.toString('utf8')), 'Synthetic bypass in production Worker');
 for (const name of ['hosted.js', 'import-worker.js']) assert.ok(!/__fixture__|__fixtureSignIn|TEST_PRIVATE_KEY/.test(await readFile(resolve(assets, name), 'utf8')), `Synthetic authentication in ${name}`);
 

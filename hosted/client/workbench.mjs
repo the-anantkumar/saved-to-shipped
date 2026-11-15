@@ -1,28 +1,11 @@
 import { HostedTransport } from './transport.mjs';
 import { ARCHIVE_LIMIT, exportZIP, syntheticZIP, restoreChunks } from './archive.mjs';
 import { showTotpEnrollment, showTotpChallenge } from './mfa-ui.mjs';
-import { createBillingUI } from './billing-ui.mjs';
 
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 let authentication, currentUser = null, hooks, starting = false, worker = null, parsedImport = null, emailView = 'closed';
-let clearMfa = () => {}, opening = null, hostedAccess = true, billingRecovery = false;
-const transport = new HostedTransport({ getUser: () => currentUser, onReset: () => { billing.reset(); hooks?.reset(); } });
-const billing = createBillingUI({ getUser: () => currentUser, getEpoch: () => transport.epoch,
-  modal: (...args) => hooks.modal(...args), requiresPassword: user => authentication.requiresPassword?.(user),
-  authMessage, refresh: () => hooks.refresh?.(),
-  reauthenticate: (user, password, current, mount) => reauthenticateAccount(user, password, { current, mount }),
-  async request(path, data, { fresh = false, session = true, current } = {}) {
-    const uid = currentUser?.uid, epoch = transport.epoch;
-    const live = () => uid && currentUser?.uid === uid && transport.epoch === epoch && current();
-    if (!live()) throw new Error('Account changed. Open your plan again.');
-    if (session) await transport.session();
-    if (!live()) throw new Error('Account changed. Open your plan again.');
-    // Billing requests have a strict body contract; api() would add request_id.
-    const result = await transport.raw(path, { data, session, refreshToken: fresh, current: live });
-    if (!live()) throw new Error('Account changed. Open your plan again.');
-    return result;
-  },
-});
+let clearMfa = () => {}, opening = null;
+const transport = new HostedTransport({ getUser: () => currentUser, onReset: () => hooks?.reset() });
 
 function emailControls() {
   if (!authentication.signInWithEmail) return '';
@@ -35,20 +18,20 @@ function passwordConfirmation() {
   return authentication.requiresPassword?.(currentUser) ? '<div class="field"><label for="hosted-confirm-password">Confirm your password</label><input id="hosted-confirm-password" type="password" required maxlength="4096" autocomplete="current-password"></div>' : '';
 }
 
-function deletionControls(billingDeletion) {
-  const reason = billingDeletion ? 'Your workspace is frozen while subscription cancellation finishes. Your billing details stay available until future payments are stopped.' : 'Your workspace is frozen while deletion finishes. A known provider run may still be active. We keep its details so it can be stopped safely.';
-  const provider = billingDeletion ? '' : '<div class="field"><label for="hosted-replacement-apify-token">Replacement Apify token (optional)</label><input id="hosted-replacement-apify-token" type="password" maxlength="2048" autocomplete="off" autocapitalize="none" spellcheck="false"></div>';
-  const help = billingDeletion ? 'Retrying checks cancellation. Your data is removed only after cancellation is confirmed. Confirm your sign-in again to continue.' : 'Use a working token for the same Apify account. It is encrypted on the server and removed with your workspace. Retrying does not submit new provider work. Confirm your sign-in again to continue.';
+function deletionControls() {
+  const reason = 'Your workspace is frozen while deletion finishes. A known provider run may still be active. We keep its details so it can be stopped safely.';
+  const provider = '<div class="field"><label for="hosted-replacement-apify-token">Replacement Apify token (optional)</label><input id="hosted-replacement-apify-token" type="password" maxlength="2048" autocomplete="off" autocapitalize="none" spellcheck="false"></div>';
+  const help = 'Use a working token for the same Apify account. It is encrypted on the server and removed with your workspace. Retrying does not submit new provider work. Confirm your sign-in again to continue.';
   return `<p>${reason}</p><form id="hosted-deletion-form">${provider}${passwordConfirmation()}<p class="helper">${help}</p><button class="button primary" type="submit">Retry deletion</button></form>`;
 }
 
-function gate(title, message, { login = false, retry = false, deletion = false, verification = false, billingDeletion = false, billingCancellation = false } = {}) {
+function gate(title, message, { login = false, retry = false, deletion = false, verification = false } = {}) {
   clearMfa(); clearMfa = () => {};
   const modal = document.querySelector('#modal'); if (modal?.open) modal.close();
   document.body.dataset.hostedGate = 'true';
   document.querySelector('#sidebar').innerHTML = '';
   document.querySelector('#main').classList.remove('board-page', 'reading-page');
-  document.querySelector('#main').innerHTML = `<section class="hosted-gate"><a class="brand" href="/">save2ship<span class="brand-period">.</span></a><span class="eyebrow">A LITTLE LESS SAVING. A LITTLE MORE DOING.</span><h1 tabindex="-1">${escape(title)}</h1><p>${escape(message)}</p>${login ? `<div class="hosted-auth-options"><button class="button ${emailView === 'closed' ? 'primary' : ''}" id="hosted-sign-in">Continue with Google</button>${emailControls()}</div>` : ''}${verification ? '<div class="hosted-auth-options"><button class="button primary" id="hosted-verify-check">I verified my email</button><button class="quiet-link" id="hosted-verify-send">Resend verification email</button></div>' : ''}${retry ? '<button class="button" id="hosted-retry">Try again</button>' : ''}${deletion ? deletionControls(billingDeletion) : ''}<p id="hosted-auth-status" role="status" aria-live="polite"></p>${currentUser ? '<button class="quiet-link" id="hosted-sign-out">Sign out</button>' : ''}<p class="helper">${deletion ? 'Your saved data and membership remain locked until deletion completes.' : 'Your private workspace follows you between devices. Retrieval and optional AI use your own provider accounts.'}</p></section>`;
+  document.querySelector('#main').innerHTML = `<section class="hosted-gate"><a class="brand" href="/">save2ship<span class="brand-period">.</span></a><span class="eyebrow">A LITTLE LESS SAVING. A LITTLE MORE DOING.</span><h1 tabindex="-1">${escape(title)}</h1><p>${escape(message)}</p>${login ? `<div class="hosted-auth-options"><button class="button ${emailView === 'closed' ? 'primary' : ''}" id="hosted-sign-in">Continue with Google</button>${emailControls()}</div>` : ''}${verification ? '<div class="hosted-auth-options"><button class="button primary" id="hosted-verify-check">I verified my email</button><button class="quiet-link" id="hosted-verify-send">Resend verification email</button></div>' : ''}${retry ? '<button class="button" id="hosted-retry">Try again</button>' : ''}${deletion ? deletionControls() : ''}<p id="hosted-auth-status" role="status" aria-live="polite"></p>${currentUser ? '<button class="quiet-link" id="hosted-sign-out">Sign out</button>' : ''}<p class="helper">${deletion ? 'Your saved data and membership remain locked until deletion completes.' : 'Your private workspace follows you between devices. Retrieval and optional AI use your own provider accounts.'}</p></section>`;
   document.querySelector('#hosted-sign-in')?.addEventListener('click', loginWithGoogle);
   document.querySelector('#hosted-email-toggle')?.addEventListener('click', () => showEmail('signin'));
   for (const button of document.querySelectorAll('[data-auth-view]')) button.addEventListener('click', () => showEmail(button.dataset.authView));
@@ -57,18 +40,13 @@ function gate(title, message, { login = false, retry = false, deletion = false, 
   document.querySelector('#hosted-verify-send')?.addEventListener('click', () => void verifyEmail(true));
   document.querySelector('#hosted-sign-out')?.addEventListener('click', logout);
   document.querySelector('#hosted-retry')?.addEventListener('click', openWorkspace);
-  if (currentUser && billingCancellation) {
-    const button = document.createElement('button'); button.className = 'quiet-link'; button.id = 'hosted-cancel-renewal';
-    button.textContent = 'Cancel subscription renewal'; button.addEventListener('click', () => void billing.openCancellation());
-    document.querySelector('#hosted-auth-status').before(button);
-  }
   document.querySelector('#hosted-deletion-form')?.addEventListener('submit', event => {
     event.preventDefault();
     const field = document.querySelector('#hosted-replacement-apify-token');
     const token = field?.value.trim() || ''; if (field) field.value = '';
     const password = takePassword();
     event.currentTarget.querySelector('button').disabled = true;
-    void retryDelete(token, password, billingDeletion);
+    void retryDelete(token, password);
   });
 }
 
@@ -127,11 +105,11 @@ async function verifyEmail(resend) {
   finally { for (const button of buttons) if (button.isConnected) button.disabled = false; }
 }
 
-function deletionGate(message, billingDeletion = false) {
+function deletionGate(message) {
   worker?.terminate(); worker = null; parsedImport = null;
   transport.reset(currentUser?.uid || null);
   history.replaceState(null, '', '/');
-  gate('Deletion needs one more step.', message || 'Workspace deletion is paused. Retry to finish removing your data.', { deletion: true, billingDeletion, billingCancellation: billingRecovery });
+  gate('Deletion needs one more step.', message || 'Workspace deletion is paused. Retry to finish removing your data.', { deletion: true });
 }
 
 function authMessage(error) {
@@ -200,9 +178,8 @@ function enrollmentGate(user, epoch) {
 }
 
 async function openWorkspaceOnce() {
-  if (!currentUser) return gate('Make room for what matters.', hostedAccess ? 'Sign in to keep your saves, projects and reading together.' : 'The workbench is paused. Sign in if you need to cancel subscription renewal.', { login: true });
+  if (!currentUser) return gate('Make room for what matters.', 'Sign in to keep your saves, projects and reading together.', { login: true });
   if (authentication.needsVerification?.(currentUser)) return verificationGate();
-  if (!hostedAccess) return gate('The workbench is paused.', 'Your workspace is currently unavailable. You can still cancel subscription renewal.', { billingCancellation: billingRecovery });
   const user = currentUser, uid = user.uid, epoch = transport.epoch;
   try {
     const security = await authentication.securityState?.(user);
@@ -220,9 +197,9 @@ async function openWorkspaceOnce() {
   }
   catch (error) {
     if (currentUser?.uid !== uid || transport.epoch !== epoch) return;
-    if (['ACCOUNT_DELETING', 'BILLING_DELETION_PENDING'].includes(error.code)) deletionGate(error.message, error.code === 'BILLING_DELETION_PENDING');
+    if (error.code === 'ACCOUNT_DELETING') deletionGate(error.message);
     else gate(error.code === 'BETA_FULL' ? 'A little room is opening soon.' : 'Could not open your workspace.', error.message,
-      { retry: error.code !== 'BETA_FULL', billingCancellation: billingRecovery && error.code === 'MEMBERSHIP_SUSPENDED' });
+      { retry: error.code !== 'BETA_FULL' });
   }
 }
 
@@ -243,8 +220,7 @@ async function start(callbacks) {
     if (!response.ok) throw new Error('The hosted configuration could not be loaded.');
     const config = await response.json();
     if (config.mode !== 'hosted') throw new Error('This address is not configured as a hosted workspace.');
-    hostedAccess = config.enabled === true; billingRecovery = config.billing_recovery === true;
-    if ((!hostedAccess && !billingRecovery) || !config.firebase?.apiKey || !config.firebase?.projectId || !config.firebase?.authDomain) {
+    if (!config.enabled || !config.firebase?.apiKey || !config.firebase?.projectId || !config.firebase?.authDomain) {
       gate('A little room is being made.', 'The hosted beta is being prepared. Sign-in will appear here when it is ready.'); return;
     }
     let observed = false, neededVerification = false;
@@ -277,7 +253,9 @@ async function logout() {
 }
 
 function accountDialog() {
-  hooks.modal('Your workspace', `<p>Signed in as <strong>${escape(currentUser?.email || currentUser?.displayName || 'Member')}</strong>.</p><p>Your saves and encrypted provider keys are stored in your private hosted workspace. Signing out clears this browser’s workbench cache.</p><div class="hosted-account-actions"><button class="button" data-action="hosted-signout">Sign out</button><button class="quiet-link" data-action="hosted-billing">Plan and points</button><button class="quiet-link" data-action="hosted-restore">Restore a backup</button><button class="quiet-link danger" data-action="hosted-delete">Delete my account and workspace</button></div>`);
+  const usage = transport.summary?.usage;
+  const capacity = usage ? `<p aria-label="Workspace usage">${Number(usage.items || 0)} / ${Number(usage.limits?.items || 1000)} saves · ${(Number(usage.logicalBytes || 0) / 1_000_000).toFixed(1)} / ${(Number(usage.limits?.logicalBytes || 5_000_000) / 1_000_000).toFixed(1)} MB of workspace data.</p>` : '';
+  hooks.modal('Your workspace', `<p>Signed in as <strong>${escape(currentUser?.email || currentUser?.displayName || 'Member')}</strong>.</p><p><strong>Free beta.</strong> No subscription or trial expiry. Your saves and encrypted provider keys are stored in your private hosted workspace. Signing out clears this browser’s workbench cache.</p>${capacity}<p>Storage and daily processing limits keep this beta within its free hosting budget. Retrieval and optional AI use your own provider accounts, with their separate charges.</p><div class="hosted-account-actions"><button class="button" data-action="hosted-signout">Sign out</button><button class="quiet-link" data-action="hosted-restore">Restore a backup</button><button class="quiet-link danger" data-action="hosted-delete">Delete my account and workspace</button></div>`);
 }
 
 async function removeAccount() {
@@ -329,12 +307,12 @@ async function deleteAccount(apifyToken = '', password = '') {
 }
 async function confirmDelete() {
   try { await deleteAccount('', takePassword()); }
-  catch (error) { if (['ACCOUNT_DELETING', 'BILLING_DELETION_PENDING'].includes(error.code)) deletionGate(error.message, error.code === 'BILLING_DELETION_PENDING'); else throw new Error(authMessage(error)); }
+  catch (error) { if (error.code === 'ACCOUNT_DELETING') deletionGate(error.message); else throw new Error(authMessage(error)); }
 }
-async function retryDelete(token, password, billingDeletion = false) {
+async function retryDelete(token, password) {
   const uid = currentUser?.uid;
   try { await deleteAccount(token, password); }
-  catch (error) { if (uid && currentUser?.uid === uid) deletionGate(authMessage(error), error.code === 'BILLING_DELETION_PENDING' || (error.code !== 'ACCOUNT_DELETING' && billingDeletion)); }
+  catch (error) { if (uid && currentUser?.uid === uid) deletionGate(authMessage(error)); }
 }
 
 function download(bytes, filename, type) {
@@ -433,7 +411,7 @@ export function installHostedWorkbench(adapter) {
   authentication = adapter;
   window.Save2ShipHosted = {
   start, api: (...args) => transport.api(...args), detail: (...args) => transport.detail(...args), hasDetail: id => transport.hasDetail(id),
-  accountDialog, billingDialog: billing.open, logout, removeAccount, confirmDelete, importDialog, reviewImport, confirmImport, restoreDialog, reviewRestore, exportData, downloadPrompt,
+  accountDialog, logout, removeAccount, confirmDelete, importDialog, reviewImport, confirmImport, restoreDialog, reviewRestore, exportData, downloadPrompt,
   sample: () => download(syntheticZIP(), 'synthetic-linkedin-archive.zip', 'application/zip'),
   get user() { return currentUser ? { name: currentUser.displayName || 'Your account', email: currentUser.email || '' } : null; },
   get epoch() { return transport.epoch; },

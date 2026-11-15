@@ -20,6 +20,7 @@ export class Authority extends DurableObject {
   }
 }
 export class Workspace extends StorageWorkspace<Env> {
+  private reconciliations = 0;
   protected override async authorizeProvision(access: Access) {
     const authority = this.env.AUTHORITY.get(this.env.AUTHORITY.idFromName('synthetic-authority'));
     if (await authority.state(access, 'lookup') !== 'reserved')
@@ -29,8 +30,20 @@ export class Workspace extends StorageWorkspace<Env> {
     return { tables: this.ctx.storage.sql.exec<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE '_cf_%' ORDER BY name").toArray().map(row => row.name),
       alarm: await this.ctx.storage.getAlarm(), kvKeys: (await this.ctx.storage.list()).size, sqliteUsedBytes: this.ctx.storage.sql.databaseSize };
   }
-  async testAlarm() { await this.alarm(); }
+  async testAlarm(due = false) {
+    if (due) await this.ctx.storage.setAlarm(Date.now() - 1);
+    await this.alarm();
+  }
+  protected override async reconcile(_access: Access): Promise<boolean> { this.reconciliations++; return false; }
+  reconciliationCount() { return this.reconciliations; }
   legacySchema() { this.ctx.storage.sql.exec('ALTER TABLE workspace DROP COLUMN library_revision'); }
+  legacyFeatureState(deleting = false) {
+    const data = JSON.stringify({ version: 1, subscription: { id: 'sub_synthetic_legacy', closed: false } });
+    const bytes = new TextEncoder().encode(data).length;
+    this.ctx.storage.sql.exec("INSERT INTO settings(id,data,bytes) VALUES('billing',?,?)", data, bytes);
+    this.ctx.storage.sql.exec('UPDATE workspace SET logical_bytes=logical_bytes+?', bytes);
+    if (deleting) this.ctx.storage.sql.exec("UPDATE workspace SET status='deleting'");
+  }
   itemRevision(id: string, revision: number) {
     const row = this.ctx.storage.sql.exec<{ meta: string }>('SELECT meta FROM items WHERE id=?', id).one();
     const meta = JSON.parse(row.meta); meta.revision = revision;
@@ -52,10 +65,12 @@ export default {
     }
     const stub = env.WORKSPACES.get(env.WORKSPACES.idFromName(body.name));
     if (body.operation === 'test.snapshot') return Response.json({ ok: true, data: await stub.snapshot() });
+    if (body.operation === 'test.reconciliations') return Response.json({ ok: true, data: await stub.reconciliationCount() });
     if (body.operation === 'test.legacyClosed') { await stub.legacyClosed(body.access); return Response.json({ ok: true, data: {} }); }
     if (body.operation === 'test.legacySchema') { await stub.legacySchema(); return Response.json({ ok: true, data: {} }); }
+    if (body.operation === 'test.legacyFeatureState') { await stub.legacyFeatureState(body.input?.deleting === true); return Response.json({ ok: true, data: {} }); }
     if (body.operation === 'test.itemRevision') { await stub.itemRevision(String(body.input?.id), Number(body.input?.revision)); return Response.json({ ok: true, data: {} }); }
-    if (body.operation === 'test.alarm') { await stub.testAlarm(); return Response.json({ ok: true, data: {} }); }
+    if (body.operation === 'test.alarm') { await stub.testAlarm(body.input?.due === true); return Response.json({ ok: true, data: {} }); }
     return Response.json(await stub.invoke(body.access, body.operation, body.input ?? {}));
   },
 } satisfies ExportedHandler<Env>;

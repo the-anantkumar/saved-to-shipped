@@ -27,7 +27,6 @@
     "test:mfa-ui": "npm run build:client && node tests/mfa-ui.mjs",
     "test:reader": "npm run build && npm run build:client && node tests/reading-regression.mjs",
     "test:product": "npm run build && npm run build:client && node tests/product-flow.mjs",
-    "test:billing-ui": "npm run build && npm run build:client && node tests/billing-ui.mjs",
     "firebase:local": "node scripts/firebase-local.mjs",
     "release:check": "npm run app:dryrun && node scripts/check-release.mjs",
     "capacity:workspace": "node tests/capacity/workspace.mjs"

@@ -39,7 +39,10 @@ export class Workspace extends FirestoreWorkspace<Env> {
   }
   // Firestore callbacks are driven explicitly by each test.
   override async alarm(): Promise<void> {}
-  async driveAlarm(): Promise<void> { await super.alarm(); }
+  async driveAlarm(due = false): Promise<void> {
+    if (due) await this.ctx.storage.setAlarm(Date.now() - 1);
+    await super.alarm();
+  }
   protected override async reconcile(access: Access): Promise<boolean> {
     const result = await this.invoke(access, 'job.get');
     if (!result.ok || !result.data) return false;
@@ -72,8 +75,8 @@ export default {
     if (operation === 'test.wipe') { await store.wipeCache(); return Response.json({ ok: true, data: {} }); }
     if (operation === 'test.lose-access') { await store.loseSchedulerIdentity(); return Response.json({ ok: true, data: {} }); }
     if (operation === 'test.remove-authority') { await store.removeAuthority(access); return Response.json({ ok: true, data: {} }); }
-    if (operation === 'test.alarm') { await store.driveAlarm(); return Response.json({ ok: true, data: {} }); }
-    if (operation === 'test.repair') { await store.repair(access); return Response.json({ ok: true, data: {} }); }
+    if (operation === 'test.alarm') { await store.driveAlarm(input.due === true); return Response.json({ ok: true, data: {} }); }
+    if (operation === 'test.repair') return Response.json({ ok: true, data: { repaired: await store.repair(access) } });
     return Response.json(await store.invoke(access, operation, input));
   },
 } satisfies ExportedHandler<Env>;
