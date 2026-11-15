@@ -1,5 +1,7 @@
 # Product refinement evidence
 
+**Free-beta update:** the active candidate is now `feat/free-beta-oss`. Useful reader/organization/return-flow changes remain, while subscription code and payment checks are deferred to the preserved `da7652b` branch. This document retains the historical audit/refinement record; use [free-beta evidence](FREE_BETA.md) for checks on the separated candidate.
+
 The implementation follows the [product audit](PRODUCT_AUDIT.md) and [subscription plan](../MONETIZATION_PLAN.md). Hosted and subscription work depends on the unmerged Firebase foundation in MR 9. Only completed checks are recorded below.
 
 Implementation checkpoints:

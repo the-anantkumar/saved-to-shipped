@@ -8,13 +8,13 @@
 
 Saved → Shipped is an open-source workbench for developers with a collection of good ideas hidden in LinkedIn bookmarks. Import your official archive, retrieve available post content through a hosted extractor, and give each save a home: a project to build, something to learn, or an experience to revisit.
 
-Run it locally. Bring your own extractor API key. Add an optional AI key for more specific project suggestions. Your archive and workspace stay on your computer; selected URLs go to the extractor only when you start retrieval.
+Start locally with the synthetic demo or your own pasted source text. Bring an extractor API key when you want post retrieval, and an optional AI key for more specific suggestions. Your archive and local workspace stay on your computer; selected URLs go to the extractor only when you start retrieval.
 
-> **Development preview:** real archive import, a ten-post live provider dataset, and optional OpenAI classification have been checked. Synthetic tests cover the complete workflow and provider failures. Attachment fidelity, inaccessible posts, billing, and fresh-developer setup still need live validation. See the [live check and its limits](docs/LIVE_CHECK.md). This package has not been published to PyPI.
+> **Development preview:** real archive import, a ten-post live provider dataset, and optional OpenAI classification have been checked. Synthetic tests cover the complete workflow and provider failures. Attachment fidelity, inaccessible posts, actual provider charges, and fresh-developer setup still need live validation. See the [live check and its limits](docs/LIVE_CHECK.md). This package has not been published to PyPI.
 
 The separate **hosted beta** adds persistent Google or verified Email/password sign-in and private Firestore storage. Email sign-in requires authenticator-app two-factor authentication. See [Firebase setup](docs/FIREBASE_SETUP.md) to run it locally against your own project. The hosted application is not publicly deployed, and its free-tier capacity is still being measured. The one-command Python workflow below remains account-free.
 
-Hosted Free/Pro plans and Razorpay checkout now have synthetic test coverage. Free starts at 100 saves, 3 sections and 20 organization points per UTC month; Pro at 1,000 saves, 25 sections and 200 points per verified paid monthly period. Only successfully AI-organized saves consume points. Manual organization, notes, reading and exports use none, and Apify/OpenAI fees remain separate on your own accounts. The price is undecided; no merchant account, real test payment or live checkout is active. See [billing setup](docs/BILLING_SETUP.md) for the test-only configuration and remaining launch gates.
+This release focuses on a **free beta**: no card, subscription, expiry countdown or organization-point system. The local MIT application stays account-free. The optional hosted beta keeps its storage, admission and daily work limits; Apify/OpenAI usage remains on your own provider accounts. Start with the [free-beta guide](docs/FREE_BETA.md), then use the [owner UAT checklist](docs/UAT.md) to decide whether the experience is useful. Paid work is preserved separately and is outside this release.
 
 ## Start in one command
 
@@ -42,11 +42,11 @@ saved-to-shipped
 ## Your first useful run
 
 1. **Import archive.** Choose your LinkedIn export ZIP or its Saved Items CSV.
-2. **Open Settings.** Paste your Apify API token. An OpenAI key and your build/learning goals are optional. Blank key fields keep existing keys.
-3. **Process saves.** Follow the next-step panel on Saves. Start with 10 posts and choose a maximum provider charge. The app submits one hosted run and checks it automatically. First-time key setup returns you directly to retrieval.
+2. **Add useful context.** Paste source text in Notes, or add your Apify token in Settings when you want retrieval. OpenAI and your build/learning goals are optional. Blank key fields keep existing keys.
+3. **Choose a small slice.** Inspect the original URLs and saved dates, then choose up to five posts you care about. If using retrieval, confirm the selected posts and provider charge cap. Leave the rest of the archive for later.
 4. **Review the recovered content.** Readable posts receive text, a title or excerpt, author, source provenance, and available external links. Missing, gated, deleted, and partial results remain visible.
 5. **Organize.** Choose **Organize saves**. Build ideas go to **Projects**, learning and reference material to **Learning**, and experience saves to **Experiences**. Suggestions are editable. Notes and pasted source text have a separate **Notes** editor.
-6. **Build or read.** In Projects, review next actions and drag approved tasks through To do, In progress, and Done. In the reading spaces, choose a topic, check the preview and read time, or pin something to **Read next**. Open a save to read, keep a takeaway, and explicitly **Mark read**. **Export** stays in the top bar.
+6. **Do one useful thing.** Open Today to continue a read or an active project step. In Projects, review next actions and move approved tasks through To do, In progress and Done. In the reading spaces, open a save, keep a takeaway and explicitly **Mark read**. Export before stopping, then return tomorrow to check that continuing feels easy.
 
 You do not need to manually annotate every link. Manual text and notes remain available for inaccessible posts or extra personal context.
 
@@ -56,7 +56,7 @@ The [sample workspace](http://127.0.0.1:8010/?workspace=demo) works without keys
 
 | Space | What belongs here | How you use it |
 | --- | --- | --- |
-| **Projects** | Saves classified as Build / Project | Review small next actions, drag tiles, plan a week, and attach finished work. |
+| **Projects** | Saves classified as Build / Project | Review small next actions, move tiles, preview weekly suggestions, and attach finished work. |
 | **Learning** | Learning and reference saves | Browse editorial rows by topic, search, or available reading time. Keep a short Read next queue. |
 | **Experiences** | Stories, interview experiences, event opportunities, and other experience saves | A separate reading library with the same topic and progress controls. |
 
@@ -146,7 +146,7 @@ In a source checkout, state defaults to `data/items.json`. An installed package 
 
 ## Data, privacy, and costs
 
-The local MIT application has no subscription requirement. The separate hosted implementation includes Free/Pro allowances and test-mode subscription checkout, with live payments still disabled. The selected extraction provider and optional AI provider charge under your own accounts in either workflow.
+The local MIT application and this beta have no application subscription or organization credits. Optional extraction and AI services charge under your own provider accounts. Manual capture, pasted source text, local rules, reading, notes and exports can be used without provider keys.
 
 Saving settings or importing an archive does not start a paid request. Starting retrieval sends selected URLs to Apify. AI classification sends the selected titles, retrieved or supplied text, notes, goals, coverage, and existing project names to OpenAI. The raw ZIP and unrelated account records are excluded.
 
@@ -208,6 +208,6 @@ npm run uat
 
 Open the loopback URL it prints. This disposable preview has visible Alice, Bob and Charlie test-account controls and mocks all providers; use only test content and dummy keys. Its data disappears when stopped. It exercises the same interface and API paths as the hosted build, with a separate test-only identity entrypoint. Use the [UAT checklist](docs/UAT.md) to exercise it.
 
-Hosted batches contain at most 25 retrieval links. Plan allowances sit below hard workspace ceilings of 1,000 saves, 5 MB logical storage and a 128 KiB per-save limit; actual hosted capacity is still unverified. Hosted exports contain the v1 JSON backup and a CSV, and **Import** can restore the backup. Provider credentials and billing records are excluded from exports. Provider credentials are encrypted on the server. See the [hosted guide](hosted/README.md), [billing setup](docs/BILLING_SETUP.md), [shipping plan](docs/SHIP_PLAN.md) and [production execution plan](docs/PRODUCTION_PLAN.md) for the remaining live sign-in, payment, capacity and release checks.
+Hosted batches contain at most 25 retrieval links. Hard workspace ceilings are 1,000 saves, 5 MB logical storage and a 128 KiB per-save limit; text length and internal storage pressure can reduce the usable item count. The admitted cohort and deployed capacity remain unverified. Hosted exports contain the v1 JSON backup and a CSV, and **Import** can restore the backup. Provider credentials are encrypted on the server and excluded from exports. See the [free-beta guide](docs/FREE_BETA.md), [hosted guide](hosted/README.md), [shipping plan](docs/SHIP_PLAN.md) and [production execution plan](docs/PRODUCTION_PLAN.md) for the remaining acceptance and capacity checks.
 
 Existing CLI commands remain available through `python3 saved_to_shipped.py --help` or the installed `saved-to-shipped-cli` command. Future source adapters can reuse the normalized save contract. Native Reddit and Instagram archive support is outside the current web release.

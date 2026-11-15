@@ -1,6 +1,8 @@
 # Preparing the first open-source release
 
-The approved organizing experience is preserved by `checkpoint/organizing-ux-2026-11-07` at `5f84ee3`, merged to main in [PR #5](https://github.com/the-anantkumar/saved-to-shipped/pull/5). Further work starts from that merge on `feat/oss-release-readiness`. The repository is currently private and no package has been published to PyPI.
+The approved organizing experience is preserved by `checkpoint/organizing-ux-2026-11-07` at `5f84ee3`, merged to main in [PR #5](https://github.com/the-anantkumar/saved-to-shipped/pull/5). The active release-preparation branch is `feat/free-beta-oss`, which retains the unmerged hosted/Firebase foundation and separates paid work preserved on `feat/firebase-backend` at `da7652b`. The package remains version `0.3.0` during preparation. This work does not create a tag, publish a package, change repository visibility or deploy the hosted service.
+
+The release scope is a free local MIT workbench plus an optional, capacity-limited hosted beta. There is no application card requirement, trial expiry, paid tier or organization-point system. Provider keys are optional for the local demo/manual flow; extraction and AI fees remain on each user's provider accounts. Merchant onboarding and pricing are not release gates. See [free-beta scope](FREE_BETA.md) and [owner UAT](UAT.md).
 
 ## Release sequence
 
@@ -34,7 +36,7 @@ CI retains only the verified wheel and source archive for seven days. It uses pi
 
 | Check | Current evidence | Remaining work |
 | --- | --- | --- |
-| Official archive import | A real 482-save export imported and re-imported without losing annotations | Fresh-developer trial on the intended release commit |
+| Official archive import | Earlier real-archive import/re-import checks are recorded; automated checks use synthetic fixtures | Five-save owner trial on the intended free-beta commit |
 | Local organizing | Synthetic HTTP/UI tests and browser QA cover all three destinations | Human empty-workspace and mobile review |
 | Installed package | Wheel and source-archive checks, including restart persistence | Confirm CI passes for the final candidate |
 | Hosted post retrieval | Ten real results matched saved URLs; coverage limits are recorded | Compare source fidelity, unavailable outcomes, actor reliability, account limits, and actual billing |
@@ -44,9 +46,10 @@ CI retains only the verified wheel and source archive for seven days. It uses pi
 
 ## Refinement and enrichment backlog
 
-- Make empty-workspace organization useful before provider configuration, and test the full first-use journey with a new developer.
+- Recheck the empty-workspace demo/manual path with a new developer, then complete one useful read/action without processing the whole archive.
 - Preserve source identity and provenance when importing an existing extractor dataset, so developers can reuse content without another paid run.
 - Improve attachment and linked-article coverage only through tested adapters, with visible missing/truncated content and explicit paid work.
 - Improve classification boundaries and topic naming from reviewed examples before introducing automatic regrouping or additional sources.
+- Keep Read next deliberately small, make replacing today's choice easy, and show a clear stopping point after one outcome; these remain follow-up UX work until implemented and accepted.
 
 Stay LinkedIn-focused for the first release. Add one tested enrichment capability at a time, keeping the checkpoint and phased commits available for backtracking.

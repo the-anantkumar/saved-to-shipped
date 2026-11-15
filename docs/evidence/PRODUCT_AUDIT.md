@@ -1,5 +1,7 @@
 # save2ship product audit
 
+**Free-beta update:** the active candidate is now `feat/free-beta-oss`. Useful reader/organization/return-flow changes remain, while subscription code and payment checks are deferred to the preserved `da7652b` branch. This document retains the historical audit/refinement record; use [free-beta evidence](FREE_BETA.md) for checks on the separated candidate.
+
 Date: 2026-11-15. Baseline: `7df4342` workspace flows; auth is being changed concurrently and was deliberately excluded from this review. Scope: the hosted workbench as used by a developer who has hundreds of LinkedIn bookmarks, short available sessions, and trouble returning to previously saved ideas.
 
 Update after implementation: the original observations and verdict below remain the historical baseline. Resolution markers point to [product refinement evidence](PRODUCT_REFINEMENTS.md) for the reader, empty sections, persisted weekly preference, Today, global Find and deliberate retrieval changes. Their synthetic acceptance checks have passed; real-archive owner UAT and timed usefulness targets remain open. The unbounded short-list and reminder gaps are not claimed as resolved.

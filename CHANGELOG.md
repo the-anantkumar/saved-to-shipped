@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-- Closed hosted implementation with Google sessions, isolated SQLite workspaces, admission allowlists and hard-free defaults.
+Free-beta candidate; the runtime version remains `0.3.0` during preparation. No release is published by these notes.
+
+- Separate paid implementation from the free beta; no application subscription, checkout, organization credits or trial expiry in this candidate.
+- Today resumes an unfinished read or active project step; global Find searches across spaces.
+- Keep empty typed sections visible, persist the weekly time budget, and preview exact saved URLs before retrieval.
+- Fix reader source/notes disappearing after queuing an unopened read.
+
+- Closed hosted implementation with Google and verified Email/password plus TOTP sessions, authoritative Firestore data, disposable SQLite projections, admission allowlists and hard-free defaults.
 - Browser-side archive parsing, paged libraries, version-1 backup restore and safe account switching.
 - Encrypted user-owned provider keys, durable jobs, bounded work reservations and retryable account deletion.
 - Synthetic authenticated browser E2E, restart recovery, strict lifecycle review and final-schema capacity evidence. Hosted admission remains closed pending live identity, physical allocation and platform recovery checks.

@@ -1,8 +1,31 @@
 # save2ship acceptance testing
 
-Use this pass to decide whether importing, organizing and returning to saved ideas feels ready. Automated acceptance is recorded separately from your sign-off. This environment runs the hosted application on local Cloudflare tooling with synthetic identities and mocked providers. It does not validate real Google sign-in, LinkedIn retrieval quality or deployed free-tier capacity.
+Use this pass to decide whether a few saved ideas become useful with little effort. The [free beta](FREE_BETA.md) needs no application card, subscription or expiry countdown. Automated checks are separate from owner sign-off.
 
-## Start with one command
+## Owner trial with no cloud setup
+
+Run `python3 server.py` from the checkout with Python 3.10+. Start with the separate [synthetic demo](http://127.0.0.1:8010/?workspace=demo) to learn the controls without accounts or keys. Then use the normal local workspace for the personal trial below. Provider retrieval/AI is optional; manual pasted source text and local rules are available.
+
+| Session | Action and outcome | Owner result |
+| --- | --- | --- |
+| Day 1: choose | Import your archive once, then pick five saves relevant to a current goal. Inspect the URLs; leave the rest dormant. If needed, paste source text or explicitly retrieve only those saves with your own provider key and charge cap. | Pending |
+| Day 1: organize | Put the five saves into Projects, Learning or Experiences. Create an empty section and confirm it stays visible. Save your weekly time preference and reload. | Pending |
+| Day 1: finish | Complete one read with a takeaway, or advance one small project action. Confirm source text is still visible and notes are separate. Stop after that outcome; no backlog-clearing target is required. | Pending |
+| Day 1: recover | Export a backup, stop and restart the application, then reopen the same workspace. Notes, groups, reading progress and weekly preference remain. | Pending |
+| Day 2: return | Open the app without instructions. Use Today to continue useful work, or Find a saved idea to locate a note. Record what was confusing and whether this took less effort than LinkedIn Saved Items. | Pending |
+| Comfort | Repeat the useful action in dark mode, at a narrow width and with the keyboard. There is no upgrade, checkout or credit-balance task in this trial. | Pending |
+
+Keep real archives and notes private. Record time-to-first-useful-outcome and time-to-find-a-continuation as observations, not pre-filled success claims. A three-choice Read next cap, skip/replace controls and a completed-session summary are not claimed as implemented by this checklist.
+
+## Optional hosted account trial
+
+If cross-device persistence is part of your acceptance, use the [Firebase setup](FIREBASE_SETUP.md) and only the admitted test accounts. Check Google sign-in or verified Email/password plus authenticator TOTP, sign out/reload, reopen in another browser, confirm private data isolation and export before deletion. This path uses real Firebase identity/storage. It still needs no merchant account, payment setup or subscription. Real provider calls remain separately explicit and use your own accounts.
+
+## Synthetic hosted regression environment
+
+The following fixture runs the hosted application on local Cloudflare tooling with synthetic identities and mocked providers. It does not validate real sign-in, LinkedIn retrieval quality or deployed free-tier capacity.
+
+### Start the synthetic environment
 
 From `hosted/`, use Node 24 and npm 10 or 11. Install the locked tooling once with `npm ci`, then:
 
@@ -22,7 +45,7 @@ The test-account controls offer:
 
 Selection and sign-out persist across reloads in that browser. A separate browser starts independently. To compare two sessions of Alice, choose Alice in each. Signing out also clears other tabs in the same browser, as persistent authentication would. Deleting a test account frees its seat; restart the command to reset that scenario.
 
-## Acceptance checklist
+### Synthetic regression checklist
 
 Mark each row Pass or Fail and note any confusing step. Agent-run checks do not replace the product owner's judgment about clarity and usefulness.
 
@@ -45,10 +68,10 @@ If something fails, record the account, screen, action, expected result and actu
 
 ## Automated checks and shipping boundary
 
-The [2026-11-15 product audit](evidence/PRODUCT_AUDIT.md) completed a synthetic first-use journey and identified three unresolved trust issues: queuing an unopened read can leave its reader visibly empty until reload, a new empty topic is hidden, and the weekly time budget resets on reload. Reproduce and resolve these before owner acceptance. Existing broad end-to-end checks do not cover the queue-before-open order that exposed the reader issue.
+The [2026-11-15 product audit](evidence/PRODUCT_AUDIT.md) identified the queue-before-open reader, hidden empty section and forgotten weekly-budget issues. [Historical refinement evidence](evidence/PRODUCT_REFINEMENTS.md) records their fixes. Recheck those exact behaviors on this separated candidate; [free-beta evidence](evidence/FREE_BETA.md) records its new results rather than inheriting old payment-branch passes.
 
 For the next product pass, choose five relevant saves rather than processing an entire archive. Complete one read with a takeaway or one project action, then return the next day without instructions. Check whether continuing useful work takes less effort than reopening LinkedIn Saved Items. The audit contains the detailed delivery order and proposed acceptance targets; those targets are not measured results.
 
-`npm run test:e2e` runs the application journeys; `npm run test:uat` runs the visible test-account controls, reload/sign-out behavior, token renewal and mobile/dark layout. Both use only generated identities and mocked providers. Reports live in ignored `hosted/.local/` directories.
+`npm run test:e2e` runs the application journeys; `npm run test:uat` runs the visible test-account controls, reload/sign-out behavior, token renewal and mobile/dark layout; `npm run test:product` checks Today, sections, preferences and deliberate retrieval. These use generated identities and mocked providers. Reports live in ignored `hosted/.local/` directories.
 
 See the [UAT development evidence](evidence/UAT.md) for the tested checkpoint and findings. User sign-off is pending until the checklist is exercised and accepted. Real Google authentication, authorized bounded provider calls, final cloud storage/CPU accounting and deployed rollback remain separate gates in the [shipping plan](SHIP_PLAN.md). Passing this local UAT must not be presented as proof that the hosted beta supports 500 members.
