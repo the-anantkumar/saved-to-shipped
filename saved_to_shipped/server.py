@@ -175,6 +175,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Request must be a JSON object")
                 if route == "/api/capture":
                     self.json({"id": work.capture(state_path, payload)})
+                elif route == "/api/preferences":
+                    work.save_preferences(state_path, payload)
+                    self.json({"ok": True})
                 elif route == "/api/settings":
                     if state_path == self.server.demo_path:
                         raise ValueError("Configure provider keys from your personal workspace.")

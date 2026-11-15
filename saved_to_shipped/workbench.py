@@ -128,11 +128,15 @@ def capture(path: Path, payload: dict) -> str:
     return item["id"]
 
 
-def project_for(state: dict, name: str) -> str:
+def section_kind(kind: str) -> str:
+    return "learning" if kind == "reference" else kind if kind in {"project", "learning", "experience"} else "project"
+
+
+def project_for(state: dict, name: str, kind: str = "project") -> str:
     existing = next((p for p in state["projects"] if p["name"].casefold() == name.casefold()), None)
     if existing:
         return existing["id"]
-    project = {"id": uuid.uuid4().hex[:12], "name": name, "description": "", "created_at": now()}
+    project = {"id": uuid.uuid4().hex[:12], "name": name, "description": "", "created_at": now(), "kind": section_kind(kind)}
     state["projects"].append(project)
     return project["id"]
 
@@ -142,6 +146,9 @@ def save_project(path: Path, payload: dict) -> str:
     name = text(payload.get("name", ""), "Project name", 100)
     if not name:
         raise ValueError("Give the project a name")
+    kind = payload.get("kind", "project")
+    if not isinstance(kind, str) or kind not in {"project", "learning", "experience"}:
+        raise ValueError("Choose Projects, Learning, or Experiences for this section")
     ident = payload.get("id")
     if ident:
         project = next((p for p in state["projects"] if p["id"] == ident), None)
@@ -151,11 +158,25 @@ def save_project(path: Path, payload: dict) -> str:
             raise ValueError("A project with this name already exists")
         project["name"] = name
     else:
-        ident = project_for(state, name)
+        existing = next((p for p in state["projects"] if p["name"].casefold() == name.casefold()), None)
+        if existing and existing.get("kind") and "kind" in payload and existing["kind"] != kind:
+            raise ValueError("A section with this name belongs to a different space")
+        ident = project_for(state, name, kind)
         project = next(p for p in state["projects"] if p["id"] == ident)
     project["description"] = text(payload.get("description", ""), "Description", 2000)
+    if "kind" in payload or "kind" not in project:
+        project["kind"] = kind
     save_state(path, state)
     return ident
+
+
+def save_preferences(path: Path, payload: dict) -> None:
+    value = payload.get("weekly_hours")
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0.25 <= value <= 168:
+        raise ValueError("Weekly time budget must be between 0.25 and 168 hours")
+    state = read(path)
+    state["weekly_hours"] = value
+    save_state(path, state)
 
 
 def update_item(path: Path, ident: str, payload: dict) -> None:
@@ -185,7 +206,7 @@ def _update_item(state: dict, ident: str, payload: dict) -> None:
         name = text(payload["new_project_name"], "Project or topic name", 100)
         if not name:
             raise ValueError("Give the new project or topic a name")
-        item["project_id"] = project_for(state, name)
+        item["project_id"] = project_for(state, name, item["kind"])
     elif "project_id" in payload:
         project = payload["project_id"]
         if project and not any(p["id"] == project for p in state["projects"]):
@@ -280,7 +301,7 @@ def classify_local(state: dict) -> int:
             _, _, action, done = theme or ("", "", "Test one small idea from your supplied context.", "A repeatable example and a short result note are saved.")
         item["next_action"], item["definition_of_done"] = action, done
         if theme:
-            item["project_id"] = project_for(state, theme[0])
+            item["project_id"] = project_for(state, theme[0], item["kind"])
         count += 1
     return count
 
@@ -302,7 +323,7 @@ def apply_classification(path: Path, payload: dict, method: str = "ChatGPT") -> 
         item["classification_method"] = method
         name = text(record.get("project_name", ""), "Project name", 100)
         if name:
-            item["project_id"] = project_for(state, name)
+            item["project_id"] = project_for(state, name, item["kind"])
     save_state(path, state)
     return count
 

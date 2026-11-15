@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { appFixtureConfig } from './app-helpers.mjs';
 
-export async function startFixture({ mode = 'automated' } = {}) {
+export async function startFixture({ mode = 'automated', variables = {} } = {}) {
   if (!['automated', 'uat'].includes(mode)) throw new Error('Unknown synthetic fixture mode.');
   process.env.WRANGLER_SEND_METRICS = 'false';
   process.env.WRANGLER_WRITE_LOGS = 'false';
@@ -16,7 +16,7 @@ export async function startFixture({ mode = 'automated' } = {}) {
   await cp(resolve('.local/client-assets'), join(root, 'assets'), { recursive: true });
   await build({ entryPoints: [mode === 'uat' ? 'client/uat-bootstrap.mjs' : 'client/test-bootstrap.mjs'], outfile: join(root, 'assets/hosted.js'),
     bundle: true, platform: 'browser', format: 'iife', target: 'es2022', minify: true });
-  const { vars } = await appFixtureConfig();
+  const { vars } = await appFixtureConfig({ variables });
   const config = JSON.parse(await readFile('wrangler.app.jsonc', 'utf8'));
   config.name = 'save2ship-browser-fixture';
   config.main = resolve('.local/build/tests/app-harness.js');

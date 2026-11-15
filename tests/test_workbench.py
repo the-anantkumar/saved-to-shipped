@@ -44,6 +44,31 @@ class WorkbenchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "post text"):
             work.update_item(self.path, ident, {"kind": "project"})
 
+    def test_weekly_preference_persists_without_changing_goals_and_exports_in_v1_backup(self):
+        self.capture()
+        state = work.read(self.path)
+        state["goals"] = "Learn with one experiment"
+        save_state(self.path, state)
+        work.save_preferences(self.path, {"weekly_hours": 2.5})
+        self.assertEqual(2.5, work.snapshot(self.path)["weekly_hours"])
+        self.assertEqual("Learn with one experiment", work.read(self.path)["goals"])
+        with ZipFile(io.BytesIO(work.export_bundle(self.path))) as archive:
+            self.assertEqual(2.5, json.loads(archive.read("backlog.json"))["weekly_hours"])
+        for value in [None, True, 0, 169, float("nan"), "2"]:
+            with self.assertRaises(ValueError):
+                work.save_preferences(self.path, {"weekly_hours": value})
+        self.assertEqual(2.5, work.read(self.path)["weekly_hours"])
+
+    def test_empty_sections_keep_their_space_and_inline_learning_infers_it(self):
+        for kind in ["project", "learning", "experience"]:
+            ident = work.save_project(self.path, {"name": "Empty " + kind, "kind": kind})
+            self.assertEqual(kind, next(group for group in work.read(self.path)["projects"] if group["id"] == ident)["kind"])
+        ident = self.capture("A useful lesson on SQL indexes")
+        work.update_item(self.path, ident, {"kind": "reference", "new_project_name": "Index learning"})
+        self.assertEqual("learning", next(group for group in work.read(self.path)["projects"] if group["name"] == "Index learning")["kind"])
+        with self.assertRaises(ValueError):
+            work.save_project(self.path, {"name": "Invalid", "kind": "unknown"})
+
     def test_incomplete_task_cannot_enter_backlog(self):
         ident = self.capture()
         with self.assertRaisesRegex(ValueError, "backlog task"):

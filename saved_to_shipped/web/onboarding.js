@@ -83,6 +83,31 @@ function settingsDialog(afterSave) {
   });
 }
 
+function selectableRetrievalItems(retry = false) {
+  return state.items.filter(item => {
+    if (item.platform !== "linkedin" || (item.has_content ?? Boolean(item.content)) || ["done", "parked"].includes(item.status)) return false;
+    const status = item.enrichment?.status || "new";
+    return (retry ? ["error", "missing", "gated", "deleted", "empty"] : ["new"]).includes(status);
+  }).sort(newestSavedFirst);
+}
+function renderRetrievalSelection() {
+  const list = $("#retrieval-candidates");
+  if (!list) return;
+  const items = selectableRetrievalItems($("#retrieval-retry").checked);
+  const count = Math.min(25, Number($("#f-limit").value) || 10);
+  $("#f-limit").options[0].textContent = `${Math.min(10, items.length)} latest saves`;
+  $("#f-limit").options[1].textContent = items.length > 10 ? `${Math.min(25, items.length)} latest saves` : `All ${items.length} eligible saves`;
+  list.innerHTML = items.length ? items.map((item, index) => `<div class="retrieval-choice"><label><input type="checkbox" name="retrieval_id" value="${esc(item.id)}" ${index < count ? "checked" : ""} aria-label="Retrieve ${esc(dateLabel(item.saved_at))}: ${esc(item.url)}"><span>Saved ${esc(dateLabel(item.saved_at))}</span></label><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.url)} ${icon("external")}</a></div>`).join("") : '<p class="helper">No eligible saves in this selection. Your existing content stays available.</p>';
+  syncRetrievalSelection();
+}
+function syncRetrievalSelection(changed) {
+  let checked = [...document.querySelectorAll('[name="retrieval_id"]:checked')];
+  const overLimit = checked.length > 25;
+  if (overLimit && changed) { changed.checked = false; checked = checked.filter(input => input !== changed); }
+  $("#retrieval-selection-error").textContent = overLimit ? "Choose up to 25 saves for one run." : "";
+  $("#retrieval-count").textContent = `${checked.length} selected · maximum 25 per run`;
+  $("#retrieval-submit").disabled = !checked.length || checked.length > 25;
+}
 function retrievalDialog() {
   if (hosted && pendingRetrieval()) return hostedJobDialog(pendingRetrieval());
   if (workspace === "demo") {
@@ -110,42 +135,42 @@ function retrievalDialog() {
     );
     return;
   }
-  const missing = state.items.filter(
-    (item) =>
-      item.platform === "linkedin" &&
-      !(item.has_content ?? Boolean(item.content)) &&
-      !["done", "parked"].includes(item.status),
-  );
-  const fresh = missing.filter(
-    (item) => !item.enrichment || item.enrichment.status === "new",
-  ).length;
-  const unavailable = missing.length - fresh;
+  const fresh = selectableRetrievalItems().length;
+  const unavailable = selectableRetrievalItems(true).length;
   modal(
     "Find what’s worth keeping.",
-    `<p><strong>${fresh} saves are waiting for content.</strong> Recover the post text first, then organize the ideas.</p>
-    <p class="helper">Selected URLs go to Apify. Provider charges apply. Your archive stays local.</p>
+    `<p><strong>${fresh} saves are waiting for content.</strong> Choose a few worth returning to. You can leave the rest for later.</p>
+    <p class="helper">Only the selected original URLs go to your Apify account. Provider fees are separate from your save2ship plan. Saving a key or importing an archive starts no provider work.</p>
     <div class="field-row">${select(
-      "Run size",
+      "Select latest saved",
       "limit",
       [
-        ["10", "10 saves"],
-        ...(hosted ? [["25", "25 saves"]] : [["50", "50 saves"], ["1000", "All eligible saves (up to 1000)"]]),
+        ["10", `${Math.min(10, fresh)} latest saves`],
+        ["25", `${Math.min(25, fresh)} latest saves`],
       ],
       "10",
     )}${field("Maximum Apify charge (USD)", "max_charge", 1, "input", 'type="number" min="0.01" max="20" step="0.01" required')}</div>
-    <details><summary>Retrieval options & coverage</summary><label class="checkbox"><input name="retry" type="checkbox"> Retry ${unavailable} unavailable saves instead of new ones</label><p>Cached content is kept. Private or deleted posts may be unavailable; images and documents may have partial coverage. The charge cap is sent to Apify. Provider plan limits apply.</p></details>
+    <label class="checkbox"><input id="retrieval-retry" name="retry" type="checkbox"> Choose from ${unavailable} previously unavailable saves instead</label>
+    <div class="retrieval-selection-head"><strong>Preview the selected links</strong><span id="retrieval-count" role="status"></span></div><p class="helper">Latest saved first. Dates and original URLs identify each link; post text will be known after retrieval. Change any selection below.</p><div id="retrieval-selection-error" class="helper danger" role="alert"></div><div id="retrieval-candidates" class="retrieval-candidates"></div>
+    <label class="checkbox charge-approval"><input id="retrieval-charge-approval" name="approve_charge" type="checkbox" required> I approve this Apify run up to the maximum charge above, using my own provider account.</label>
+    <details><summary>Retrieval coverage</summary><p>Cached content is kept. Private or deleted posts may be unavailable; images and documents may have partial coverage. The charge cap is sent to Apify. Provider plan limits apply. Retrieval does not automatically organize your saves.</p></details>
     ${job?.counts ? `<div class="callout">Last run: ${job.counts.extracted} extracted, ${job.counts.partial} partial, ${job.counts.gated} gated, ${job.counts.deleted} deleted, ${job.counts.missing + job.counts.empty + job.counts.error} without usable content.</div>` : ""}`,
-    '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Retrieve post content '+icon("arrow")+'</button>',
+    '<button class="button" type="button" data-action="close">Cancel</button><button id="retrieval-submit" class="button primary" type="submit">Retrieve selected posts '+icon("arrow")+'</button>',
     true,
   );
   bindForm(async (form) => {
+    const ids = form.getAll("retrieval_id");
+    if (!ids.length || ids.length > 25 || new Set(ids).size !== ids.length) throw new Error("Choose between 1 and 25 saves for this run.");
+    if (!form.has("approve_charge")) throw new Error("Approve the maximum Apify charge before starting this run.");
     await api("/api/retrieve/start", {
-      limit: Number(form.get("limit")),
+      ids,
+      limit: ids.length,
       max_charge: Number(form.get("max_charge")),
       retry: form.has("retry"),
     });
     toast("Retrieving your saves. You can keep browsing.");
   });
+  renderRetrievalSelection();
 }
 
 function scheduleRetrieval() {

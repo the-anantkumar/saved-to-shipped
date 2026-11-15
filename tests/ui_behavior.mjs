@@ -266,7 +266,7 @@ test("reading routes retain filters, deep links, and legacy project links", () =
   assert.equal(ui.run("view"), "backlog");
   ui.context.location.hash = "";
   ui.run("restoreRoute()");
-  assert.equal(ui.run("view"), "learning");
+  assert.equal(ui.run("view"), "focus");
 });
 
 test("the reader escapes source text and keeps coverage and notes visible", () => {

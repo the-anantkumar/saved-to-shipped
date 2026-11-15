@@ -41,11 +41,11 @@ export class HostedTransport {
     return user;
   }
 
-  async raw(path, { data, session = true, refreshToken = false } = {}) {
+  async raw(path, { data, session = true, refreshToken = false, current = () => true } = {}) {
     if (!/^\/api\/[a-z0-9/-]+(?:\?[^#]*)?$/.test(path)) throw new ClientError('Invalid request path.');
     const user = await this.user(), epoch = this.epoch;
     const token = await user.getIdToken(refreshToken);
-    if (epoch !== this.epoch || this.getUser()?.uid !== user.uid) throw new ClientError('Account changed. Please try again.', 'ACCOUNT_CHANGED');
+    if (epoch !== this.epoch || this.getUser()?.uid !== user.uid || !current()) throw new ClientError('Account changed. Please try again.', 'ACCOUNT_CHANGED');
     const controller = new AbortController(); this.controllers.add(controller);
     const timer = setTimeout(() => controller.abort(), 30_000);
     try {
@@ -57,11 +57,11 @@ export class HostedTransport {
           ...(data === undefined ? {} : { 'Content-Type': 'application/json' }) },
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),
       });
-      if (epoch !== this.epoch || this.getUser()?.uid !== user.uid) throw new ClientError('Account changed. Please try again.', 'ACCOUNT_CHANGED');
+      if (epoch !== this.epoch || this.getUser()?.uid !== user.uid || !current()) throw new ClientError('Account changed. Please try again.', 'ACCOUNT_CHANGED');
       let result;
       try { result = await response.json(); }
       catch { throw new ClientError(data === undefined ? 'The server response could not be read.' : 'The response was lost. Check the current state before trying again.', 'UNCERTAIN_RESPONSE'); }
-      if (epoch !== this.epoch || this.getUser()?.uid !== user.uid) throw new ClientError('Account changed. Please try again.', 'ACCOUNT_CHANGED');
+      if (epoch !== this.epoch || this.getUser()?.uid !== user.uid || !current()) throw new ClientError('Account changed. Please try again.', 'ACCOUNT_CHANGED');
       if (!response.ok || result?.ok === false) {
         const code = result.code || (typeof result.error === 'string' ? result.error : 'REQUEST_FAILED');
         throw new ClientError(ERROR_MESSAGES[code] || result.message || (result.code && typeof result.error === 'string' ? result.error : '') || 'This request could not be completed. Please try again.', code, response.status);

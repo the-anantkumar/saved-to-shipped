@@ -53,7 +53,7 @@ let state = { items: [], projects: [], imports: [] },
   retrievalTimer,
   visibleLimit = 25,
   classificationCancelled = false;
-let initialLoad = true;
+let initialLoad = true, focusMinutes = "";
 let searchIds = new Set(), searchKey = "", searchPending = false, searchError = "", searchTimer, searchSequence = 0;
 let draggedTile = "", movingTile = false, suppressTileClick = false, pointerDrag = null;
 const labels = {
@@ -110,10 +110,11 @@ async function refresh() {
   const next = await api("/api/state");
   if (hosted && epoch !== hosted.epoch) return;
   state = next;
+  hours = Number.isFinite(state.weekly_hours) && state.weekly_hours >= 0.25 && state.weekly_hours <= 168 ? state.weekly_hours : 6;
   const first = initialLoad;
   if (initialLoad) {
     restoreRoute();
-    filter = reviewItems().length ? "review" : "all";
+    filter = !search.trim() && reviewItems().length ? "review" : "all";
     initialLoad = false;
   }
   if (hosted && readerId) {
@@ -152,7 +153,7 @@ function resetHostedState() {
   clearTimeout(retrievalTimer); retrievalTimer = null;
   clearTimeout(readingProgressTimer); pendingReadingProgress = null; readingRequests.clear();
   classificationCancelled = true; readerId = ""; initialLoad = true;
-  view = "inbox"; filter = "all"; projectFilter = ""; search = ""; visibleLimit = 25;
+  view = "inbox"; filter = "all"; projectFilter = ""; search = ""; visibleLimit = 25; hours = 6; focusMinutes = "";
   hostedPollFailures = 0;
   clearTimeout(toastTimer); $("#toast").textContent = ""; $("#toast").classList.remove("visible");
   if (pointerDrag) finishPointerDrag();
@@ -169,6 +170,16 @@ function toast(message) {
 }
 function projectName(id) {
   return state.projects.find((p) => p.id === id)?.name || "";
+}
+function sectionKind(kind) { return ["learning", "reference"].includes(kind) ? "learning" : kind === "experience" ? "experience" : "project"; }
+function sectionsFor(kind, assigned = "") {
+  const target = sectionKind(kind);
+  return state.projects.filter(group => {
+    if (group.id === assigned && !["project", "learning", "experience"].includes(group.kind)) return true;
+    if (["project", "learning", "experience"].includes(group.kind)) return group.kind === target;
+    const members = state.items.filter(item => item.project_id === group.id);
+    return members.length ? members.some(item => sectionKind(item.kind) === target) : target === "project";
+  });
 }
 function matchesSearch(item) {
   if (!search.trim()) return true;
@@ -231,6 +242,10 @@ function dateLabel(raw) {
     ? raw
     : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+function newestSavedFirst(a, b) {
+  const timestamp = item => { const value = Date.parse(item.saved_at || ""); return Number.isFinite(value) ? value : -Infinity; };
+  return timestamp(b) - timestamp(a) || (b.saved_at || "").localeCompare(a.saved_at || "") || a.id.localeCompare(b.id);
+}
 async function navigate(next, project = "") {
   if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
   readerId = "";
@@ -248,8 +263,8 @@ async function navigate(next, project = "") {
 }
 function restoreRoute() {
   const [route, query = ""] = location.hash.slice(1).split("?");
-  const fallback = state.items.some(item => item.kind === "project") ? "backlog" : state.items.some(item => ["learning", "reference"].includes(item.kind)) ? "learning" : state.items.some(item => item.kind === "experience") ? "experiences" : "inbox";
-  view = route === "projects" ? "backlog" : ["inbox", "backlog", "week", "shipped", "learning", "experiences"].includes(route) ? route : fallback;
+  const fallback = state.items.length ? "focus" : "inbox";
+  view = route === "projects" ? "backlog" : ["focus", "inbox", "backlog", "week", "shipped", "learning", "experiences"].includes(route) ? route : fallback;
   const params = new URLSearchParams(query);
   projectFilter = params.get("project") || "";
   search = (params.get("q") || "").slice(0, 200);
@@ -281,6 +296,7 @@ function sidebar() {
   $("#sidebar").innerHTML =
     `<a class="brand" href="${hosted ? "/" : "/?workspace=" + workspace}" aria-label="Save2Ship home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
   <nav class="nav" aria-label="Main navigation">${[
+    ...(state.items.length ? [["focus", "calendar", "Today"]] : []),
     ["inbox", "inbox", "Saves"],
     ["backlog", "board", "Projects"],
     ["learning", "book", "Learning"],
@@ -291,12 +307,12 @@ function sidebar() {
         `<button data-view="${key}" class="${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? "active" : ""}" ${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? 'aria-current="page"' : ""} title="${label}">${icon(img)}<span class="nav-name">${label}</span>${key === "inbox" && reviewItems().length ? `<span class="count">${reviewItems().length}</span>` : ""}</button>`,
     )
     .join("")}</nav>
-  <div class="side-bottom"><button class="utility" data-action="import" aria-label="Import archive">${icon("upload")}<span>Import archive</span></button><button class="utility" data-action="settings" aria-label="Settings">${icon("lock")}<span>Settings</span></button><label class="utility theme-control" title="Appearance">${icon("moon")}<select id="theme-mode" aria-label="Appearance">${[["system","System theme"],["light","Light"],["dark","Dark"]].map(([mode,label]) => `<option value="${mode}" ${theme === mode ? "selected" : ""}>${label}</option>`).join("")}</select></label>${hosted ? `<button class="utility" data-action="hosted-account" aria-label="Account: ${esc(hosted.user?.name || "Your account")}">${icon("leaf")}<span>${esc(hosted.user?.name || "Your account")}</span></button><div class="local-label"><span class="dot"></span>Private cloud workspace</div>` : `<a class="utility" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${icon("leaf")}<span>${workspace === "demo" ? "My workspace" : "Try the demo"}</span></a><div class="local-label"><span class="dot"></span>Local workspace</div>`}</div>`;
+  <div class="side-bottom">${hosted && state.entitlements?.enabled ? `<button class="utility plan-usage" data-action="hosted-billing" aria-label="${state.entitlements.plan === "pro" ? "Pro" : "Free"} plan, ${Number(state.entitlements.points?.remaining || 0)} organization points remaining. Manage plan."><span class="plan-name">${state.entitlements.plan === "pro" ? "Pro" : "Free"}</span><span data-remaining="${Number(state.entitlements.points?.remaining || 0)}">${Number(state.entitlements.points?.remaining || 0)} points left</span></button>` : ""}<button class="utility" data-action="import" aria-label="Import archive">${icon("upload")}<span>Import archive</span></button><button class="utility" data-action="settings" aria-label="Settings">${icon("lock")}<span>Settings</span></button><label class="utility theme-control" title="Appearance">${icon("moon")}<select id="theme-mode" aria-label="Appearance">${[["system","System theme"],["light","Light"],["dark","Dark"]].map(([mode,label]) => `<option value="${mode}" ${theme === mode ? "selected" : ""}>${label}</option>`).join("")}</select></label>${hosted ? `<button class="utility" data-action="hosted-account" aria-label="Account: ${esc(hosted.user?.name || "Your account")}">${icon("leaf")}<span>${esc(hosted.user?.name || "Your account")}</span></button><div class="local-label"><span class="dot"></span>Private cloud workspace</div>` : `<a class="utility" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${icon("leaf")}<span>${workspace === "demo" ? "My workspace" : "Try the demo"}</span></a><div class="local-label"><span class="dot"></span>Local workspace</div>`}</div>`;
 }
 function topbar() {
   const usage = hosted && state.usage;
   const usageLabel = usage ? `${Number(usage.items || 0)} / ${Number(usage.limits?.items || 1000)} saves · ${(Number(usage.logicalBytes || 0) / 1_000_000).toFixed(1)} / ${(Number(usage.limits?.logicalBytes || 5_000_000) / 1_000_000).toFixed(0)} MB` : "";
-  return `<div class="topbar"><span>${workspace === "demo" ? "THE PLAYGROUND" : "A LITTLE LESS SAVING. A LITTLE MORE DOING."}</span><div class="topbar-actions">${usage ? `<span class="usage-label" title="Saved content and personal notes. Internal storage limits also apply.">${esc(usageLabel)}</span>` : ""}<button class="quiet-link" data-action="export">${icon("download")}Export</button></div></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample ideas, separate from your workspace.</span><a href="/">My workspace ↗</a></div>' : ""}`;
+  return `<div class="topbar"><button class="quiet-link global-find" data-action="global-find">${icon("search")}Find a saved idea <kbd>/</kbd></button><div class="topbar-actions">${usage ? `<span class="usage-label" title="Saved content and personal notes. Internal storage limits also apply.">${esc(usageLabel)}</span>` : ""}<button class="quiet-link" data-action="export">${icon("download")}Export</button></div></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample ideas, separate from your workspace.</span><a href="/">My workspace ↗</a></div>' : ""}`;
 }
 function heading(title, description, actions) {
   return `<div class="heading"><div><h1 tabindex="-1">${title}</h1><p>${description}</p></div>${actions ? `<div class="heading-actions">${actions}</div>` : ""}</div>`;
@@ -335,11 +351,11 @@ function task(item, draggable = false) {
   return `<article class="task tile" data-tile-id="${item.id}" draggable="false" ${draggable ? 'data-draggable="true"' : ""} aria-label="${esc(title)}"><div class="tile-top"><span class="tile-kind ${esc(item.kind)}"><span></span>${esc(labels[item.kind])}</span>${draggable ? `<span class="drag-handle" aria-hidden="true" title="Drag to move">${icon("grip")}</span>` : ""}</div><h3><button class="save-title" data-item="${item.id}" draggable="false">${esc(title)}</button></h3><p class="task-preview">${esc(item.next_action)}</p><div class="tile-meta"><span class="task-project">${esc(projectName(item.project_id) || "Personal")}</span><span>${item.effort_hours}h</span></div><footer><button class="notes-button ${(item.has_note ?? Boolean(item.note)) ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${(item.has_note ?? Boolean(item.note)) ? "Edit notes" : "Add notes"}">${icon("note")}<span>Notes</span></button><select class="move-select" data-move-id="${item.id}" aria-label="Move ${esc(title)}"><option value="">Move…</option>${Object.entries(statusLabels).filter(([key]) => key !== item.status).map(([key,label]) => `<option value="${key}">${label}</option>`).join("")}</select></footer></article>`;
 }
 function backlogTabs() {
-  return `<div class="tabs backlog-tabs" aria-label="Board views">${[["backlog","Board"],["week","This week"],["shipped","Done"]].map(([key,label]) => `<button class="tab ${view===key ? "selected" : ""}" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join("")}</div>`;
+  return `<div class="tabs backlog-tabs" aria-label="Board views">${[["backlog","Board"],["week","Weekly suggestions"],["shipped","Done"]].map(([key,label]) => `<button class="tab ${view===key ? "selected" : ""}" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join("")}</div>`;
 }
 function backlog() {
   const items = state.items.filter(item => item.kind === "project" && (!projectFilter || item.project_id === projectFilter));
-  const groups = state.projects.filter(project => state.items.some(item => item.kind === "project" && item.project_id === project.id));
+  const groups = sectionsFor("project");
   return heading("A place to make things.", "Only projects here. Pick a next step and move it forward.", '<button class="button" data-action="project">'+icon("plus")+'New project</button>') +
     `<div class="board-toolbar">${backlogTabs()}<label class="board-filter"><span class="sr-only">Filter board by project</span><select id="board-project" aria-label="Filter board by project"><option value="">All projects</option>${groups.map(project => `<option value="${project.id}" ${projectFilter===project.id ? "selected" : ""}>${esc(project.name)}</option>`).join("")}</select></label></div>` +
     `<div class="board-scroll"><div class="board kanban" aria-label="Idea board" aria-busy="${movingTile}">${[["inbox","Review"],["ready","To do"],["doing","In progress"],["done","Done"]].map(([key,label]) => {
@@ -354,7 +370,7 @@ function week() {
     .filter(
       (i) => i.kind === "project" && ["ready", "doing"].includes(i.status) && (!projectFilter || i.project_id === projectFilter),
     )
-    .sort((a, b) => b.score - a.score)) {
+    .sort((a, b) => Number(b.status === "doing") - Number(a.status === "doing") || (b.score || 0) - (a.score || 0))) {
     if (
       selected.length < 2 &&
       item.effort_hours > 0 &&
@@ -366,12 +382,31 @@ function week() {
   }
   return (
     heading(
-      "A little focus goes a long way.",
-      "Pick a realistic slice of work for the time you actually have.",
+      "A few suggestions for your week.",
+      "Ideas that fit your saved time budget. Choose what to take on; these are suggestions, not a committed plan.",
       `<label class="budget">This week <input id="hours" type="number" min="0.25" max="168" step="0.25" value="${hours}" aria-label="Weekly time budget">hours</label>`,
     ) +
-    backlogTabs() + `<div class="week-note">${selected.length ? `${selected.length} small build ${selected.length === 1 ? "task" : "tasks"} · ${Math.round((hours - remaining) * 100) / 100}h planned · ${Math.round(remaining * 100) / 100}h breathing room` : "No reviewed build tasks fit this budget yet."}<br>A maximum of two build tasks. Leave yourself room to finish.</div><div class="board">${selected.length ? selected.map(item => task(item)).join("") : empty("Make space for one good idea", "Review a build idea, set a next action, then add it to your backlog.", '<button class="button primary" data-view="inbox">Review saved ideas</button>')}</div>`
+    backlogTabs() + `<div class="week-note">${selected.length ? `${selected.length} suggested build ${selected.length === 1 ? "task" : "tasks"} · ${Math.round((hours - remaining) * 100) / 100}h estimated · ${Math.round(remaining * 100) / 100}h breathing room` : "No reviewed build tasks fit this budget yet."}<br>A maximum of two suggestions, with in-progress work first. Leave yourself room to finish.</div><div class="board">${selected.length ? selected.map(item => task(item)).join("") : empty("Make space for one good idea", "Review a build idea, set a next action, then add it to your backlog.", '<button class="button primary" data-view="inbox">Review saved ideas</button>')}</div>`
   );
+}
+function focusPage() {
+  if (!state.items.length) return inbox();
+  const minutes = Number(focusMinutes) || 0;
+  const reads = readingOrder(state.items.filter(item => READING_KINDS.includes(item.kind) && item.has_context && readingState(item).status !== "read"));
+  const unfinished = reads.filter(item => readingState(item).status === "reading");
+  const queued = reads.filter(item => readingState(item).queued);
+  const choices = unfinished.length ? unfinished : queued.length ? queued : reads;
+  const remainingMinutes = item => Math.max(1, Math.ceil(readingMinutes(item) * (100 - readingState(item).progress) / 100));
+  const read = (minutes && choices.find(item => remainingMinutes(item) <= minutes)) || choices[0];
+  const projects = orderedTiles(state.items.filter(item => item.kind === "project" && item.has_context && item.next_action && ["doing", "ready"].includes(item.status)))
+    .sort((a, b) => Number(b.status === "doing") - Number(a.status === "doing"));
+  const project = projects.find(item => item.status === "doing") || (minutes && projects.find(item => item.effort_hours * 60 <= minutes)) || projects[0];
+  const reading = read && readingState(read);
+  const readReason = read && (reading.status === "reading" ? `You were ${Math.round(reading.progress)}% through this read.` : reading.queued ? "You put this in Read next." : "An unread save, with your most recently saved choices first.");
+  const projectReason = project && (project.status === "doing" ? "You already have this in progress. Continue with its saved next action." : "A reviewed project with a next action, following your board order.");
+  return heading("One useful thing today.", "Continue a read or move one project forward. The rest can wait.",
+    `<label class="focus-time">I have <select id="focus-minutes" aria-label="Available time">${[["", "some time"], ["5", "5 minutes"], ["15", "15 minutes"], ["30", "30 minutes"]].map(([value, label]) => `<option value="${value}" ${focusMinutes === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`) +
+    `<div class="focus-grid"><section class="focus-card" data-focus-kind="reading" aria-label="Your next read"><span class="eyebrow">A LITTLE ROOM TO READ</span>${read ? `<h2>${esc(read.title || "Saved LinkedIn post")}</h2><p class="focus-reason">${esc(readReason)}</p><p class="focus-meta">About ${remainingMinutes(read)} min left${projectName(read.project_id) ? ` · ${esc(projectName(read.project_id))}` : ""}${minutes && remainingMinutes(read) > minutes ? ". Read a little and keep your place." : ""}</p><button class="button primary" data-item="${esc(read.id)}">${reading.status === "reading" ? "Continue reading" : "Start reading"}${icon("arrow")}</button>` : '<h2>Choose something worth reading.</h2><p>Keep a learning save or an experience for a quiet moment.</p><button class="quiet-link" data-view="learning">Browse Learning '+icon("arrow")+'</button>'}</section><section class="focus-card" data-focus-kind="project" aria-label="Your next project action"><span class="eyebrow">ONE SMALL STEP FORWARD</span>${project ? `<p class="focus-reason">${esc(projectReason)}</p>${task(project)}<p class="focus-meta">${project.effort_hours > 0 ? `${Math.round(project.effort_hours * 60)} min estimated for the saved task.` : "Go at your own pace."}${minutes && project.effort_hours * 60 > minutes ? ` Use your ${minutes} minutes to make a start.` : ""}</p><button class="quiet-link" data-item="${esc(project.id)}">Open next action ${icon("arrow")}</button>` : '<h2>Make room for a small project.</h2><p>A reviewed project with a next action will appear here.</p><button class="quiet-link" data-view="backlog">Browse Projects '+icon("arrow")+'</button>'}</section></div><p class="focus-stop">One useful read, takeaway or step is enough. Your other saves will be here when you want them.</p><button class="quiet-link" data-action="global-find">Find something else you saved ${icon("search")}</button>`;
 }
 function render(preserveScroll = true) {
   const scroll = readerId && preserveScroll ? window.scrollY : null;
@@ -381,6 +416,7 @@ function render(preserveScroll = true) {
   $("#main").innerHTML =
     topbar() +
     {
+      focus: focusPage,
       inbox,
       backlog,
       week,
@@ -420,12 +456,17 @@ function sectionLabels(kind) {
 }
 function organizationFields(item) {
   const copy = sectionLabels(item.kind);
-  return `<div class="organization-fields">${select(copy.label, "project_id", [["", "Unsorted"], ...state.projects.map(project => [project.id, project.name]), [NEW_SECTION, copy.create]], item.project_id || "")}<div id="new-section-field" class="new-section-field hidden">${field(copy.name, "new_project_name", "", "input", `disabled maxlength="100" placeholder="${esc(copy.placeholder)}"`)}<p class="helper">Created and assigned when you save. Your other edits stay here.</p></div></div>`;
+  return `<div class="organization-fields" data-assigned-section="${esc(item.project_id || "")}">${select(copy.label, "project_id", [["", "Unsorted"], ...sectionsFor(item.kind, item.project_id).map(project => [project.id, project.name]), [NEW_SECTION, copy.create]], item.project_id || "")}<div id="new-section-field" class="new-section-field hidden">${field(copy.name, "new_project_name", "", "input", `disabled maxlength="100" placeholder="${esc(copy.placeholder)}"`)}<p class="helper">Created and assigned when you save. Your other edits stay here.</p></div></div>`;
 }
 function syncOrganizationFields(focusNew = false) {
   const group = $("#f-project_id");
   if (!group) return;
   const copy = sectionLabels($("#f-kind")?.value);
+  const assigned = group.closest?.("[data-assigned-section]")?.dataset.assignedSection || "";
+  const options = [["", "Unsorted"], ...sectionsFor($("#f-kind")?.value, assigned).map(project => [project.id, project.name]), [NEW_SECTION, copy.create]];
+  const current = options.some(([id]) => id === group.value) ? group.value : "";
+  group.innerHTML = options.map(([id, name]) => `<option value="${esc(id)}" ${id === current ? "selected" : ""}>${esc(name)}</option>`).join("");
+  group.value = current;
   const isNew = group.value === NEW_SECTION;
   $('label[for="f-project_id"]').textContent = copy.label;
   $('label[for="f-new_project_name"]').textContent = copy.name;
@@ -483,10 +524,12 @@ function captureDialog() {
   });
 }
 function projectDialog(asTopic = false, itemId = "") {
+  const kind = asTopic ? view === "experiences" ? "experience" : "learning" : "project";
+  const experience = kind === "experience";
   modal(
-    asTopic ? "Give your reading a home" : "Make room for a project",
+    asTopic ? experience ? "Give your experiences a home" : "Give your reading a home" : "Make room for a project",
     field(
-      asTopic ? "Topic name" : "Project name",
+      asTopic ? experience ? "Section name" : "Topic name" : "Project name",
       "name",
       "",
       "input",
@@ -499,13 +542,19 @@ function projectDialog(asTopic = false, itemId = "") {
         "textarea",
         `maxlength="2000" placeholder="${asTopic ? "The subjects and questions you want to explore." : "A small outcome you would like to make real."}"`,
       ),
-    `<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Create ${asTopic ? "topic" : "project"}</button>`,
+    `<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Create ${asTopic ? experience ? "section" : "topic" : "project"}</button>`,
     true,
   );
   bindForm(async (form) => {
-    const result = await api("/api/project", Object.fromEntries(form));
+    const result = await api("/api/project", {...Object.fromEntries(form), kind});
     if (itemId) await api("/api/item", {id: itemId, project_id: result.id});
     toast(asTopic ? itemId ? "Saved to your new topic." : "Topic created. Choose it when organizing a save." : "Project created. Assign ideas from their review panel.");
+    if (!itemId) return {afterRefresh: () => {
+      projectFilter = result.id;
+      if (asTopic) syncLibraryRoute();
+      else history.replaceState(null, "", `#backlog?project=${encodeURIComponent(result.id)}`);
+      render(false);
+    }};
   });
 }
 function effortChoices(current) {
@@ -597,8 +646,9 @@ function importDialog() {
 function classifyDialog() {
   const eligible = state.items.filter(i => i.kind === "untriaged" && i.has_context && i.status === "inbox").length;
   const ai = state.ai?.available;
+  const pointCopy = hosted ? '<p class="helper">1 organization point per successfully AI-organized save. Manual organization uses 0 points. Your own OpenAI provider fees are separate.</p>' : "";
   modal("Find the useful next steps.",
-    `<div class="dialog-intro"><span class="intro-number">${eligible}</span><p>readable saves ready to organize.<br>Related ideas become projects, with small next steps to review.</p></div>${ai ? `<p>Use your OpenAI key to organize up to 20 saves per batch. Selected post text, notes, and goals are sent to OpenAI. API charges apply.</p><button class="button primary wide" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Organize ${Math.min(20,eligible)} ${eligible === 1 ? "save" : "saves"}</button>${hosted ? "" : `<details><summary>Batch options</summary><label class="checkbox"><input id="classify-all" type="checkbox"> Continue through all ${eligible} readable saves (additional API usage)</label></details>`}` : `<p>Start with ${hosted ? "keyword suggestions" : "offline suggestions"}, or connect OpenAI for more specific actions and groups.</p><button class="button primary wide" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Organize with local rules</button><button class="quiet-link" data-action="settings">Connect OpenAI in Settings ↗</button>`}<details><summary>${ai ? "Other ways to organize" : "Use ChatGPT instead"}</summary>${ai ? `<p>Local rules use keywords${hosted ? " without calling an AI provider" : " and run offline"}. Suggestions are marked low confidence.</p><button class="button" data-action="run-classify" ${eligible ? "" : "disabled"}>Use local rules</button>` : ""}<p>Download a prompt, use it in ChatGPT, then paste the JSON response.</p><a class="quiet-link" href="${apiURL("/api/prompt")}" data-download="prompt">${icon("download")}Download prompt</a><div class="field"><label for="triage-json">ChatGPT response</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button" data-action="apply-triage">Apply response</button></details>`);
+    `<div class="dialog-intro"><span class="intro-number">${eligible}</span><p>readable saves ready to organize.<br>Related ideas become projects, with small next steps to review.</p></div>${pointCopy}${ai ? `<p>Use your OpenAI key to organize up to 20 saves per batch. Selected post text, notes, and goals are sent to OpenAI. API charges apply.</p><button class="button primary wide" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Organize ${Math.min(20,eligible)} ${eligible === 1 ? "save" : "saves"}</button>${hosted ? "" : `<details><summary>Batch options</summary><label class="checkbox"><input id="classify-all" type="checkbox"> Continue through all ${eligible} readable saves (additional API usage)</label></details>`}` : `<p>Start with ${hosted ? "keyword suggestions" : "offline suggestions"}, or connect OpenAI for more specific actions and groups.</p><button class="button primary wide" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Organize with local rules</button><button class="quiet-link" data-action="settings">Connect OpenAI in Settings ↗</button>`}<details><summary>${ai ? "Other ways to organize" : "Use ChatGPT instead"}</summary>${ai ? `<p>Local rules use keywords${hosted ? " without calling an AI provider" : " and run offline"}. Suggestions are marked low confidence.</p><button class="button" data-action="run-classify" ${eligible ? "" : "disabled"}>Use local rules</button>` : ""}<p>Download a prompt, use it in ChatGPT, then paste the JSON response.</p><a class="quiet-link" href="${apiURL("/api/prompt")}" data-download="prompt">${icon("download")}Download prompt</a><div class="field"><label for="triage-json">ChatGPT response</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button" data-action="apply-triage">Apply response</button></details>`);
 }
 document.addEventListener("click", async (e) => {
   const button = e.target.closest(
@@ -634,6 +684,15 @@ document.addEventListener("click", async (e) => {
       return render();
     }
     switch (button.dataset.action) {
+      case "global-find":
+        await navigate("inbox");
+        filter = "all";
+        render(false);
+        $("#search")?.focus();
+        break;
+      case "hosted-billing":
+        await hosted?.billingDialog();
+        break;
       case "hosted-account":
         hosted?.accountDialog();
         break;
@@ -974,12 +1033,24 @@ document.addEventListener("input", (e) => {
     scheduleHostedSearch();
     visibleLimit = 25;
     if (isReadingView()) syncLibraryRoute();
+    else if (view === "inbox") {
+      const params = new URLSearchParams();
+      if (projectFilter) params.set("project", projectFilter);
+      if (search) params.set("q", search);
+      history.replaceState(history.state, "", `#inbox${params.size ? "?" + params.toString() : ""}`);
+    }
     render();
     $("#search").focus();
     $("#search").setSelectionRange(cursor, cursor);
   }
 });
 document.addEventListener("change", async (e) => {
+  if (["f-limit", "retrieval-retry"].includes(e.target.id)) return renderRetrievalSelection();
+  if (e.target.name === "retrieval_id") return syncRetrievalSelection(e.target);
+  if (e.target.id === "focus-minutes") {
+    focusMinutes = ["5", "15", "30"].includes(e.target.value) ? e.target.value : "";
+    return render(false);
+  }
   if (["f-project_id", "f-kind"].includes(e.target.id)) {
     syncOrganizationFields(e.target.id === "f-project_id");
     return;
@@ -1012,12 +1083,23 @@ document.addEventListener("change", async (e) => {
   }
   if (e.target.id === "hours") {
     const value = Number(e.target.value);
-    if (!Number.isFinite(value) || value <= 0 || value > 168) {
+    if (!Number.isFinite(value) || value < 0.25 || value > 168) {
       e.target.value = hours;
-      return toast("Choose a time budget between 0 and 168 hours.");
+      return toast("Choose a time budget from 0.25 to 168 hours.");
     }
-    hours = value;
-    render();
+    const epoch = hosted?.epoch;
+    e.target.disabled = true;
+    try {
+      await api("/api/preferences", {weekly_hours: value});
+      if (hosted && epoch !== hosted.epoch) return;
+      state.weekly_hours = hours = value;
+      render();
+      toast("Weekly time budget saved.");
+    } catch (error) {
+      if (hosted && epoch !== hosted.epoch) return;
+      e.target.value = hours; e.target.disabled = false;
+      toast(error.message);
+    }
   }
 });
 document.addEventListener("keydown", (e) => {
@@ -1027,7 +1109,8 @@ document.addEventListener("keydown", (e) => {
     !$("#modal").open
   ) {
     e.preventDefault();
-    $("#search")?.focus();
+    if ($("#search")) $("#search").focus();
+    else navigate("inbox").then(() => { filter = "all"; render(false); $("#search")?.focus(); });
   }
 });
 $("#modal").addEventListener("close", () => {

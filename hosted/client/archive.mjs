@@ -109,6 +109,11 @@ export async function parseBackup(bytes, filename) {
   const importId = Array.from(new Uint8Array(hash), value => value.toString(16).padStart(2, '0')).join('').slice(0, 32);
   // Credentials, operational jobs and arbitrary backup settings never enter a restore request.
   const workspace = { version: 1, projects: data.projects || [], goals: data.goals || '', board_order: data.board_order || [] };
+  if (data.weekly_hours !== undefined) {
+    if (typeof data.weekly_hours !== 'number' || !Number.isFinite(data.weekly_hours) || data.weekly_hours < .25 || data.weekly_hours > 168)
+      throw new Error('The backup weekly time budget is invalid.');
+    workspace.weekly_hours = data.weekly_hours;
+  }
   return { import_id: `backup-${importId}`, rows: data.items, workspace };
 }
 

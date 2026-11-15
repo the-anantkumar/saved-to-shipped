@@ -65,7 +65,8 @@ try {
   assert.equal(requests.filter(request => ['/api/retrieve/start', '/api/classify-ai'].includes(request.path)).length, 0);
   await action('retrieve').click();
   assert.equal(await page.locator('#f-limit option').count(), 2);
-  await page.getByRole('button', { name: 'Retrieve post content' }).click(); await closeModal();
+  await page.locator('#retrieval-charge-approval').check();
+  await page.getByRole('button', { name: 'Retrieve selected posts' }).click(); await closeModal();
   await waitJob('retrieval');
   assert.ok((await stateItems()).every(item => item.has_content));
   await action('classify').click(); await action('run-ai').click(); await closeModal();
