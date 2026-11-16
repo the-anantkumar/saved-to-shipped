@@ -13,14 +13,17 @@ license-files = ["LICENSE"]
 authors = [{name = "Saved to Shipped contributors"}]
 dependencies = []
 classifiers = [
-  "Development Status :: 3 - Alpha",
+  "Development Status :: 4 - Beta",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
   "Operating System :: OS Independent",
 ]
 
 [project.urls]
 Homepage = "https://github.com/the-anantkumar/saved-to-shipped"
 Issues = "https://github.com/the-anantkumar/saved-to-shipped/issues"
+Documentation = "https://github.com/the-anantkumar/saved-to-shipped/blob/main/docs/USAGE.md"
+Changelog = "https://github.com/the-anantkumar/saved-to-shipped/blob/main/CHANGELOG.md"
 
 [project.scripts]
 saved-to-shipped = "saved_to_shipped.server:main"
@@ -33,4 +36,4 @@ include = ["saved_to_shipped*"]
 version = {attr = "saved_to_shipped._version.__version__"}
 
 [tool.setuptools.package-data]
-saved_to_shipped = ["web/*.html", "web/*.css", "web/*.js"]
+saved_to_shipped = ["web/*.html", "web/*.css", "web/*.js", "web/*.svg"]

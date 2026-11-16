@@ -2,6 +2,8 @@
 
 Help a developer get from an export to a useful next step with less work.
 
+For agent-assisted development, use a Git checkout and start with its root `AGENTS.md` and the [agent workflow](docs/AGENT_WORKFLOW.md). Project-scoped roles and skills live in `.codex/agents/` and `.agents/skills/`; they inherit your model and permissions. Hosted work follows the acceptance criteria in [the production plan](docs/PRODUCTION_PLAN.md). These development tools do not add application runtime dependencies and are not included in package archives.
+
 ## Run locally
 
 Use Python 3.10+ from the repository:
@@ -36,6 +38,10 @@ Use a fresh output directory. The checker rejects missing assets, mismatched ver
 
 CI runs source tests and an installed-app smoke test on Linux, macOS, and Windows; Linux covers Python 3.10, 3.12, and 3.14. Browser JavaScript and distribution checks run in their own jobs. Build tooling is optional and never added to the application's runtime dependencies.
 
+Hosted development requires a Git checkout, Node 24 and its own dependency install. From `hosted/`, run `npm ci`, `npm run typecheck` and `npm test`. Install the pinned Chromium with `PLAYWRIGHT_BROWSERS_PATH=.local/playwright npx playwright install chromium`, then run `PLAYWRIGHT_BROWSERS_PATH=.local/playwright npm run test:e2e`. `npm run uat` starts a disposable acceptance-test workspace with visible account controls, sample content and mocked providers. Follow [the UAT checklist](docs/UAT.md); `npm run test:uat` checks those controls automatically. `npm run test:product` covers the return flow, selected retrieval and absence of paid controls in the free beta. `npm run release:check` builds the closed application and verifies artifact boundaries without deploying. See the [hosted README](hosted/README.md) for capacity experiments and their limits. No cloud account or real provider key is needed for these checks.
+
+From `hosted/`, `node tests/polish-interactions.mjs` checks global keyboard search, dirty-note recovery, failed saves, focus return and delayed retrieval responses in an isolated local workspace. It needs Python 3.10+ as `python3`; set `SAVE2SHIP_TEST_PYTHON` to another interpreter path when needed. The test uses synthetic data and no provider calls.
+
 For browser QA without an account or charge:
 
 ```bash
@@ -43,6 +49,8 @@ python3 -m tests.ui_fixture
 ```
 
 Open http://127.0.0.1:8011/. This server uses temporary synthetic saves and mocked Apify responses. Any nonempty test token works in its Settings. It makes no provider calls. Stop it with Ctrl+C; its temporary workspace is removed.
+
+The current release scope is the [free beta](docs/FREE_BETA.md). Paid features remain on their preserved development branch and are not prerequisites for local contributors or owner UAT.
 
 ## Fixtures and provider adapters
 

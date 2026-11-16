@@ -117,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
                         archive.writestr("Saved_Items.csv", "Date Saved,URL\n2026-11-01,https://www.linkedin.com/feed/update/urn:li:activity:900000000000000001\n2026-11-02,https://www.linkedin.com/feed/update/urn:li:activity:900000000000000002\n")
                         archive.writestr("README.txt", "Synthetic URLs for importer testing only. These do not represent real posts. LinkedIn Saved Items contain dates and URLs, not post bodies.")
                     self.send(buffer.getvalue(), "application/zip", filename="synthetic-linkedin-archive.zip")
-                elif route in {"/", "/app.js", "/onboarding.js", "/theme.js", "/reading.js", "/style.css"}:
+                elif route in {"/", "/app.js", "/onboarding.js", "/theme.js", "/reading.js", "/style.css", "/favicon.svg"}:
                     asset = ROOT / "web" / ("index.html" if route == "/" else route.lstrip("/"))
                     self.send(asset.read_bytes(), (mimetypes.guess_type(asset.name)[0] or "text/plain") + "; charset=utf-8")
                 else:
@@ -147,7 +147,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(payload, dict):
                     raise ValueError("Request must be a JSON object")
                 if route == "/api/retrieve/start":
-                    self.json(self.server.retrieval.start(limit=payload.get("limit", 10), max_charge=payload.get("max_charge", 1), retry=payload.get("retry", False)))
+                    selection = {"ids": payload["ids"]} if "ids" in payload else {}
+                    self.json(self.server.retrieval.start(limit=payload.get("limit", 10),
+                                                         max_charge=payload.get("max_charge", 1),
+                                                         retry=payload.get("retry", False), **selection))
                 elif route == "/api/retrieve/poll":
                     self.json(self.server.retrieval.poll())
                 elif route == "/api/retrieve/dismiss":
@@ -175,6 +178,9 @@ class Handler(BaseHTTPRequestHandler):
                     raise ValueError("Request must be a JSON object")
                 if route == "/api/capture":
                     self.json({"id": work.capture(state_path, payload)})
+                elif route == "/api/preferences":
+                    work.save_preferences(state_path, payload)
+                    self.json({"ok": True})
                 elif route == "/api/settings":
                     if state_path == self.server.demo_path:
                         raise ValueError("Configure provider keys from your personal workspace.")

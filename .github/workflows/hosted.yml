@@ -1,0 +1,119 @@
+name: Hosted workbench
+
+on:
+  push:
+    paths:
+      - "hosted/**"
+      - "saved_to_shipped/web/**"
+      - ".github/workflows/hosted.yml"
+  pull_request:
+    paths:
+      - "hosted/**"
+      - "saved_to_shipped/web/**"
+      - ".github/workflows/hosted.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  workbench:
+    name: Private workbench and synthetic end-to-end flow
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: hosted
+    env:
+      CI: "true"
+      WRANGLER_SEND_METRICS: "false"
+      WRANGLER_WRITE_LOGS: "false"
+      CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV: "false"
+      PLAYWRIGHT_BROWSERS_PATH: .local/playwright
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24.22.2"
+          cache: npm
+          cache-dependency-path: hosted/package-lock.json
+      - name: Install locked hosted tooling
+        run: npm ci
+      - name: Check TypeScript
+        run: npm run typecheck
+      - name: Test identity, tenant isolation, storage and mocked provider jobs
+        run: npm test
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Test Firestore authority, recovery and isolation in the emulator
+        run: npx -y firebase-tools@latest emulators:exec --only firestore --project demo-save2ship "node --test tests/firestore-emulator.test.mjs tests/firestore-workspace.test.mjs tests/firestore-rules.test.mjs tests/firestore-app.test.mjs"
+      - name: Build hosted browser assets
+        run: npm run build:client
+      - name: Install the pinned Chromium test browser
+        run: npx playwright install --with-deps chromium
+      - name: Test the browser against the synthetic authenticated Worker
+        run: node tests/e2e.mjs
+      - name: Test human UAT controls and session persistence
+        run: node tests/uat-controls.mjs
+      - name: Test email verification, password reset and account reauthentication
+        run: node tests/auth-ui.mjs
+      - name: Test required TOTP enrollment, sign-in and cancelled authentication
+        run: node tests/mfa-ui.mjs
+      - name: Test queued-reader content and account-switch hydration
+        run: node tests/reading-regression.mjs
+      - name: Test focus, sections, preferences and deliberate retrieval
+        run: node tests/product-flow.mjs
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
+      - name: Test local note recovery, keyboard search and focus
+        run: node tests/polish-interactions.mjs
+      - name: Measure synthetic local capacity
+        run: npm run capacity
+      - name: Measure final workspace capacity, churn and recovery
+        run: npm run capacity:workspace
+      - name: Reproduce the known FTS commit-size gap
+        run: npm run capacity:fts-commit
+      - name: Validate deployment bundle without deploying
+        run: npm run dryrun
+      - name: Validate bounded probe bundle without deploying
+        run: npm run probe:dryrun
+      - name: Validate the closed application bundle without deploying
+        run: npm run app:dryrun
+      - name: Verify production entrypoints and hash reviewed artifacts
+        run: node scripts/check-release.mjs
+      - name: Stage synthetic measurement report
+        run: |
+          cp .local/capacity-report.json "$RUNNER_TEMP/save2ship-capacity-report.json"
+          cp .local/workspace-capacity-report.json "$RUNNER_TEMP/save2ship-workspace-capacity-report.json"
+      - name: Keep synthetic local measurements for review
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: hosted-local-capacity-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/save2ship-capacity-report.json
+            ${{ runner.temp }}/save2ship-workspace-capacity-report.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Keep synthetic browser and artifact evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: hosted-synthetic-e2e-${{ github.sha }}
+          path: |
+            hosted/.local/e2e/report.json
+            hosted/.local/e2e/*-desktop.png
+            hosted/.local/e2e/*-mobile.png
+            hosted/.local/e2e/signed-out.png
+            hosted/.local/e2e/beta-full.png
+            hosted/.local/release-check/report.json
+            hosted/.local/uat-controls/report.json
+          if-no-files-found: error
+          retention-days: 7

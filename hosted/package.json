@@ -1,0 +1,51 @@
+{
+  "name": "save2ship-hosted",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=10 <12"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "capacity": "npm run build && node tests/capacity/run.mjs",
+    "capacity:fts-commit": "node tests/capacity/fts-commit.mjs",
+    "build:client": "node scripts/build-client.mjs",
+    "app:dryrun": "npm run build:client && wrangler deploy --config wrangler.app.jsonc --dry-run --outdir .local/app-dryrun",
+    "app:dev": "npm run build:client && wrangler dev --config wrangler.app.jsonc --ip 127.0.0.1",
+    "dryrun": "wrangler deploy --dry-run --outdir .local/dryrun",
+    "probe:dryrun": "wrangler deploy --config wrangler.probe.jsonc --dry-run --outdir .local/probe-dryrun",
+    "dev": "wrangler dev --ip 127.0.0.1",
+    "test:e2e": "npm run build && npm run build:client && node tests/e2e.mjs",
+    "preview:synthetic": "npm run build && npm run build:client && node tests/browser-fixture.mjs",
+    "uat": "npm run build && npm run build:client && node tests/uat.mjs",
+    "test:uat": "npm run build && npm run build:client && node tests/uat-controls.mjs",
+    "test:auth-ui": "npm run build && npm run build:client && node tests/auth-ui.mjs",
+    "test:mfa-ui": "npm run build:client && node tests/mfa-ui.mjs",
+    "test:reader": "npm run build && npm run build:client && node tests/reading-regression.mjs",
+    "test:product": "npm run build && npm run build:client && node tests/product-flow.mjs",
+    "firebase:local": "node scripts/firebase-local.mjs",
+    "release:check": "npm run app:dryrun && node scripts/check-release.mjs",
+    "capacity:workspace": "node tests/capacity/workspace.mjs"
+  },
+  "dependencies": {
+    "fflate": "0.8.3",
+    "firebase": "13.2.0",
+    "jose": "6.2.15",
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261106.1",
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261104.0-beta",
+    "playwright": "1.65.0",
+    "typescript": "7.0.2",
+    "wrangler": "4.158.0"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "1.14.6"
+  }
+}

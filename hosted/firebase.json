@@ -1,0 +1,15 @@
+{
+  "firestore": {
+    "database": "save2ship",
+    "location": "asia-south1",
+    "edition": "enterprise",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "firestore": { "host": "127.0.0.1", "port": 8085, "edition": "enterprise" },
+    "auth": { "host": "127.0.0.1", "port": 9099 },
+    "ui": { "enabled": false },
+    "singleProjectMode": true
+  }
+}

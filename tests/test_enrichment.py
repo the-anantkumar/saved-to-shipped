@@ -69,6 +69,49 @@ class EnrichmentTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "already pending"):
             self.manager.start()
 
+    def test_explicit_selection_keeps_requested_order_without_fetching_other_saves(self):
+        chosen = [self.items[1]["id"], self.items[0]["id"]]
+        with patch.object(fetch.Apify, "start", return_value=self.run) as start:
+            result = self.manager.start(ids=chosen, limit=2, max_charge=0.5)
+        self.assertEqual(chosen, result["item_ids"])
+        self.assertEqual(([self.items[1]["url"], self.items[0]["url"]], 0.5), start.call_args.args)
+        self.assertEqual(chosen, work.read(self.path)["retrieval_jobs"][0]["item_ids"])
+
+    def test_invalid_explicit_selections_never_persist_or_submit_a_run(self):
+        before = self.path.read_bytes()
+        ident = self.items[0]["id"]
+        invalid = [(ids, 2) for ids in [None, "not-a-list", {}, [], [ident, ident], [""], [" "],
+                                       ["x" * 51], [123], [False], [[]], ["unknown-save"], [ident, "unknown-save"]]]
+        invalid.append(([self.items[0]["id"], self.items[1]["id"]], 1))
+        with patch.object(fetch.Apify, "start") as start:
+            for ids, limit in invalid:
+                with self.subTest(ids=ids, limit=limit), self.assertRaises(ValueError):
+                    self.manager.start(ids=ids, limit=limit)
+                self.assertEqual(before, self.path.read_bytes())
+            start.assert_not_called()
+
+    def test_ineligible_explicit_selection_never_falls_back_to_another_save(self):
+        for changes in [{"content": "Already supplied context"}, {"status": "parked"},
+                        {"status": "done"}, {"enrichment": {"status": "missing"}}]:
+            state = work.read(self.path)
+            state["items"][1] = {**self.items[1], **changes}
+            save_state(self.path, state)
+            before = self.path.read_bytes()
+            with patch.object(fetch.Apify, "start") as start, self.assertRaisesRegex(ValueError, "selected saves"):
+                self.manager.start(ids=[self.items[1]["id"]], limit=1)
+            start.assert_not_called()
+            self.assertEqual(before, self.path.read_bytes())
+
+    def test_explicit_retry_submits_only_the_selected_unavailable_save(self):
+        state = work.read(self.path)
+        for item in state["items"]:
+            item["enrichment"] = {"status": "missing"}
+        save_state(self.path, state)
+        with patch.object(fetch.Apify, "start", return_value=self.run) as start:
+            result = self.manager.start(ids=[self.items[1]["id"]], limit=1, retry=True)
+        self.assertEqual([self.items[1]["id"]], result["item_ids"])
+        self.assertEqual([self.items[1]["url"]], start.call_args.args[0])
+
     def test_user_edits_during_retrieval_win(self):
         self.start()
         work.update_item(self.path, self.items[0]["id"], {"content": "My own manually supplied context", "title": "My title"})
@@ -104,12 +147,17 @@ class EnrichmentTests(unittest.TestCase):
             start.assert_not_called()
 
     def test_uncertain_submission_requires_explicit_dismissal(self):
-        with patch.object(fetch.Apify, "start", side_effect=fetch.ProviderError("Connection ended", uncertain=True)):
+        chosen = [self.items[1]["id"]]
+        with patch.object(fetch.Apify, "start", side_effect=fetch.ProviderError("Connection ended", uncertain=True)) as start:
             with self.assertRaises(ValueError):
-                self.manager.start()
+                self.manager.start(ids=chosen, limit=1)
+            self.assertEqual([self.items[1]["url"]], start.call_args.args[0])
         self.assertEqual("UNCERTAIN", work.read(self.path)["retrieval_jobs"][0]["status"])
-        with self.assertRaisesRegex(ValueError, "already pending"):
-            self.manager.start()
+        self.assertEqual(chosen, work.read(self.path)["retrieval_jobs"][0]["item_ids"])
+        with patch.object(fetch.Apify, "start") as replay:
+            with self.assertRaisesRegex(ValueError, "already pending"):
+                self.manager.start(ids=chosen, limit=1)
+            replay.assert_not_called()
         self.manager.dismiss_uncertain()
         self.assertEqual("DISMISSED", work.read(self.path)["retrieval_jobs"][0]["status"])
 

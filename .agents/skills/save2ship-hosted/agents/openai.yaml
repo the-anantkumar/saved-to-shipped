@@ -1,0 +1,6 @@
+interface:
+  display_name: "Save2ship Hosted Beta"
+  short_description: "Implement a bounded hosted-beta phase"
+  default_prompt: "Use $save2ship-hosted to implement the next ready phase from the production plan and record its acceptance evidence."
+policy:
+  allow_implicit_invocation: true

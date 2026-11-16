@@ -4,7 +4,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 // Exercise rendering and navigation as application code, without a browser or providers.
-function app(data = {}) {
+function app(data = {}, hosted = null) {
   const nodes = new Map();
   const events = {};
   const classes = () => {
@@ -25,7 +25,7 @@ function app(data = {}) {
       querySelectorAll() { return []; },
       setAttribute() {}, removeAttribute() {}, remove() {},
       showModal() { this.open = true; }, close() { this.open = false; },
-      focus() {},
+      focus() {}, scrollIntoView() {},
     });
     return nodes.get(name);
   };
@@ -33,7 +33,7 @@ function app(data = {}) {
     URLSearchParams, console,
     location: { search: "", hash: "" },
     history: { state: null, pushState(state, _unused, hash) { this.state = state; context.location.hash = hash; }, replaceState(state, unused, hash) { this.pushState(state, unused, hash); } },
-    window: { scrollY: 0, innerHeight: 900, requestAnimationFrame() {}, matchMedia: () => ({ matches: false }), getSelection: () => selection, scrollTo() {}, addEventListener(type, callback) { events[type] = callback; } },
+    window: { Save2ShipHosted: hosted, scrollY: 0, innerHeight: 900, requestAnimationFrame() {}, matchMedia: () => ({ matches: false }), getSelection: () => selection, scrollTo() {}, addEventListener(type, callback) { events[type] = callback; } },
     document: {
       documentElement: root, body: { appendChild() {} }, elementFromPoint: () => null,
       querySelector: node, querySelectorAll: () => [],
@@ -266,7 +266,7 @@ test("reading routes retain filters, deep links, and legacy project links", () =
   assert.equal(ui.run("view"), "backlog");
   ui.context.location.hash = "";
   ui.run("restoreRoute()");
-  assert.equal(ui.run("view"), "learning");
+  assert.equal(ui.run("view"), "focus");
 });
 
 test("the reader escapes source text and keeps coverage and notes visible", () => {
@@ -372,4 +372,101 @@ test("existing section choices ignore a previously entered new name", () => {
   const ui = app();
   ui.context.form = new Map([["project_id", "databases"], ["new_project_name", "An abandoned draft"]]);
   assert.deepEqual(JSON.parse(ui.run("JSON.stringify(organizationPayload(form))")), {project_id: "databases"});
+});
+
+test('late missing-reader recovery removes only its original save after navigation', async () => {
+  const items = [{ ...draft, id: 'a', kind: 'learning' }, { ...draft, id: 'b', kind: 'learning' }];
+  let rejectDetail, started;
+  const opening = new Promise(resolve => { started = resolve; });
+  const adapter = { epoch: 1, start() {}, api: async () => ({ items, projects: [], imports: [] }),
+    detail: async () => new Promise((_resolve, reject) => { rejectDetail = reject; started(); }) };
+  const ui = app({ items }, adapter);
+  ui.run('initialLoad = false; view = "learning"; readerId = "a"; render = () => {}; scheduleRetrieval = () => {};');
+  const refreshing = ui.run('refresh()');
+  await opening;
+  ui.run('readerId = "b"');
+  rejectDetail(Object.assign(new Error('Removed remotely'), { code: 'NOT_FOUND' }));
+  await refreshing;
+  assert.equal(ui.run('readerId'), 'b');
+  assert.equal(ui.run('JSON.stringify(state.items.map(item => item.id))'), '["b"]');
+});
+
+test('superseded hosted reading replies do not replace more recent progress in the UI', async () => {
+  const item = { ...draft, revision: 3, reading: { status: 'reading', progress: 70 } };
+  const adapter = { epoch: 1, start() {}, api: async () => ({ superseded: true, revision: 2, reading: { status: 'reading', progress: 20 } }) };
+  const ui = app({ items: [item] }, adapter);
+  await ui.run('changeReading("draft", {progress: 20})');
+  assert.equal(ui.run('state.items[0].reading.progress'), 70);
+  assert.equal(ui.run('state.items[0].revision'), 3);
+});
+
+test('the slash shortcut searches every space instead of retaining a reading topic', async () => {
+  const ui = app({items: [article, draft]});
+  let focused = false, prevented = false;
+  ui.node('#search').focus = () => { focused = true; };
+  ui.context.document.activeElement = {tagName: 'BODY'};
+  ui.run('view = "learning"; projectFilter = "databases"; search = "old phrase"; readingFilter = "read";');
+  ui.emit('keydown', {key: '/', preventDefault() { prevented = true; }});
+  await new Promise(setImmediate);
+  assert.equal(prevented, true);
+  assert.equal(focused, true);
+  assert.equal(ui.run('view'), 'inbox');
+  assert.equal(ui.run('projectFilter'), '');
+  assert.equal(ui.run('search'), '');
+  assert.equal(ui.run('filter'), 'all');
+  assert.equal(ui.context.location.hash, '#inbox');
+});
+
+test('dirty notes survive Escape and backdrop dismissal until explicitly discarded', async () => {
+  const ui = app({items: [draft]});
+  ui.run('contextDialog("draft")');
+  const note = ui.node('#f-note'), source = ui.node('#f-content');
+  note.value = 'A thought I have not saved'; source.value = draft.content;
+  const dialog = ui.node('#modal'), prompt = ui.node('#discard-prompt');
+  prompt.classList.add('hidden');
+  let prevented = false;
+  ui.events['#modal:cancel']({preventDefault() { prevented = true; }});
+  assert.equal(prevented, true);
+  assert.equal(dialog.open, true);
+  assert.equal(prompt.classList.contains('hidden'), false);
+  assert.equal(note.value, 'A thought I have not saved');
+  await ui.events['document:click'][0]({target: {closest: () => ({dataset: {action: 'keep-editing'}})}});
+  assert.equal(prompt.classList.contains('hidden'), true);
+  assert.equal(ui.run('notesAreDirty()'), true);
+  dialog.getBoundingClientRect = () => ({left: 100, top: 100, right: 500, bottom: 600});
+  ui.events['#modal:click']({target: dialog, clientX: 20, clientY: 20});
+  assert.equal(dialog.open, true);
+  assert.equal(prompt.classList.contains('hidden'), false);
+  await ui.events['document:click'][0]({target: {closest: () => ({dataset: {action: 'discard-notes'}})}});
+  assert.equal(dialog.open, false);
+  assert.equal(ui.run('notesDraft'), null);
+  assert.equal(ui.run('state.items[0].note'), draft.note);
+});
+
+test('source edits trigger the same guard, clean notes close normally, and only dirty drafts warn before unload', () => {
+  const ui = app({items: [draft]});
+  ui.run('contextDialog("draft")');
+  ui.node('#f-note').value = draft.note; ui.node('#f-content').value = draft.content;
+  let prevented = false;
+  ui.events.beforeunload({preventDefault() { prevented = true; }});
+  assert.equal(prevented, false);
+  ui.run('requestDialogClose()');
+  assert.equal(ui.node('#modal').open, false);
+  ui.run('contextDialog("draft")');
+  ui.node('#f-content').value = 'A corrected source paragraph';
+  const event = {preventDefault() { prevented = true; }};
+  ui.events.beforeunload(event);
+  assert.equal(prevented, true);
+  assert.equal(event.returnValue, '');
+  ui.run('requestDialogClose()');
+  assert.equal(ui.node('#modal').open, true);
+  assert.equal(ui.node('#f-content').value, 'A corrected source paragraph');
+});
+
+test('Today excerpts escape source content and never invent a passage for a notes-only save', () => {
+  const ui = app({items: [{...article, content: '<img src=x onerror="bad()"> A source passage'}]});
+  assert.match(ui.run('focusPage()'), /class="focus-excerpt">&lt;img/);
+  assert.doesNotMatch(ui.run('focusPage()'), /<img/);
+  ui.run('state.items[0].content = ""; state.items[0].excerpt = ""');
+  assert.doesNotMatch(ui.run('focusPage()'), /class="focus-excerpt"/);
 });

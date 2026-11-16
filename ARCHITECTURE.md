@@ -39,7 +39,7 @@ Root `server.py` and `saved_to_shipped.py` preserve earlier source commands. The
 
 Shared CSS color tokens define light and dark palettes across every surface. A small synchronous `theme.js` applies the saved browser preference before the stylesheet loads, avoiding a light flash for a dark override. System mode listens for device appearance changes; explicit light/dark choices persist in local storage and synchronize between tabs. Theme changes update root attributes without redrawing editors. Provider settings and workspace exports remain independent of browser appearance preferences.
 
-The browser has four primary destinations: Saves, Projects, Learning, and Experiences. Projects contains the build-only board, weekly planning, and completed build items. Learning includes `learning` and `reference`; Experiences includes `experience`. Existing group IDs serve as reading topics. Landing prefers Projects when build items exist, then Learning, Experiences, or Saves. Legacy `#projects` and `#backlog` links still open the project board.
+The browser keeps Saves, Projects, Learning and Experiences distinct. An empty workspace opens the import surface; a populated workspace opens Today, with an unfinished/queued read and an active project step chosen from existing state. Its 5/15/30-minute controls do not call AI. Projects contains the build-only board, Weekly suggestions and completed build items. The weekly time budget persists, but the suggested tasks are not explicit calendar commitments. Learning includes `learning` and `reference`; Experiences includes `experience`. Existing group IDs serve as reading topics, and typed empty sections stay visible in their own space. Legacy `#projects` and `#backlog` links still open the project board. Find a saved idea opens cross-space text/note search; section-scoped searches remain separate.
 
 Saves presents one contextual next action: resolve a pending run, review project drafts, classify readable content, or retrieve missing content. Project review keeps source context read-only and advances through drafts after approval/parking. A separate Notes editor changes personal context or pasted post text, submitting only changed fields. Provider options and less frequent editing controls use details disclosures.
 
@@ -56,12 +56,14 @@ The board has Review, To do, In progress, and Done lanes. Pointer dragging uses 
 The version-1 workspace format remains compatible with earlier saves. Items retain stable IDs, URLs, saved dates, annotations, classifications, project assignments, and progress. New optional collections are initialized lazily.
 
 - `projects`: stable group IDs, names, descriptions, creation times.
+- Optional group `kind` keeps new empty project, learning and experience sections in their intended space; legacy groups remain usable.
 - `imports`: recent import summaries.
 - `retrieval_jobs`: selected item IDs, provider/actor, run and dataset references, status, charge cap, counts, timestamps, and safe errors.
 - Item `enrichment`: retrieval provenance, coverage, source links, status, and truncation information.
 - Item `reading`: optional `{status, progress, queued, started_at?, completed_at?, updated_at}`. Status is `unread`, `reading`, or `read`; progress is 0 to 100. `/api/reading` validates the item kind and available context, then saves atomically under the HTTP mutation lock. Progress is monotonic until an explicit unread reset. A snapshot derives legacy doing/done as reading/read without rewriting the file. Explicit reading metadata takes precedence. Included in JSON backups.
 - `goals`: optional personal direction used during triage.
 - `board_order`: stable item IDs in the user's explicit tile order. Unranked items use score order until arranged. Included in workspace backups.
+- `weekly_hours`: optional persisted available-time preference, validated from 0.25 to 168 hours. Hosted storage keeps it with workspace settings and includes it in v1 exports.
 
 Provider credentials live in a separate `settings.json`. Exports serialize the workspace, never the settings file. Temporary-file replacement gives settings owner-only file permissions on supported systems. Environment variables override stored values; public configuration exposes only availability flags and nonsecret options.
 
@@ -93,3 +95,47 @@ The server binds IPv4 loopback, validates Host/port, requires a per-run token fo
 The initial retrieval adapter targets the documented `data_minds/linkedin-post-scraper` schema. Its actor ID can be overridden only with a compatible implementation. The transport uses authorization headers, bounded responses/timeouts, a run charge cap, and no automatic submission retries. Provider errors are redacted rather than echoing raw bodies or tokens.
 
 The model client receives context-backed items, coverage, goals, and project names. It validates exact ID coverage and field types before saving drafts. Local suggestions remain explicitly heuristic. Neither classifier starts tasks or publishes issues automatically.
+
+## Preserved runtime experiment
+
+The Git checkout also contains a separate TypeScript experiment under `hosted/`. It uses Cloudflare Workers and a SQLite-backed Durable Object to measure storage, full-text search and transaction behavior with synthetic libraries. Its public data API is closed. The local test harness is a separate entrypoint and is never part of the deployable Worker.
+
+This experiment does not change the Python application's storage or introduce accounts into local use. Hosted dependencies, generated files and deployment configuration are excluded from the Python distribution. The [P1 evidence](docs/evidence/P1.md) records measured behavior and outstanding cloud checks. The production workbench below uses a separate schema and entrypoint.
+
+
+## Closed hosted workbench
+
+The TypeScript implementation is now present under `hosted/`, with a separate deployment template `wrangler.app.jsonc`. It is disabled by default, has a zero-member cap and empty admission/operator allowlists, and has not been deployed. The synthetic entrypoints exercise real Worker/SQLite behavior with generated identities and mocked providers. They are excluded from production artifacts. The Python distribution includes none of the hosted dependencies.
+
+| Component | Responsibility |
+| --- | --- |
+| `client/bootstrap.mjs`, `firebase-auth.mjs`, `mfa-ui.mjs` | Google and verified Email/password sign-in, mandatory TOTP for password sessions, local enrollment QR, managed persistence, verification/reset and provider-aware reauthentication |
+| `client/transport.mjs` | Memory-only workspace capability, paged metadata, on-demand details, revisioned writes and account-change cancellation |
+| `client/archive.mjs`, `import-worker.mjs` | Bounded ZIP/CSV parsing in the browser, chunked restore and v1 backup assembly |
+| `src/app.ts` | Verified identity, strict origin/body limits, API routing and operator boundaries |
+| `src/auth/session.ts` | Cached Google certificates, signed 15-minute workspace capabilities and fresh account-status checks |
+| `src/firestore/client.ts`, `registry.ts` | Trusted Firestore transport, atomic seats, stable generations, lifecycle epochs, allowlists and daily work reservations |
+| `src/firestore/workspace.ts` | Authoritative row commits, checkpoint fencing, disposable-cache recovery, durable wake intents and paged purge |
+| `src/storage/workspace.ts` | Shared transaction/domain engine, revisions, byte/item limits, import receipts and source-preserving merges; SQLite is a cache in Firestore mode |
+| `src/jobs/orchestrator.ts` | Durable submission, bounded reconciliation, saved classification results and uncertainty handling |
+| `src/providers`, `src/credentials` | Bounded BYOK adapters and versioned AES-GCM credential encryption |
+
+Normal requests verify both the Firebase ID token and a capability bound to UID/generation, then route to that private workspace. Ordinary reads avoid the global registry and validate the Firestore checkpoint before using the local projection. The workspace checks ownership and lifecycle on every operation. Administrative suspension uses monotonic lifecycle epochs so delayed messages cannot revive a newer suspension. Firebase revocation is checked on capability renewal, with a maximum 15-minute window for ordinary requests; privileged routes check current account status directly.
+
+Firestore Enterprise Native holds private workspace records, encrypted credentials, jobs, receipts, membership and budgets. A dedicated database-scoped IAM identity writes from the trusted API; deployed Security Rules deny all direct client reads and writes. Row changes and a unique checkpoint commit ID are committed atomically. A local pending marker prevents failed or unconfirmed SQL changes from becoming authoritative, and a cache can be rebuilt from consistent Firestore records. Core operations support these atomic transitions and bounded maintenance; browser search stays in the revalidated projection. See [Firebase setup](docs/FIREBASE_SETUP.md) for schema, recovery and deployment boundaries.
+
+The browser retains metadata pages and hydrates source text/notes only when needed. An item-library revision detects changes from another browser without invalidating pages for job bookkeeping. Pages are staged atomically; returning to a tab refreshes the library when no editor is open. Hosted search scans at most 1,000 bounded saved bodies for full text, notes and metadata, returning matching IDs without adding a persistent search index. Search is debounced and keeps the same results before and after detail hydration. Signed-out or switched accounts lose cached data, requests, drafts and timers. Stale revisions preserve a user's unsaved draft rather than overwriting another browser's changes. Import parses only Saved Items, then sends at most 25 rows per request. An explicit new import uses a new operation ID; retries retain its ID and sequence. Source deduplication preserves edits when a file is selected again. Exports use authenticated paged reads and assemble JSON/CSV ZIPs locally; a changed workspace invalidates an in-progress export rather than mixing revisions.
+
+A provider job reserves logical storage and a modeled completion allowance before QUEUED is persisted. A durable alarm claims STARTING once in Firestore, then submits outside the storage commit. Unknown outcomes remain UNCERTAIN. Known runs use leases and bounded claims; classification results are persisted before application. A bounded scheduled scan repairs lost alarm state from authoritative wake intents. Resuming a retrieval always checks provider status before declaring its dataset final. Content edits and save incarnations protect against stale enrichment, while notes do not block a fuller result from the same run.
+
+Account deletion freezes local mutations atomically with job submission claims. It refuses uncertain submissions, aborts known runs, drops workspace data and credentials, then releases the seat. If an expired provider key prevents abort, the frozen account exposes a fresh-authenticated deletion retry with optional encrypted key repair. Late callbacks and old capabilities cannot recreate a closed workspace.
+
+The free beta has no subscription, checkout, paid-plan distinction, monthly organization points or trial expiry. Its limits come from workspace storage, admission, batch size and modeled daily platform work. Retrieval and optional AI still use member-owned provider accounts. Saving credentials or importing data never starts provider work.
+
+Paid implementation is preserved on `feat/firebase-backend` at `da7652b`, outside the free-beta source and artifact path. Historical payment evidence does not describe this branch. A workspace containing a retained payment ledger must not be silently handed to a build that cannot complete its financial lifecycle; the free-beta compatibility boundary and its tests are recorded in [free-beta evidence](docs/evidence/FREE_BETA.md).
+
+Limits apply to canonical item JSON plus persisted operational JSON: 1,000 saves, 5,000,000 logical bytes, 131,072 bytes per item and bounded groups/jobs/receipts. A provisional 7,000,000-byte SQL used-page check does not certify the 8 MB physical allocation target. Daily modeled pools reserve ingestion, interactive, completion and cleanup work; failed attempts and retries count. These are implementation protections, not measured Cloudflare capacity. The [production plan](docs/PRODUCTION_PLAN.md), [backend evidence](docs/evidence/P3-P5.md) and [operations guide](docs/HOSTED_OPERATIONS.md) own the remaining live/deployed gates.
+
+Deletion freezes the workspace before stopping known provider work. Only an explicitly authorized close starts the bounded Firestore purge; the frozen state alone cannot delete a provider job or its credential. After the remote purge, `deleteAll()` removes SQL, KV and alarms. Terminal generation records remain in Firestore. New provisioning includes the matching Registry reservation in the same atomic commit fence. A purge followed by interrupted Registry finalization can finish on a later authenticated deletion retry. Production uses separate Firebase Durable Object namespaces and rejects switching an existing projection back to SQL mode.
+
+Firestore's 1 GiB Spark allowance replaces the former SQL-only storage envelope. The previous 500-member allocation and SQL capacity results do not certify this backend. Keep public admission closed until Firestore units/bytes, the additional cache and retained tombstones have been measured. The local Python workflow and its dependency boundary are unchanged.

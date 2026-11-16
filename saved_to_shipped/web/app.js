@@ -1,5 +1,7 @@
 "use strict";
 
+const hosted = window.Save2ShipHosted || null;
+
 const $ = (s, root = document) => root.querySelector(s);
 const esc = (value) =>
   String(value ?? "").replace(
@@ -38,7 +40,7 @@ const shapes = {
 const icon = (name) =>
   `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${shapes[name] || shapes.file}"/></svg>`;
 const workspace =
-  new URLSearchParams(location.search).get("workspace") === "demo"
+  !hosted && new URLSearchParams(location.search).get("workspace") === "demo"
     ? "demo"
     : "personal";
 let state = { items: [], projects: [], imports: [] },
@@ -51,8 +53,10 @@ let state = { items: [], projects: [], imports: [] },
   retrievalTimer,
   visibleLimit = 25,
   classificationCancelled = false;
-let initialLoad = true;
+let initialLoad = true, focusMinutes = "";
+let searchIds = new Set(), searchKey = "", searchPending = false, searchError = "", searchTimer, searchSequence = 0;
 let draggedTile = "", movingTile = false, suppressTileClick = false, pointerDrag = null;
+let notesDraft = null, modalInvoker = null;
 const labels = {
   untriaged: "Needs context",
   project: "Build",
@@ -78,8 +82,9 @@ const statusLabels = {
   parked: "Parked",
 };
 const apiURL = (route, query = "") =>
-  `${route}?workspace=${workspace}${query ? "&" + query : ""}`;
+  hosted ? `${route}${query ? "?" + query : ""}` : `${route}?workspace=${workspace}${query ? "&" + query : ""}`;
 async function api(route, data, query = "") {
+  if (hosted) return hosted.api(route, data, query);
   const response = await fetch(
     apiURL(route, query),
     data === undefined
@@ -100,21 +105,63 @@ async function api(route, data, query = "") {
   return result;
 }
 async function refresh() {
+  const epoch = hosted?.epoch;
   if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
-  state = await api("/api/state");
+  if (hosted && epoch !== hosted.epoch) return;
+  const next = await api("/api/state");
+  if (hosted && epoch !== hosted.epoch) return;
+  state = next;
+  hours = Number.isFinite(state.weekly_hours) && state.weekly_hours >= 0.25 && state.weekly_hours <= 168 ? state.weekly_hours : 6;
   const first = initialLoad;
   if (initialLoad) {
     restoreRoute();
-    filter = reviewItems().length ? "review" : "all";
+    filter = !search.trim() && reviewItems().length ? "review" : "all";
     initialLoad = false;
   }
-  if (!draggedTile) render();
+  if (hosted && readerId) {
+    const refreshedReader = readerId;
+    const closeMissingReader = () => { if (readerId !== refreshedReader) return; readerId = ""; syncLibraryRoute(); toast('This save is no longer in this library.'); };
+    if (!libraryItems().some(item => item.id === refreshedReader && item.has_context)) closeMissingReader();
+    else {
+      try { await hydrateItem(refreshedReader); }
+      catch (error) {
+        if (error.code !== 'NOT_FOUND') throw error;
+        state.items = state.items.filter(item => item.id !== refreshedReader); closeMissingReader();
+      }
+    }
+  }
+  if (hosted) await updateHostedSearch();
+  if (hosted && epoch !== hosted.epoch) return;
+  if (!draggedTile) renderKeepingSearchFocus();
   if (first && readerId) {
     restoreReadingPosition();
     const item = state.items.find(item => item.id === readerId);
     if (item) startReading(item);
   }
   scheduleRetrieval();
+}
+async function hydrateItem(id) {
+  if (!hosted) return state.items.find(item => item.id === id);
+  const epoch = hosted.epoch;
+  const item = await hosted.detail(id);
+  if (epoch !== hosted.epoch) throw new Error("Account changed. Open the save again.");
+  const position = state.items.findIndex(value => value.id === id);
+  if (position >= 0) state.items[position] = item;
+  return item;
+}
+function resetHostedState() {
+  clearTimeout(searchTimer); searchSequence++; searchIds.clear(); searchKey = ""; searchPending = false; searchError = "";
+  clearTimeout(retrievalTimer); retrievalTimer = null;
+  clearTimeout(readingProgressTimer); pendingReadingProgress = null; readingRequests.clear();
+  classificationCancelled = true; readerId = ""; initialLoad = true;
+  view = "inbox"; filter = "all"; projectFilter = ""; search = ""; visibleLimit = 25; hours = 6; focusMinutes = "";
+  hostedPollFailures = 0;
+  clearTimeout(toastTimer); $("#toast").textContent = ""; $("#toast").classList.remove("visible");
+  if (pointerDrag) finishPointerDrag();
+  state = {items: [], projects: [], imports: []};
+  notesDraft = null; modalInvoker = null;
+  $("#modal").close(); $("#modal").innerHTML = "";
+  $("#sidebar").innerHTML = ""; $("#main").innerHTML = '<div class="loading">Opening your workspace…</div>';
 }
 function toast(message) {
   const node = $("#toast");
@@ -125,6 +172,63 @@ function toast(message) {
 }
 function projectName(id) {
   return state.projects.find((p) => p.id === id)?.name || "";
+}
+function sectionKind(kind) { return ["learning", "reference"].includes(kind) ? "learning" : kind === "experience" ? "experience" : "project"; }
+function sectionsFor(kind, assigned = "") {
+  const target = sectionKind(kind);
+  return state.projects.filter(group => {
+    if (group.id === assigned && !["project", "learning", "experience"].includes(group.kind)) return true;
+    if (["project", "learning", "experience"].includes(group.kind)) return group.kind === target;
+    const members = state.items.filter(item => item.project_id === group.id);
+    return members.length ? members.some(item => sectionKind(item.kind) === target) : target === "project";
+  });
+}
+function matchesSearch(item) {
+  if (!search.trim()) return true;
+  if (hosted) return !searchPending && !searchError && searchIds.has(item.id);
+  return `${item.title} ${item.author || ""} ${item.content || item.excerpt || ""} ${item.note || ""} ${projectName(item.project_id)} ${(item.tags || []).join(" ")}`.toLowerCase().includes(search.trim().toLowerCase());
+}
+function searchFeedback() {
+  if (!hosted || !search.trim()) return "";
+  if (searchPending) return '<p class="helper" role="status">Searching your saves and notes…</p>';
+  if (searchError) return `<p class="helper" role="alert">${esc(searchError)} Change your search or return to this tab to try again.</p>`;
+  return "";
+}
+async function updateHostedSearch() {
+  if (!hosted) return;
+  clearTimeout(searchTimer);
+  const query = search.trim(), epoch = hosted.epoch;
+  if (!query) { searchSequence++; searchIds.clear(); searchKey = ""; searchPending = false; searchError = ""; return; }
+  const key = JSON.stringify([query.toLowerCase(), state.library_revision, state.projects.map(p => [p.id, p.name])]);
+  if (searchKey === key && !searchPending && !searchError) return;
+  const sequence = ++searchSequence;
+  searchPending = true; searchError = "";
+  try {
+    const result = await api('/api/search', undefined, `q=${encodeURIComponent(query)}`);
+    if (sequence !== searchSequence || epoch !== hosted.epoch) return;
+    searchIds = new Set(result.ids); searchKey = key;
+  } catch (error) {
+    if (sequence !== searchSequence || epoch !== hosted.epoch) return;
+    searchError = error.message; searchKey = "";
+  } finally {
+    if (sequence === searchSequence && epoch === hosted.epoch) searchPending = false;
+  }
+}
+function scheduleHostedSearch() {
+  if (!hosted) return;
+  clearTimeout(searchTimer); searchSequence++; searchPending = Boolean(search.trim()); searchError = "";
+  searchTimer = setTimeout(async () => {
+    const epoch = hosted.epoch;
+    await updateHostedSearch();
+    if (epoch !== hosted.epoch) return;
+    renderKeepingSearchFocus();
+  }, 250);
+}
+function renderKeepingSearchFocus() {
+  const input = document.activeElement?.id === 'search' ? $('#search') : null;
+  const cursor = input?.selectionStart;
+  render();
+  if (input && $('#search')) { $('#search').focus(); $('#search').setSelectionRange(cursor, cursor); }
 }
 function category(item) {
   if (!item.has_context && item.enrichment)
@@ -139,6 +243,10 @@ function dateLabel(raw) {
   return Number.isNaN(date.getTime())
     ? raw
     : date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+function newestSavedFirst(a, b) {
+  const timestamp = item => { const value = Date.parse(item.saved_at || ""); return Number.isFinite(value) ? value : -Infinity; };
+  return timestamp(b) - timestamp(a) || (b.saved_at || "").localeCompare(a.saved_at || "") || a.id.localeCompare(b.id);
 }
 async function navigate(next, project = "") {
   if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
@@ -155,21 +263,32 @@ async function navigate(next, project = "") {
   window.scrollTo({ top: 0 });
   $("h1")?.focus({ preventScroll: true });
 }
+async function findSavedIdea(focusSearch = true) {
+  await navigate("inbox");
+  filter = "all";
+  render(false);
+  if (focusSearch) $("#search")?.focus();
+}
 function restoreRoute() {
   const [route, query = ""] = location.hash.slice(1).split("?");
-  const fallback = state.items.some(item => item.kind === "project") ? "backlog" : state.items.some(item => ["learning", "reference"].includes(item.kind)) ? "learning" : state.items.some(item => item.kind === "experience") ? "experiences" : "inbox";
-  view = route === "projects" ? "backlog" : ["inbox", "backlog", "week", "shipped", "learning", "experiences"].includes(route) ? route : fallback;
+  const fallback = state.items.length ? "focus" : "inbox";
+  view = route === "projects" ? "backlog" : ["focus", "inbox", "backlog", "week", "shipped", "learning", "experiences"].includes(route) ? route : fallback;
   const params = new URLSearchParams(query);
   projectFilter = params.get("project") || "";
-  search = params.get("q") || "";
+  search = (params.get("q") || "").slice(0, 200);
   readingFilter = ["unread", "reading", "read", "all", "queued"].includes(params.get("filter")) ? params.get("filter") : "unread";
   readingLength = ["5", "10"].includes(params.get("length")) ? params.get("length") : "any";
   readerId = isReadingView() ? params.get("read") || "" : "";
   if (readerId && !libraryItems().some(item => item.id === readerId && item.has_context)) readerId = "";
 }
 window.addEventListener("popstate", async () => {
+  const epoch = hosted?.epoch;
   if (pendingReadingProgress || readingRequests.size) await flushReadingProgress();
+  if (hosted && epoch !== hosted.epoch) return;
   restoreRoute();
+  if (hosted && readerId) await hydrateItem(readerId).catch(error => toast(error.message));
+  if (hosted) await updateHostedSearch();
+  if (hosted && epoch !== hosted.epoch) return;
   filter = "all";
   render(false);
   if (readerId) {
@@ -183,8 +302,9 @@ function reviewItems() {
 function sidebar() {
   const theme = window.save2shipTheme?.preference || "system";
   $("#sidebar").innerHTML =
-    `<a class="brand" href="/?workspace=${workspace}" aria-label="Save2Ship home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
+    `<a class="brand" href="${hosted ? "/" : "/?workspace=" + workspace}" aria-label="Saved to Shipped home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
   <nav class="nav" aria-label="Main navigation">${[
+    ...(state.items.length ? [["focus", "calendar", "Today"]] : []),
     ["inbox", "inbox", "Saves"],
     ["backlog", "board", "Projects"],
     ["learning", "book", "Learning"],
@@ -195,13 +315,16 @@ function sidebar() {
         `<button data-view="${key}" class="${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? "active" : ""}" ${view === key || (key === "backlog" && ["week", "shipped"].includes(view)) ? 'aria-current="page"' : ""} title="${label}">${icon(img)}<span class="nav-name">${label}</span>${key === "inbox" && reviewItems().length ? `<span class="count">${reviewItems().length}</span>` : ""}</button>`,
     )
     .join("")}</nav>
-  <div class="side-bottom"><button class="utility" data-action="import" aria-label="Import archive">${icon("upload")}<span>Import archive</span></button><button class="utility" data-action="settings" aria-label="Settings">${icon("lock")}<span>Settings</span></button><label class="utility theme-control" title="Appearance">${icon("moon")}<select id="theme-mode" aria-label="Appearance">${[["system","System theme"],["light","Light"],["dark","Dark"]].map(([mode,label]) => `<option value="${mode}" ${theme === mode ? "selected" : ""}>${label}</option>`).join("")}</select></label><a class="utility" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${icon("leaf")}<span>${workspace === "demo" ? "My workspace" : "Try the demo"}</span></a><div class="local-label"><span class="dot"></span>Local workspace</div></div>`;
+  <div class="side-bottom"><button class="utility" data-action="import" aria-label="Import archive">${icon("upload")}<span>Import archive</span></button><button class="utility" data-action="settings" aria-label="Settings">${icon("lock")}<span>Settings</span></button><label class="utility theme-control" title="Appearance">${icon("moon")}<select id="theme-mode" aria-label="Appearance">${[["system","System theme"],["light","Light"],["dark","Dark"]].map(([mode,label]) => `<option value="${mode}" ${theme === mode ? "selected" : ""}>${label}</option>`).join("")}</select></label>${hosted ? `<button class="utility" data-action="hosted-account" aria-label="Account: ${esc(hosted.user?.name || "Your account")}">${icon("leaf")}<span>${esc(hosted.user?.name || "Your account")}</span></button><div class="local-label"><span class="dot"></span>Free beta · Private workspace</div>` : `<a class="utility" href="${workspace === "demo" ? "/" : "/?workspace=demo"}">${icon("leaf")}<span>${workspace === "demo" ? "My workspace" : "Try the demo"}</span></a><div class="local-label"><span class="dot"></span>Local workspace</div>`}</div>`;
 }
 function topbar() {
-  return `<div class="topbar"><span>${workspace === "demo" ? "THE PLAYGROUND" : "A LITTLE LESS SAVING. A LITTLE MORE DOING."}</span><button class="quiet-link" data-action="export">${icon("download")}Export</button></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample ideas, separate from your workspace.</span><a href="/">My workspace ↗</a></div>' : ""}`;
+  const usage = hosted && state.usage;
+  const usageLabel = usage ? `${Number(usage.items || 0)} / ${Number(usage.limits?.items || 1000)} saves · ${(Number(usage.logicalBytes || 0) / 1_000_000).toFixed(1)} / ${(Number(usage.limits?.logicalBytes || 5_000_000) / 1_000_000).toFixed(0)} MB` : "";
+  return `<div class="topbar"><button class="quiet-link global-find" data-action="global-find">${icon("search")}Find a saved idea <kbd>/</kbd></button><div class="topbar-actions">${usage ? `<span class="usage-label" title="Saved content and personal notes. Internal storage limits also apply.">${esc(usageLabel)}</span>` : ""}<button class="quiet-link" data-action="export">${icon("download")}Export</button></div></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample ideas, separate from your workspace.</span><a href="/">My workspace ↗</a></div>' : ""}`;
 }
 function heading(title, description, actions) {
-  return `<div class="heading"><div><h1 tabindex="-1">${title}</h1><p>${description}</p></div>${actions ? `<div class="heading-actions">${actions}</div>` : ""}</div>`;
+  const section = {focus: "Today", inbox: "Your collection", backlog: "Projects", week: "Projects · Weekly suggestions", shipped: "Projects · Done", learning: "Learning", experiences: "Experiences"}[view] || "Your workspace";
+  return `<div class="heading"><div><span class="eyebrow heading-eyebrow">${section}</span><h1 tabindex="-1">${title}</h1><p>${description}</p></div>${actions ? `<div class="heading-actions">${actions}</div>` : ""}</div>`;
 }
 function empty(title, description, actions = "") {
   return `<div class="empty"><div class="empty-icon">${icon("leaf")}</div><h3>${title}</h3><p>${description}</p>${actions}</div>`;
@@ -209,9 +332,10 @@ function empty(title, description, actions = "") {
 
 function row(item) {
   const title = item.title || "Saved LinkedIn post";
-  return `<div class="save-row"><button class="save-open" data-item="${item.id}" aria-label="${item.has_context ? "Review" : "Add context to"} ${esc(title)}"><span class="source-mark">${item.has_context ? icon(item.kind === "project" ? "spark" : "file") : "in"}</span><span class="save-text"><span class="save-title">${esc(title)}</span><span class="save-meta">${esc(item.author || "LinkedIn")}<span>·</span>${esc(dateLabel(item.saved_at))}${item.project_id ? `<span>·</span><span class="row-project">${esc(projectName(item.project_id))}</span>` : ""}</span></span><span class="pill ${esc(item.kind)}">${esc(category(item))}</span></button><button class="notes-button ${item.note ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${item.note ? "Edit your notes" : "Add notes"}">${icon("note")}</button></div>`;
+  return `<div class="save-row"><button class="save-open" data-item="${item.id}" aria-label="${item.has_context ? "Review" : "Add context to"} ${esc(title)}"><span class="source-mark">${item.has_context ? icon(item.kind === "project" ? "spark" : "file") : "in"}</span><span class="save-text"><span class="save-title">${esc(title)}</span><span class="save-meta">${esc(item.author || "LinkedIn")}<span>·</span>${esc(dateLabel(item.saved_at))}${item.project_id ? `<span>·</span><span class="row-project">${esc(projectName(item.project_id))}</span>` : ""}</span></span><span class="pill ${esc(item.kind)}">${esc(category(item))}</span></button><button class="notes-button ${(item.has_note ?? Boolean(item.note)) ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${(item.has_note ?? Boolean(item.note)) ? "Edit your notes" : "Add notes"}">${icon("note")}</button></div>`;
 }
 function table(items) {
+  if (searchFeedback()) return searchFeedback();
   return `<div class="save-list">${items.length ? items.map(row).join("") : empty("Nothing here yet", search ? "Try a different search." : "Your saves will appear here as they move through your workspace.")}</div>`;
 }
 function inbox() {
@@ -220,12 +344,12 @@ function inbox() {
   const waiting = scope.filter((item) => !item.has_context);
   const items = scope.filter((item) =>
     (filter === "all" || (filter === "review" && reviews.some((review) => review.id === item.id)) || (filter === "context" && !item.has_context)) &&
-    `${item.title} ${item.content} ${item.note} ${projectName(item.project_id)} ${(item.tags || []).join(" ")}`.toLowerCase().includes(search.toLowerCase())
+    matchesSearch(item)
   );
-  if (!state.items.length) return heading("Good ideas deserve a next step.", "A calmer home for the things you want to build and learn.") + `<div class="welcome"><div class="welcome-mark">${icon("inbox")}</div><h2>Start with your saved posts.</h2><p>Import your LinkedIn archive. Recover the useful bits.<br>Leave with a few things worth doing.</p><button class="button primary" data-action="import">${icon("upload")}Import LinkedIn archive</button><a class="quiet-link" href="/?workspace=demo">Take a look around first ${icon("arrow")}</a><div class="welcome-note">Your archive stays on your device.</div></div>`;
+  if (!state.items.length) return heading("Good ideas deserve a next step.", "Turn your LinkedIn saves into things you build, learn, and try.") + `<section class="welcome"><div class="welcome-copy"><span class="eyebrow">FROM SAVED TO SOMETHING USEFUL</span><h2>Start with your saved posts.</h2><p>Bring in your LinkedIn archive, choose a few ideas that matter, and give them a place to grow. Start small. Five saves is plenty.</p><div class="welcome-actions"><button class="button primary" data-action="import">${icon("upload")}Import LinkedIn archive</button>${hosted ? '<button class="quiet-link" data-action="capture">Or add one saved link</button>' : `<a class="quiet-link" href="/?workspace=demo">Take a look around first ${icon("arrow")}</a>`}</div><p class="welcome-note">Your archive brings in links and dates. Add post text yourself or retrieve it with your own paid provider account. Nothing runs on import. ${hosted ? "Your ZIP stays on this device; selected saves are stored privately." : "Saved on this computer."}</p></div><div class="welcome-spaces" aria-label="A home for each intention"><div class="welcome-space">${icon("board")}<div><h3>Projects</h3><p>Turn an idea into a small next step. Make it, then move it to Done.</p></div></div><div class="welcome-space">${icon("book")}<div><h3>Learning</h3><p>A reading list you return to. Pick up your place and keep a takeaway.</p></div></div><div class="welcome-space">${icon("leaf")}<div><h3>Experiences</h3><p>Stories, perspectives, and things to try. Keep what stays with you.</p></div></div></div></section>`;
   return heading(projectFilter ? esc(projectName(projectFilter)) : "Your saves, with somewhere to go.", projectFilter ? "Related ideas. One useful next step at a time." : `${state.items.length} saves · ${reviews.length} to review · ${waiting.length} waiting for content`, `<button class="button" data-action="capture">${icon("plus")}Add a link</button>`) +
     (projectFilter ? `<button class="quiet-link back-link" data-view="projects">← All projects</button>` : pipeline()) +
-    `<div class="toolbar"><div class="tabs" aria-label="Filter saves">${[["review", "To review", reviews.length], ["all", "All saves", scope.length], ["context", "Waiting", waiting.length]].map(([key,label,count]) => `<button class="tab ${filter === key ? "selected" : ""}" data-filter="${key}" aria-pressed="${filter === key}">${label}<span>${count}</span></button>`).join("")}</div><label class="search">${icon("search")}<input id="search" placeholder="Search saves" aria-label="Search saves" value="${esc(search)}"><kbd>/</kbd></label></div>` + table(items.slice(0,visibleLimit)) + `${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25,items.length-visibleLimit)} more</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "save" : "saves"}${projectFilter ? " in this project" : ""}</span>${waiting.length && filter !== "context" && !projectFilter ? '<button class="quiet-link" data-action="retrieve">Process more saves ↗</button>' : ""}</div>`;
+    `<div class="toolbar"><div class="tabs" aria-label="Filter saves">${[["review", "To review", reviews.length], ["all", "All saves", scope.length], ["context", "Waiting", waiting.length]].map(([key,label,count]) => `<button class="tab ${filter === key ? "selected" : ""}" data-filter="${key}" aria-pressed="${filter === key}">${label}<span>${count}</span></button>`).join("")}</div><label class="search">${icon("search")}<input id="search" maxlength="200" placeholder="Search saves" aria-label="Search saves" value="${esc(search)}"><kbd>/</kbd></label></div>` + table(items.slice(0,visibleLimit)) + `${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25,items.length-visibleLimit)} more</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "save" : "saves"}${projectFilter ? " in this project" : ""}</span>${waiting.length && filter !== "context" && !projectFilter ? '<button class="quiet-link" data-action="retrieve">Process more saves ↗</button>' : ""}</div>`;
 }
 function orderedTiles(items) {
   const rank = new Map((state.board_order || []).map((id,index) => [id,index]));
@@ -233,14 +357,14 @@ function orderedTiles(items) {
 }
 function task(item, draggable = false) {
   const title = item.title || "Untitled idea";
-  return `<article class="task tile" data-tile-id="${item.id}" draggable="false" ${draggable ? 'data-draggable="true"' : ""} aria-label="${esc(title)}"><div class="tile-top"><span class="tile-kind ${esc(item.kind)}"><span></span>${esc(labels[item.kind])}</span>${draggable ? `<span class="drag-handle" aria-hidden="true" title="Drag to move">${icon("grip")}</span>` : ""}</div><h3><button class="save-title" data-item="${item.id}" draggable="false">${esc(title)}</button></h3><p class="task-preview">${esc(item.next_action)}</p><div class="tile-meta"><span class="task-project">${esc(projectName(item.project_id) || "Personal")}</span><span>${item.effort_hours}h</span></div><footer><button class="notes-button ${item.note ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${item.note ? "Edit notes" : "Add notes"}">${icon("note")}<span>Notes</span></button><select class="move-select" data-move-id="${item.id}" aria-label="Move ${esc(title)}"><option value="">Move…</option>${Object.entries(statusLabels).filter(([key]) => key !== item.status).map(([key,label]) => `<option value="${key}">${label}</option>`).join("")}</select></footer></article>`;
+  return `<article class="task tile" data-tile-id="${item.id}" draggable="false" ${draggable ? 'data-draggable="true"' : ""} aria-label="${esc(title)}"><div class="tile-top"><span class="tile-kind ${esc(item.kind)}"><span></span>${esc(labels[item.kind])}</span>${draggable ? `<span class="drag-handle" aria-hidden="true" title="Drag to move">${icon("grip")}</span>` : ""}</div><h3><button class="save-title" data-item="${item.id}" draggable="false">${esc(title)}</button></h3><p class="task-preview">${esc(item.next_action)}</p><div class="tile-meta"><span class="task-project">${esc(projectName(item.project_id) || "Personal")}</span><span>${item.effort_hours}h</span></div><footer><button class="notes-button ${(item.has_note ?? Boolean(item.note)) ? "has-note" : ""}" data-action="notes" data-id="${item.id}" aria-label="Notes for ${esc(title)}" title="${(item.has_note ?? Boolean(item.note)) ? "Edit notes" : "Add notes"}">${icon("note")}<span>Notes</span></button><select class="move-select" data-move-id="${item.id}" aria-label="Move ${esc(title)}"><option value="">Move…</option>${Object.entries(statusLabels).filter(([key]) => key !== item.status).map(([key,label]) => `<option value="${key}">${label}</option>`).join("")}</select></footer></article>`;
 }
 function backlogTabs() {
-  return `<div class="tabs backlog-tabs" aria-label="Board views">${[["backlog","Board"],["week","This week"],["shipped","Done"]].map(([key,label]) => `<button class="tab ${view===key ? "selected" : ""}" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join("")}</div>`;
+  return `<div class="tabs backlog-tabs" aria-label="Board views">${[["backlog","Board"],["week","Weekly suggestions"],["shipped","Done"]].map(([key,label]) => `<button class="tab ${view===key ? "selected" : ""}" data-view="${key}" aria-pressed="${view===key}">${label}</button>`).join("")}</div>`;
 }
 function backlog() {
   const items = state.items.filter(item => item.kind === "project" && (!projectFilter || item.project_id === projectFilter));
-  const groups = state.projects.filter(project => state.items.some(item => item.kind === "project" && item.project_id === project.id));
+  const groups = sectionsFor("project");
   return heading("A place to make things.", "Only projects here. Pick a next step and move it forward.", '<button class="button" data-action="project">'+icon("plus")+'New project</button>') +
     `<div class="board-toolbar">${backlogTabs()}<label class="board-filter"><span class="sr-only">Filter board by project</span><select id="board-project" aria-label="Filter board by project"><option value="">All projects</option>${groups.map(project => `<option value="${project.id}" ${projectFilter===project.id ? "selected" : ""}>${esc(project.name)}</option>`).join("")}</select></label></div>` +
     `<div class="board-scroll"><div class="board kanban" aria-label="Idea board" aria-busy="${movingTile}">${[["inbox","Review"],["ready","To do"],["doing","In progress"],["done","Done"]].map(([key,label]) => {
@@ -255,7 +379,7 @@ function week() {
     .filter(
       (i) => i.kind === "project" && ["ready", "doing"].includes(i.status) && (!projectFilter || i.project_id === projectFilter),
     )
-    .sort((a, b) => b.score - a.score)) {
+    .sort((a, b) => Number(b.status === "doing") - Number(a.status === "doing") || (b.score || 0) - (a.score || 0))) {
     if (
       selected.length < 2 &&
       item.effort_hours > 0 &&
@@ -267,12 +391,36 @@ function week() {
   }
   return (
     heading(
-      "A little focus goes a long way.",
-      "Pick a realistic slice of work for the time you actually have.",
+      "A few suggestions for your week.",
+      "Ideas that fit your saved time budget. Choose what to take on; these are suggestions, not a committed plan.",
       `<label class="budget">This week <input id="hours" type="number" min="0.25" max="168" step="0.25" value="${hours}" aria-label="Weekly time budget">hours</label>`,
     ) +
-    backlogTabs() + `<div class="week-note">${selected.length ? `${selected.length} small build ${selected.length === 1 ? "task" : "tasks"} · ${Math.round((hours - remaining) * 100) / 100}h planned · ${Math.round(remaining * 100) / 100}h breathing room` : "No reviewed build tasks fit this budget yet."}<br>A maximum of two build tasks. Leave yourself room to finish.</div><div class="board">${selected.length ? selected.map(item => task(item)).join("") : empty("Make space for one good idea", "Review a build idea, set a next action, then add it to your backlog.", '<button class="button primary" data-view="inbox">Review saved ideas</button>')}</div>`
+    backlogTabs() + `<div class="week-note">${selected.length ? `${selected.length} suggested build ${selected.length === 1 ? "task" : "tasks"} · ${Math.round((hours - remaining) * 100) / 100}h estimated · ${Math.round(remaining * 100) / 100}h breathing room` : "No reviewed build tasks fit this budget yet."}<br>A maximum of two suggestions, with in-progress work first. Leave yourself room to finish.</div><div class="board">${selected.length ? selected.map(item => task(item)).join("") : empty("Make space for one good idea", "Review a build idea, set a next action, then add it to your backlog.", '<button class="button primary" data-view="inbox">Review saved ideas</button>')}</div>`
   );
+}
+function focusPage() {
+  if (!state.items.length) return inbox();
+  const minutes = Number(focusMinutes) || 0;
+  const reads = readingOrder(state.items.filter(item => READING_KINDS.includes(item.kind) && item.has_context && readingState(item).status !== "read"));
+  const unfinished = reads.filter(item => readingState(item).status === "reading");
+  const queued = reads.filter(item => readingState(item).queued);
+  const choices = unfinished.length ? unfinished : queued.length ? queued : reads;
+  const remainingMinutes = item => Math.max(1, Math.ceil(readingMinutes(item) * (100 - readingState(item).progress) / 100));
+  const read = (minutes && choices.find(item => remainingMinutes(item) <= minutes)) || choices[0];
+  const projects = orderedTiles(state.items.filter(item => item.kind === "project" && item.has_context && item.next_action && ["doing", "ready"].includes(item.status)))
+    .sort((a, b) => Number(b.status === "doing") - Number(a.status === "doing"));
+  const project = projects.find(item => item.status === "doing") || (minutes && projects.find(item => item.effort_hours * 60 <= minutes)) || projects[0];
+  const reading = read && readingState(read);
+  const readExcerpt = read && (read.content || (read.has_content ? read.excerpt : "") || "").replace(/\s+/g, " ").trim();
+  const readReason = read && (reading.status === "reading" ? `You were ${Math.round(reading.progress)}% through this read.` : reading.queued ? "You put this in Read next." : "An unread save, with your most recently saved choices first.");
+  const projectReason = project && (project.status === "doing" ? "You already have this in progress. Continue with its saved next action." : "A reviewed project with a next action, following your board order.");
+  const title = heading("One useful thing today.", read || project ? "Continue a read or move one project forward. The rest can wait." : "Start with a few saves you care about. The rest can wait.",
+    `<label class="focus-time">I have <select id="focus-minutes" aria-label="Available time">${[["", "some time"], ["5", "5 minutes"], ["15", "15 minutes"], ["30", "30 minutes"]].map(([value, label]) => `<option value="${value}" ${focusMinutes === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`);
+  if (!read && !project) return title + empty("Pick a few worth returning to.", "Choose a few relevant links from Saves. Add source text or a personal note to make a link useful. Retrieval is optional and starts only after your approval.", '<button class="button primary" data-action="choose-saves">Choose from Saves '+icon("arrow")+'</button>');
+  const cards = [];
+  if (read) cards.push(`<section class="focus-card" data-focus-kind="reading" aria-label="Your next read"><span class="eyebrow">A LITTLE ROOM TO READ</span><h2>${esc(read.title || "Saved LinkedIn post")}</h2>${readExcerpt ? `<p class="focus-excerpt">${esc(readExcerpt.slice(0, 220))}${readExcerpt.length > 220 ? "…" : ""}</p>` : ""}<p class="focus-reason">${esc(readReason)}</p><p class="focus-meta">About ${remainingMinutes(read)} min left${projectName(read.project_id) ? ` · ${esc(projectName(read.project_id))}` : ""}${minutes && remainingMinutes(read) > minutes ? ". Read a little and keep your place." : ""}</p><button class="button primary" data-item="${esc(read.id)}">${reading.status === "reading" ? "Continue reading" : "Start reading"}${icon("arrow")}</button></section>`);
+  if (project) cards.push(`<section class="focus-card" data-focus-kind="project" aria-label="Your next project action"><span class="eyebrow">ONE SMALL STEP FORWARD</span><p class="focus-reason">${esc(projectReason)}</p><div class="focus-project-task">${task(project)}</div><p class="focus-meta">${project.effort_hours > 0 ? `${Math.round(project.effort_hours * 60)} min estimated for the saved task.` : "Go at your own pace."}${minutes && project.effort_hours * 60 > minutes ? ` Use your ${minutes} minutes to make a start.` : ""}</p><button class="quiet-link" data-item="${esc(project.id)}">Open next action ${icon("arrow")}</button></section>`);
+  return title + `<div class="focus-grid${cards.length === 1 ? " single" : ""}">${cards.join("")}</div><p class="focus-stop">One useful read, takeaway or step is enough. Your other saves will be here when you want them.</p>${cards.length === 1 ? '<button class="quiet-link" data-action="choose-saves">Choose something else from Saves '+icon("arrow")+'</button>' : '<button class="quiet-link" data-action="global-find">Find something else you saved '+icon("search")+'</button>'}`;
 }
 function render(preserveScroll = true) {
   const scroll = readerId && preserveScroll ? window.scrollY : null;
@@ -282,6 +430,7 @@ function render(preserveScroll = true) {
   $("#main").innerHTML =
     topbar() +
     {
+      focus: focusPage,
       inbox,
       backlog,
       week,
@@ -302,9 +451,35 @@ function modal(
   form = false,
 ) {
   const dialog = $("#modal");
+  if (!dialog.open) {
+    const element = document.activeElement;
+    modalInvoker = element ? {element, id: element.id, dataset: {...element.dataset}, epoch: hosted?.epoch} : null;
+  }
+  notesDraft = null;
   dialog.classList.toggle("review-dialog", body.includes('class="review-layout"'));
+  dialog.classList.remove("notes-dialog");
   dialog.innerHTML = `${form ? '<form id="dialog-form">' : ""}<div class="dialog-head"><h2 id="dialog-title">${title}</h2><button type="button" class="close" data-action="close" aria-label="Close dialog">${icon("close")}</button></div><div class="dialog-body"><div id="form-error" class="error-message hidden" role="alert"></div>${body}</div><div class="dialog-footer">${footer}</div>${form ? "</form>" : ""}`;
   if (!dialog.open) dialog.showModal();
+}
+function restoreModalFocus() {
+  if (!modalInvoker || $("#modal").open || (hosted && modalInvoker.epoch !== hosted.epoch)) return;
+  const {element, id, dataset} = modalInvoker;
+  const current = element.isConnected ? element : [...document.querySelectorAll("[id], [data-action], [data-item], [data-view]")].find(candidate =>
+    id ? candidate.id === id : Object.keys(dataset).length && Object.entries(dataset).every(([key, value]) => candidate.dataset?.[key] === value));
+  (current || $("#main"))?.focus({preventScroll: true});
+}
+function notesAreDirty() {
+  return Boolean(notesDraft && $("#modal").open && $("#dialog-form") === notesDraft.form &&
+    ["note", "content"].some(key => ($(`#f-${key}`)?.value ?? notesDraft[key]) !== notesDraft[key]));
+}
+function requestDialogClose(afterDiscard = () => $("#modal").close()) {
+  if (notesDraft?.saving) { toast("Saving your changes…"); return; }
+  if (!notesAreDirty()) { afterDiscard(); return; }
+  notesDraft.afterDiscard = afterDiscard;
+  const prompt = $("#discard-prompt");
+  prompt.classList.remove("hidden");
+  prompt.scrollIntoView({block: "nearest"});
+  $('[data-action="keep-editing"]')?.focus({preventScroll: true});
 }
 function field(label, name, value = "", type = "input", attrs = "") {
   return `<div class="field"><label for="f-${name}">${label}</label>${type === "textarea" ? `<textarea id="f-${name}" name="${name}" ${attrs}>${esc(value)}</textarea>` : `<input id="f-${name}" name="${name}" value="${esc(value)}" ${attrs}>`}</div>`;
@@ -321,12 +496,17 @@ function sectionLabels(kind) {
 }
 function organizationFields(item) {
   const copy = sectionLabels(item.kind);
-  return `<div class="organization-fields">${select(copy.label, "project_id", [["", "Unsorted"], ...state.projects.map(project => [project.id, project.name]), [NEW_SECTION, copy.create]], item.project_id || "")}<div id="new-section-field" class="new-section-field hidden">${field(copy.name, "new_project_name", "", "input", `disabled maxlength="100" placeholder="${esc(copy.placeholder)}"`)}<p class="helper">Created and assigned when you save. Your other edits stay here.</p></div></div>`;
+  return `<div class="organization-fields" data-assigned-section="${esc(item.project_id || "")}">${select(copy.label, "project_id", [["", "Unsorted"], ...sectionsFor(item.kind, item.project_id).map(project => [project.id, project.name]), [NEW_SECTION, copy.create]], item.project_id || "")}<div id="new-section-field" class="new-section-field hidden">${field(copy.name, "new_project_name", "", "input", `disabled maxlength="100" placeholder="${esc(copy.placeholder)}"`)}<p class="helper">Created and assigned when you save. Your other edits stay here.</p></div></div>`;
 }
 function syncOrganizationFields(focusNew = false) {
   const group = $("#f-project_id");
   if (!group) return;
   const copy = sectionLabels($("#f-kind")?.value);
+  const assigned = group.closest?.("[data-assigned-section]")?.dataset.assignedSection || "";
+  const options = [["", "Unsorted"], ...sectionsFor($("#f-kind")?.value, assigned).map(project => [project.id, project.name]), [NEW_SECTION, copy.create]];
+  const current = options.some(([id]) => id === group.value) ? group.value : "";
+  group.innerHTML = options.map(([id, name]) => `<option value="${esc(id)}" ${id === current ? "selected" : ""}>${esc(name)}</option>`).join("");
+  group.value = current;
   const isNew = group.value === NEW_SECTION;
   $('label[for="f-project_id"]').textContent = copy.label;
   $('label[for="f-new_project_name"]').textContent = copy.name;
@@ -347,21 +527,35 @@ function organizationPayload(form) {
 function bindForm(callback) {
   $("#dialog-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const buttons = [...$("#dialog-form").querySelectorAll("[type=submit]")];
+    const form = e.currentTarget, epoch = hosted?.epoch;
+    const buttons = [...form.querySelectorAll("[type=submit]")];
+    const submitted = new FormData(form);
+    const draft = notesDraft?.form === form ? notesDraft : null;
+    const fields = draft ? [...form.querySelectorAll("input, textarea, select")].map(field => [field, field.disabled]) : [];
+    if (draft) draft.saving = true;
+    fields.forEach(([field]) => field.disabled = true);
     buttons.forEach(button => button.disabled = true);
     $("#form-error").classList.add("hidden");
     try {
-      const next = await callback(new FormData(e.currentTarget), e.submitter);
+      const next = await callback(submitted, e.submitter);
+      if (hosted && epoch !== hosted.epoch) return;
+      if ($("#dialog-form") !== form) { await refresh(); return; }
+      notesDraft = null;
       $("#modal").close();
       await refresh();
+      restoreModalFocus();
       if (next?.nextItem) itemDialog(next.nextItem);
       if (next?.completedReview) navigate("backlog");
       if (next?.afterRefresh) next.afterRefresh();
     } catch (error) {
+      if (hosted && epoch !== hosted.epoch) return;
+      if ($("#dialog-form") !== form || !$("#form-error")) { toast(error.message); return; }
       $("#form-error").textContent = error.message;
       $("#form-error").classList.remove("hidden");
       $("#form-error").scrollIntoView({ block: "nearest" });
     } finally {
+      if (draft) draft.saving = false;
+      fields.forEach(([field, disabled]) => field.disabled = disabled);
       buttons.forEach(button => button.disabled = false);
     }
   });
@@ -379,10 +573,12 @@ function captureDialog() {
   });
 }
 function projectDialog(asTopic = false, itemId = "") {
+  const kind = asTopic ? view === "experiences" ? "experience" : "learning" : "project";
+  const experience = kind === "experience";
   modal(
-    asTopic ? "Give your reading a home" : "Make room for a project",
+    asTopic ? experience ? "Give your experiences a home" : "Give your reading a home" : "Make room for a project",
     field(
-      asTopic ? "Topic name" : "Project name",
+      asTopic ? experience ? "Section name" : "Topic name" : "Project name",
       "name",
       "",
       "input",
@@ -395,13 +591,19 @@ function projectDialog(asTopic = false, itemId = "") {
         "textarea",
         `maxlength="2000" placeholder="${asTopic ? "The subjects and questions you want to explore." : "A small outcome you would like to make real."}"`,
       ),
-    `<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Create ${asTopic ? "topic" : "project"}</button>`,
+    `<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Create ${asTopic ? experience ? "section" : "topic" : "project"}</button>`,
     true,
   );
   bindForm(async (form) => {
-    const result = await api("/api/project", Object.fromEntries(form));
+    const result = await api("/api/project", {...Object.fromEntries(form), kind});
     if (itemId) await api("/api/item", {id: itemId, project_id: result.id});
     toast(asTopic ? itemId ? "Saved to your new topic." : "Topic created. Choose it when organizing a save." : "Project created. Assign ideas from their review panel.");
+    if (!itemId) return {afterRefresh: () => {
+      projectFilter = result.id;
+      if (asTopic) syncLibraryRoute();
+      else history.replaceState(null, "", `#backlog?project=${encodeURIComponent(result.id)}`);
+      render(false);
+    }};
   });
 }
 function effortChoices(current) {
@@ -410,36 +612,43 @@ function effortChoices(current) {
   return values.sort((a,b) => a-b).map(value => [String(value), value < 1 ? `${value * 60} minutes` : `${value} ${value === 1 ? "hour" : "hours"}`]);
 }
 function contextDialog(id) {
+  if (hosted && !hosted.hasDetail(id)) return hydrateItem(id).then(() => contextDialog(id)).catch(error => toast(error.message));
   const item = state.items.find(candidate => candidate.id === id);
   if (!item) return;
-  modal("A little context, on your terms.",
-    `<div class="context-header"><h3>${esc(item.title || "Saved LinkedIn post")}</h3><a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original post ${icon("external")}</a></div><p>A place for why you saved this, a question, or something you want to try.</p>${field("Your notes", "note", item.note, "textarea", 'rows="7" maxlength="20000" placeholder="What makes this interesting to you?"')}<details><summary>Post text</summary><p class="helper">Paste or correct the source text here. Your notes stay separate.</p>${field("Source text", "content", item.content, "textarea", 'rows="8" maxlength="20000" placeholder="Paste the post text…"')}</details>`,
-    '<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save context</button>', true);
+  modal("Your notes",
+    `<div class="context-header"><h3>${esc(item.title || "Saved LinkedIn post")}</h3><a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original post ${icon("external")}</a></div><p>A place for why you saved this, a question, or something you want to try.</p>${field("Your notes", "note", item.note, "textarea", 'rows="7" maxlength="20000" placeholder="What makes this interesting to you?"')}<details><summary>Post text</summary><p class="helper">Paste or correct the source text here. Your notes stay separate.</p>${field("Source text", "content", item.content, "textarea", 'rows="8" maxlength="20000" placeholder="Paste the post text…"')}</details><div id="discard-prompt" class="discard-prompt hidden" role="alert"><strong>Keep your changes?</strong><p>Your notes and source edits have not been saved yet.</p><div class="discard-actions"><button class="button primary" type="button" data-action="keep-editing">Keep editing</button><button class="button" type="button" data-action="discard-notes">Discard changes</button></div></div>`,
+    `${hosted ? `<button class="quiet-link danger" type="button" data-action="hosted-delete-item" data-id="${esc(id)}">Delete save</button>` : ""}<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save changes</button>`, true);
   bindForm(async form => {
-    const payload = {id};
+    const payload = {id, ...(hosted ? {expected_revision: item.revision} : {})};
     for (const key of ["note", "content"]) {
       if (form.get(key) !== (item[key] || "")) payload[key] = form.get(key);
     }
-    if (Object.keys(payload).length > 1) await api("/api/item", payload);
-    toast("Context saved.");
+    if (["note", "content"].some(key => key in payload)) await api("/api/item", payload);
+    toast("Changes saved.");
   });
+  notesDraft = {form: $("#dialog-form"), note: item.note || "", content: item.content || "", saving: false};
+  $("#modal").classList.add("notes-dialog");
+  $("#f-note")?.focus({preventScroll: true});
 }
 function itemDialog(id) {
+  if (hosted && !hosted.hasDetail(id)) return hydrateItem(id).then(() => itemDialog(id)).catch(error => toast(error.message));
   const item = state.items.find((i) => i.id === id);
   if (!item) return;
   const draft = item.status === "inbox" && item.kind !== "untriaged";
   const queue = reviewItems().filter(candidate => !projectFilter || candidate.project_id === projectFilter);
   const coverage = item.enrichment;
+  const links = safeReadingLinks(item);
   const compact = window.matchMedia("(max-width: 800px)").matches;
   modal(
     draft ? "One idea. One next step." : "Your saved idea",
-    `<div class="review-layout"><section class="source-panel"><div class="eyebrow">THE INSPIRATION</div><h2>${esc(item.title || "Saved LinkedIn post")}</h2><div class="source-byline">${esc(item.author || "LinkedIn")} · ${esc(dateLabel(item.saved_at))}<a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original ${icon("external")}</a></div>${item.metadata?.synthetic ? '<div class="coverage-note">Synthetic sample content.</div>' : ""}${coverage ? `<div class="coverage-note ${coverage.status === "partial" ? "partial" : ""}">${icon(coverage.status === "partial" ? "file" : "check")}${esc(retrievalLabels[coverage.status] || coverage.status)} · ${esc(coverage.coverage || "No readable text returned")}${coverage.content_truncated ? ". Text shortened to 20,000 characters." : ""}</div>` : ""}<details class="read-source" ${compact ? "" : "open"}><summary>${item.content ? "Read post text" : "Read saved context"}</summary><div class="post-text">${esc(item.content || item.note || "The archive contains this post's link. Use Notes on the save to add context, or retrieve its text.")}</div></details>${coverage?.links?.length ? `<details class="source-links"><summary>${coverage.links.length} links from this post</summary>${coverage.links.slice(0,30).map(link => `<a class="quiet-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)} ${icon("external")}</a>`).join("")}</details>` : ""}</section><section class="action-panel"><div class="eyebrow">MAKE IT USEFUL</div>${item.classification_method ? `<p class="suggestion-note">Draft from ${esc(item.classification_method)} · ${esc(item.confidence)} confidence</p>` : '<p class="suggestion-note">Add context, then organize this save or shape a task yourself.</p>'}${field("Working title", "title", item.title, "input", 'maxlength="300" placeholder="Give the idea a short name"')}${field("Next action", "next_action", item.next_action, "textarea", 'placeholder="One small thing you can do in under two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="A result you can point to."')}<div class="field-row">${organizationFields(item)}${select("Time to make a start", "effort_hours", effortChoices(item.effort_hours || 1), String(item.effort_hours || 1))}</div><details><summary>More details</summary>${select("Kind of idea", "kind", Object.entries(labels).map(([key,label]) => [key,key === "untriaged" ? "Not organized yet" : label]),item.kind)}${select("Status", "status", Object.entries(statusLabels),item.status)}${item.why ? `<p>${esc(item.why)}</p>` : ""}${field("Result / commit / PR link", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}</details></section></div>`,
+    `<div class="review-layout"><section class="source-panel"><div class="eyebrow">THE INSPIRATION</div><h2>${esc(item.title || "Saved LinkedIn post")}</h2><div class="source-byline">${esc(item.author || "LinkedIn")} · ${esc(dateLabel(item.saved_at))}<a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original ${icon("external")}</a></div>${item.metadata?.synthetic ? '<div class="coverage-note">Synthetic sample content.</div>' : ""}${coverage ? `<div class="coverage-note ${coverage.status === "partial" ? "partial" : ""}">${icon(coverage.status === "partial" ? "file" : "check")}${esc(retrievalLabels[coverage.status] || coverage.status)} · ${esc(coverage.coverage || "No readable text returned")}${coverage.content_truncated ? ". Text shortened to 20,000 characters." : ""}</div>` : ""}<details class="read-source" ${compact ? "" : "open"}><summary>${item.content ? "Read post text" : "Read saved context"}</summary><div class="post-text">${esc(item.content || item.note || "The archive contains this post's link. Use Notes on the save to add context, or retrieve its text.")}</div></details>${links.length ? `<details class="source-links"><summary>${links.length} links from this post</summary>${links.map(link => `<a class="quiet-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer">${esc(link)} ${icon("external")}</a>`).join("")}</details>` : ""}</section><section class="action-panel"><div class="eyebrow">MAKE IT USEFUL</div>${item.classification_method ? `<p class="suggestion-note">Draft from ${esc(item.classification_method)} · ${esc(item.confidence)} confidence</p>` : '<p class="suggestion-note">Add context, then organize this save or shape a task yourself.</p>'}${field("Working title", "title", item.title, "input", 'maxlength="300" placeholder="Give the idea a short name"')}${field("Next action", "next_action", item.next_action, "textarea", 'placeholder="One small thing you can do in under two hours."')}${field("Done when", "definition_of_done", item.definition_of_done, "textarea", 'placeholder="A result you can point to."')}<div class="field-row">${organizationFields(item)}${select("Time to make a start", "effort_hours", effortChoices(item.effort_hours || 1), String(item.effort_hours || 1))}</div><details><summary>More details</summary>${select("Kind of idea", "kind", Object.entries(labels).map(([key,label]) => [key,key === "untriaged" ? "Not organized yet" : label]),item.kind)}${select("Status", "status", Object.entries(statusLabels),item.status)}${item.why ? `<p>${esc(item.why)}</p>` : ""}${field("Result / commit / PR link", "outcome_url", item.outcome_url || "", "input", 'type="url" placeholder="https://github.com/…"')}</details></section></div>`,
     `${draft ? `<span class="review-count">${queue.length} ${queue.length === 1 ? "idea" : "ideas"} left to review</span><button class="button ghost" type="submit" name="decision" value="parked">Park for later</button>` : ""}<button class="button" type="submit" name="decision" value="save">${draft ? "Save draft" : "Save changes"}</button>${draft ? '<button class="button primary" type="submit" name="decision" value="ready">Add to backlog '+icon("arrow")+'</button>' : ""}`,
     true,
   );
   bindForm(async (form, submitter) => {
     const payload = organizationPayload(form);
     payload.id = id;
+    if (hosted) payload.expected_revision = item.revision;
     payload.effort_hours = Number(payload.effort_hours);
     const decision = submitter?.value;
     if (["ready","parked"].includes(decision)) payload.status = decision;
@@ -452,6 +661,7 @@ function itemDialog(id) {
   });
 }
 function importDialog() {
+  if (hosted) return hosted.importDialog();
   modal(
     "Bring your saves in.",
     `<p>Choose your LinkedIn data export. We’ll find the saved posts and keep your existing notes intact.</p><label class="dropzone" id="dropzone" for="archive-file">${icon("upload")}<strong>Drop your LinkedIn archive here</strong>or choose a ZIP / Saved Items CSV (up to 128 MiB)<input id="archive-file" type="file" accept=".zip,.csv" required></label><p class="helper">Re-import any time. Duplicate saves are skipped and your notes stay intact.</p><p>Need a test file? <a class="inline-link" href="${apiURL("/api/sample")}">Download a synthetic test ZIP</a> or <a class="inline-link" href="/?workspace=demo">explore the demo</a>.</p><p class="helper"><a href="https://www.linkedin.com/help/linkedin/answer/a1341346" target="_blank" rel="noopener noreferrer">How to request your Saved Items archive ↗</a></p>${state.imports.length ? `<div class="history"><strong>Last import</strong><br>${esc(state.imports[0].filename)} · ${state.imports[0].added} new · ${state.imports[0].duplicates} duplicates</div>` : ""}`,
@@ -488,15 +698,21 @@ function importDialog() {
 function classifyDialog() {
   const eligible = state.items.filter(i => i.kind === "untriaged" && i.has_context && i.status === "inbox").length;
   const ai = state.ai?.available;
+  const providerCopy = hosted ? '<p class="helper">Optional AI uses your own OpenAI account. Provider charges apply; manual organization and keyword suggestions make no paid requests.</p>' : "";
   modal("Find the useful next steps.",
-    `<div class="dialog-intro"><span class="intro-number">${eligible}</span><p>readable saves ready to organize.<br>Related ideas become projects, with small next steps to review.</p></div>${ai ? `<p>Use your OpenAI key to organize up to 20 saves per batch. Selected post text, notes, and goals are sent to OpenAI. API charges apply.</p><button class="button primary wide" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Organize ${Math.min(20,eligible)} ${eligible === 1 ? "save" : "saves"}</button><details><summary>Batch options</summary><label class="checkbox"><input id="classify-all" type="checkbox"> Continue through all ${eligible} readable saves (additional API usage)</label></details>` : `<p>Start with offline suggestions, or connect OpenAI for more specific actions and groups.</p><button class="button primary wide" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Organize with local rules</button><button class="quiet-link" data-action="settings">Connect OpenAI in Settings ↗</button>`}<details><summary>${ai ? "Other ways to organize" : "Use ChatGPT instead"}</summary>${ai ? `<p>Local rules use keywords and run offline. Suggestions are marked low confidence.</p><button class="button" data-action="run-classify" ${eligible ? "" : "disabled"}>Use local rules</button>` : ""}<p>Download a prompt, use it in ChatGPT, then paste the JSON response.</p><a class="quiet-link" href="${apiURL("/api/prompt")}">${icon("download")}Download prompt</a><div class="field"><label for="triage-json">ChatGPT response</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button" data-action="apply-triage">Apply response</button></details>`);
+    `<div class="dialog-intro"><span class="intro-number">${eligible}</span><p>readable saves ready to organize.<br>Related ideas become projects, with small next steps to review.</p></div>${providerCopy}${ai ? `<p>Use your OpenAI key to organize up to 20 saves per batch. Selected post text, notes, and goals are sent to OpenAI. API charges apply.</p><button class="button primary wide" data-action="run-ai" ${eligible ? "" : "disabled"}>${icon("spark")}Organize ${Math.min(20,eligible)} ${eligible === 1 ? "save" : "saves"}</button>${hosted ? "" : `<details><summary>Batch options</summary><label class="checkbox"><input id="classify-all" type="checkbox"> Continue through all ${eligible} readable saves (additional API usage)</label></details>`}` : `<p>Start with ${hosted ? "keyword suggestions" : "offline suggestions"}, or connect OpenAI for more specific actions and groups.</p><button class="button primary wide" data-action="run-classify" ${eligible ? "" : "disabled"}>${icon("spark")}Organize with local rules</button><button class="quiet-link" data-action="settings">Connect OpenAI in Settings ↗</button>`}<details><summary>${ai ? "Other ways to organize" : "Use ChatGPT instead"}</summary>${ai ? `<p>Local rules use keywords${hosted ? " without calling an AI provider" : " and run offline"}. Suggestions are marked low confidence.</p><button class="button" data-action="run-classify" ${eligible ? "" : "disabled"}>Use local rules</button>` : ""}<p>Download a prompt, use it in ChatGPT, then paste the JSON response.</p><a class="quiet-link" href="${apiURL("/api/prompt")}" data-download="prompt">${icon("download")}Download prompt</a><div class="field"><label for="triage-json">ChatGPT response</label><textarea id="triage-json" rows="5" placeholder='{"items": [...]}'></textarea></div><button class="button" data-action="apply-triage">Apply response</button></details>`);
 }
 document.addEventListener("click", async (e) => {
   const button = e.target.closest(
-    "[data-view],[data-item],[data-project],[data-filter],[data-action],[data-status]",
+    "[data-view],[data-item],[data-project],[data-filter],[data-action],[data-status],[data-download]",
   );
   if (!button) return;
   try {
+    if (hosted && button.dataset.download) {
+      e.preventDefault();
+      await hosted.downloadPrompt();
+      return;
+    }
     if (button.dataset.status) {
       button.disabled = true;
       await api("/api/item", { id: button.dataset.id, status: button.dataset.status });
@@ -520,6 +736,49 @@ document.addEventListener("click", async (e) => {
       return render();
     }
     switch (button.dataset.action) {
+      case "choose-saves":
+      case "global-find":
+        await findSavedIdea(button.dataset.action === "global-find");
+        break;
+      case "hosted-account":
+        hosted?.accountDialog();
+        break;
+      case "hosted-signout":
+        try { await flushReadingProgress(); } finally { await hosted?.logout(); }
+        break;
+      case "hosted-delete":
+        await hosted?.removeAccount();
+        break;
+      case "hosted-confirm-delete":
+        button.disabled = true; await hosted?.confirmDelete();
+        break;
+      case "hosted-sample":
+        hosted?.sample();
+        break;
+      case "hosted-restore":
+        hosted?.restoreDialog();
+        break;
+      case "hosted-restore-review":
+        button.disabled = true;
+        try { await hosted?.reviewRestore(); } finally { button.disabled = false; }
+        break;
+      case "hosted-import-review":
+        button.disabled = true;
+        try { await hosted?.reviewImport(); } finally { button.disabled = false; }
+        break;
+      case "hosted-import-confirm":
+        button.disabled = true;
+        try { await hosted?.confirmImport(); } finally { button.disabled = false; }
+        break;
+      case "hosted-delete-item":
+        requestDialogClose(() => modal("Delete this save?", "<p>The saved text, notes and organization for this save will be permanently removed. Export a backup first if you want to keep them.</p>", `<button class="button" data-action="close">Keep save</button><button class="button danger" data-action="hosted-confirm-delete-item" data-id="${esc(button.dataset.id)}" data-revision="${esc(state.items.find(item => item.id === button.dataset.id)?.revision)}">Delete save</button>`));
+        break;
+      case "hosted-confirm-delete-item":
+        button.disabled = true;
+        await api("/api/delete", {id: button.dataset.id, expected_revision: Number(button.dataset.revision)});
+        if (readerId === button.dataset.id) readerId = "";
+        $("#modal").close(); await refresh(); toast("Save deleted.");
+        break;
       case "library-back":
         backToLibrary();
         break;
@@ -582,6 +841,11 @@ document.addEventListener("click", async (e) => {
       case "poll-retrieval":
         await pollRetrieval(true);
         break;
+      case "resume-retrieval":
+        button.disabled = true;
+        await api("/api/jobs/resume", {});
+        await refresh(); retrievalDialog();
+        break;
       case "stop-retrieval":
         await api("/api/retrieve/stop", {});
         await refresh();
@@ -597,8 +861,19 @@ document.addEventListener("click", async (e) => {
         render();
         break;
       case "close":
-        $("#modal").close();
+        requestDialogClose();
         break;
+      case "keep-editing":
+        $("#discard-prompt").classList.add("hidden");
+        if (notesDraft) notesDraft.afterDiscard = null;
+        $("#f-note")?.focus();
+        break;
+      case "discard-notes": {
+        const discard = notesDraft?.afterDiscard;
+        notesDraft = null;
+        if (discard) discard();
+        break;
+      }
       case "capture":
         captureDialog();
         break;
@@ -616,6 +891,7 @@ document.addEventListener("click", async (e) => {
         render();
         break;
       case "export":
+        if (hosted) { button.disabled = true; await hosted.exportData(); button.disabled = false; break; }
         location.href = apiURL("/api/export", "hours=" + hours);
         break;
       case "run-classify": {
@@ -631,6 +907,10 @@ document.addEventListener("click", async (e) => {
       }
       case "run-ai": {
         button.disabled = true;
+        if (hosted) {
+          await api("/api/classify-ai", {});
+          $("#modal").close(); await refresh(); toast("Organizing your saves. You can keep browsing."); break;
+        }
         classificationCancelled = false;
         const all = $("#classify-all")?.checked;
         let total = 0;
@@ -655,6 +935,11 @@ document.addEventListener("click", async (e) => {
       }
       case "apply-triage": {
         const payload = JSON.parse($("#triage-json").value);
+        if (hosted) {
+          const items = Array.isArray(payload) ? payload : payload.items;
+          if (!Array.isArray(items) || items.length > 25) throw new Error("Paste a batch of up to 25 classified saves.");
+          if (items.some(item => !Number.isInteger(item.expected_revision))) throw new Error("Keep each save’s expected_revision from the downloaded prompt so newer edits are protected.");
+        }
         button.disabled = true;
         const result = await api(
           "/api/triage",
@@ -668,7 +953,7 @@ document.addEventListener("click", async (e) => {
     }
   } catch (error) {
     button.disabled = false;
-    if ($("#modal").open) {
+    if ($("#modal").open && $("#form-error")) {
       $("#form-error").textContent = error.message;
       $("#form-error").classList.remove("hidden");
     } else toast(error.message);
@@ -802,15 +1087,28 @@ document.addEventListener("dragstart", event => {
 document.addEventListener("input", (e) => {
   if (e.target.id === "search") {
     const cursor = e.target.selectionStart;
-    search = e.target.value;
+    search = e.target.value.slice(0, 200);
+    scheduleHostedSearch();
     visibleLimit = 25;
     if (isReadingView()) syncLibraryRoute();
+    else if (view === "inbox") {
+      const params = new URLSearchParams();
+      if (projectFilter) params.set("project", projectFilter);
+      if (search) params.set("q", search);
+      history.replaceState(history.state, "", `#inbox${params.size ? "?" + params.toString() : ""}`);
+    }
     render();
     $("#search").focus();
     $("#search").setSelectionRange(cursor, cursor);
   }
 });
 document.addEventListener("change", async (e) => {
+  if (["f-limit", "retrieval-retry"].includes(e.target.id)) return renderRetrievalSelection();
+  if (e.target.name === "retrieval_id") return syncRetrievalSelection(e.target);
+  if (e.target.id === "focus-minutes") {
+    focusMinutes = ["5", "15", "30"].includes(e.target.value) ? e.target.value : "";
+    return render(false);
+  }
   if (["f-project_id", "f-kind"].includes(e.target.id)) {
     syncOrganizationFields(e.target.id === "f-project_id");
     return;
@@ -843,26 +1141,49 @@ document.addEventListener("change", async (e) => {
   }
   if (e.target.id === "hours") {
     const value = Number(e.target.value);
-    if (!Number.isFinite(value) || value <= 0 || value > 168) {
+    if (!Number.isFinite(value) || value < 0.25 || value > 168) {
       e.target.value = hours;
-      return toast("Choose a time budget between 0 and 168 hours.");
+      return toast("Choose a time budget from 0.25 to 168 hours.");
     }
-    hours = value;
-    render();
+    const epoch = hosted?.epoch;
+    e.target.disabled = true;
+    try {
+      await api("/api/preferences", {weekly_hours: value});
+      if (hosted && epoch !== hosted.epoch) return;
+      state.weekly_hours = hours = value;
+      render();
+      toast("Weekly time budget saved.");
+    } catch (error) {
+      if (hosted && epoch !== hosted.epoch) return;
+      e.target.value = hours; e.target.disabled = false;
+      toast(error.message);
+    }
   }
 });
 document.addEventListener("keydown", (e) => {
   if (
     e.key === "/" &&
-    !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName) &&
+    !e.ctrlKey && !e.metaKey && !e.altKey &&
+    !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName) &&
+    !document.activeElement?.isContentEditable &&
     !$("#modal").open
   ) {
     e.preventDefault();
-    $("#search")?.focus();
+    void findSavedIdea().catch(error => toast(error.message));
   }
 });
 $("#modal").addEventListener("close", () => {
   classificationCancelled = true;
+  if (!$("#modal").open) { notesDraft = null; restoreModalFocus(); }
+});
+$("#modal").addEventListener("cancel", (e) => {
+  e.preventDefault();
+  requestDialogClose();
+});
+window.addEventListener("beforeunload", (e) => {
+  if (!notesAreDirty()) return;
+  e.preventDefault();
+  e.returnValue = "";
 });
 $("#modal").addEventListener("click", (e) => {
   if (e.target === $("#modal")) {
@@ -873,10 +1194,24 @@ $("#modal").addEventListener("click", (e) => {
       e.clientY < rect.top ||
       e.clientY > rect.bottom
     )
-      e.target.close();
+      requestDialogClose();
   }
 });
-refresh().catch((error) => {
+if (hosted) {
+  hosted.start({open: refresh, reset: resetHostedState, modal, toast, refresh});
+  let returnTimer;
+  const refreshOnReturn = () => {
+    clearTimeout(returnTimer);
+    returnTimer = setTimeout(() => {
+      if (document.hidden || document.body.dataset.hostedGate || $('#modal').open || draggedTile ||
+          document.activeElement?.matches('input:not(#search), textarea, select, [contenteditable="true"]')) return;
+      void refresh().catch(error => toast(error.message));
+    }, 300);
+  };
+  window.addEventListener('focus', refreshOnReturn);
+  document.addEventListener('visibilitychange', refreshOnReturn);
+}
+else refresh().catch((error) => {
   $("#main").innerHTML =
     `<div class="empty"><h3>Could not open the workbench</h3><p>${esc(error.message)} Make sure server.py is running, then reload.</p></div>`;
 });

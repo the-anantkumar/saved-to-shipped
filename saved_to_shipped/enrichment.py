@@ -23,6 +23,7 @@ from .settings import DEFAULT_ACTOR, Settings
 
 ACTIVE = {"STARTING", "READY", "RUNNING", "TIMING-OUT", "ABORTING", "UNCERTAIN", "RESULT_ERROR"}
 TERMINAL = {"SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"}
+_UNSELECTED_IDS = object()
 
 
 class ProviderError(ValueError):
@@ -216,19 +217,33 @@ class Retrieval:
         self.poll_lock = threading.Lock()
         self.submitting = False
 
-    def start(self, *, limit: int = 10, max_charge: float = 1, retry: bool = False) -> dict:
+    def start(self, *, limit: int = 10, max_charge: float = 1, retry: bool = False,
+              ids: object = _UNSELECTED_IDS) -> dict:
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 1000:
             raise ValueError("Choose between 1 and 1000 saves per run")
         if isinstance(max_charge, bool) or not isinstance(max_charge, (int, float)) or not math.isfinite(max_charge) or not 0.01 <= max_charge <= 20:
             raise ValueError("Set a per-run spending limit between $0.01 and $20")
         if not isinstance(retry, bool):
             raise ValueError("Retry must be true or false")
+        if ids is not _UNSELECTED_IDS:
+            if (not isinstance(ids, list) or not 1 <= len(ids) <= limit or
+                    any(not isinstance(ident, str) or not ident.strip() or len(ident) > 50 for ident in ids) or
+                    len(set(ids)) != len(ids)):
+                raise ValueError(f"Choose between 1 and {limit} different saves for retrieval")
         client = Apify(self.settings)
         with self.lock:
             state = work.read(self.path)
             if any(job["status"] in ACTIVE or (job.get("run_id") and not job.get("applied_at")) for job in state.get("retrieval_jobs", [])):
                 raise ValueError("A retrieval run is already pending. Check that run before starting another.")
-            items = [item for item in state["items"] if eligible(item, retry)][:limit]
+            if ids is _UNSELECTED_IDS:
+                items = [item for item in state["items"] if eligible(item, retry)][:limit]
+            else:
+                by_id = {item["id"]: item for item in state["items"]}
+                if any(ident not in by_id for ident in ids):
+                    raise ValueError("A selected save no longer exists. Review the selected links before retrieval.")
+                items = [by_id[ident] for ident in ids]
+                if any(not eligible(item, retry) for item in items):
+                    raise ValueError("Some selected saves no longer need retrieval. Review the selected links before starting.")
             if not items:
                 raise ValueError("No matching saves need retrieval. Import an archive first, or choose Retry unavailable.")
             job = {"id": uuid.uuid4().hex[:12], "status": "STARTING", "actor": client.actor,
