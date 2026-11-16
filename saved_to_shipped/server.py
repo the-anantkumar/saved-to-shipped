@@ -147,7 +147,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(payload, dict):
                     raise ValueError("Request must be a JSON object")
                 if route == "/api/retrieve/start":
-                    self.json(self.server.retrieval.start(limit=payload.get("limit", 10), max_charge=payload.get("max_charge", 1), retry=payload.get("retry", False)))
+                    selection = {"ids": payload["ids"]} if "ids" in payload else {}
+                    self.json(self.server.retrieval.start(limit=payload.get("limit", 10),
+                                                         max_charge=payload.get("max_charge", 1),
+                                                         retry=payload.get("retry", False), **selection))
                 elif route == "/api/retrieve/poll":
                     self.json(self.server.retrieval.poll())
                 elif route == "/api/retrieve/dismiss":
