@@ -20,7 +20,7 @@ from zipfile import ZipFile
 
 PACKAGE = "saved_to_shipped"
 MODULES = {"__init__", "__main__", "_version", "core", "server", "settings", "workbench", "classifier", "enrichment", "demo_data"}
-ASSETS = {"index.html", "app.js", "onboarding.js", "reading.js", "theme.js", "style.css"}
+ASSETS = {"index.html", "app.js", "onboarding.js", "reading.js", "theme.js", "style.css", "favicon.svg"}
 SOURCE_FILES = {
     "LICENSE", "README.md", "pyproject.toml", "MANIFEST.in", "server.py", "saved_to_shipped.py",
     "CONTRIBUTING.md", "ARCHITECTURE.md", "PRODUCT_SPEC.md", "ROADMAP.md", "CHANGELOG.md", "SECURITY.md",
@@ -48,7 +48,7 @@ def check_members(files: dict[str, bytes], kind: str) -> str:
         path = check_path(name)
         root = path.parts[0]
         if root == PACKAGE:
-            if path.suffix not in {".py", ".html", ".css", ".js"}:
+            if path.suffix not in {".py", ".html", ".css", ".js", ".svg"}:
                 raise ValueError(f"Unexpected application file: {name}")
         elif kind == "wheel" and root.startswith(PACKAGE + "-") and root.endswith(".dist-info"):
             pass

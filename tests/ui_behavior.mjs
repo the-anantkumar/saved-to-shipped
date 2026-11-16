@@ -25,7 +25,7 @@ function app(data = {}, hosted = null) {
       querySelectorAll() { return []; },
       setAttribute() {}, removeAttribute() {}, remove() {},
       showModal() { this.open = true; }, close() { this.open = false; },
-      focus() {},
+      focus() {}, scrollIntoView() {},
     });
     return nodes.get(name);
   };
@@ -398,4 +398,75 @@ test('superseded hosted reading replies do not replace more recent progress in t
   await ui.run('changeReading("draft", {progress: 20})');
   assert.equal(ui.run('state.items[0].reading.progress'), 70);
   assert.equal(ui.run('state.items[0].revision'), 3);
+});
+
+test('the slash shortcut searches every space instead of retaining a reading topic', async () => {
+  const ui = app({items: [article, draft]});
+  let focused = false, prevented = false;
+  ui.node('#search').focus = () => { focused = true; };
+  ui.context.document.activeElement = {tagName: 'BODY'};
+  ui.run('view = "learning"; projectFilter = "databases"; search = "old phrase"; readingFilter = "read";');
+  ui.emit('keydown', {key: '/', preventDefault() { prevented = true; }});
+  await new Promise(setImmediate);
+  assert.equal(prevented, true);
+  assert.equal(focused, true);
+  assert.equal(ui.run('view'), 'inbox');
+  assert.equal(ui.run('projectFilter'), '');
+  assert.equal(ui.run('search'), '');
+  assert.equal(ui.run('filter'), 'all');
+  assert.equal(ui.context.location.hash, '#inbox');
+});
+
+test('dirty notes survive Escape and backdrop dismissal until explicitly discarded', async () => {
+  const ui = app({items: [draft]});
+  ui.run('contextDialog("draft")');
+  const note = ui.node('#f-note'), source = ui.node('#f-content');
+  note.value = 'A thought I have not saved'; source.value = draft.content;
+  const dialog = ui.node('#modal'), prompt = ui.node('#discard-prompt');
+  prompt.classList.add('hidden');
+  let prevented = false;
+  ui.events['#modal:cancel']({preventDefault() { prevented = true; }});
+  assert.equal(prevented, true);
+  assert.equal(dialog.open, true);
+  assert.equal(prompt.classList.contains('hidden'), false);
+  assert.equal(note.value, 'A thought I have not saved');
+  await ui.events['document:click'][0]({target: {closest: () => ({dataset: {action: 'keep-editing'}})}});
+  assert.equal(prompt.classList.contains('hidden'), true);
+  assert.equal(ui.run('notesAreDirty()'), true);
+  dialog.getBoundingClientRect = () => ({left: 100, top: 100, right: 500, bottom: 600});
+  ui.events['#modal:click']({target: dialog, clientX: 20, clientY: 20});
+  assert.equal(dialog.open, true);
+  assert.equal(prompt.classList.contains('hidden'), false);
+  await ui.events['document:click'][0]({target: {closest: () => ({dataset: {action: 'discard-notes'}})}});
+  assert.equal(dialog.open, false);
+  assert.equal(ui.run('notesDraft'), null);
+  assert.equal(ui.run('state.items[0].note'), draft.note);
+});
+
+test('source edits trigger the same guard, clean notes close normally, and only dirty drafts warn before unload', () => {
+  const ui = app({items: [draft]});
+  ui.run('contextDialog("draft")');
+  ui.node('#f-note').value = draft.note; ui.node('#f-content').value = draft.content;
+  let prevented = false;
+  ui.events.beforeunload({preventDefault() { prevented = true; }});
+  assert.equal(prevented, false);
+  ui.run('requestDialogClose()');
+  assert.equal(ui.node('#modal').open, false);
+  ui.run('contextDialog("draft")');
+  ui.node('#f-content').value = 'A corrected source paragraph';
+  const event = {preventDefault() { prevented = true; }};
+  ui.events.beforeunload(event);
+  assert.equal(prevented, true);
+  assert.equal(event.returnValue, '');
+  ui.run('requestDialogClose()');
+  assert.equal(ui.node('#modal').open, true);
+  assert.equal(ui.node('#f-content').value, 'A corrected source paragraph');
+});
+
+test('Today excerpts escape source content and never invent a passage for a notes-only save', () => {
+  const ui = app({items: [{...article, content: '<img src=x onerror="bad()"> A source passage'}]});
+  assert.match(ui.run('focusPage()'), /class="focus-excerpt">&lt;img/);
+  assert.doesNotMatch(ui.run('focusPage()'), /<img/);
+  ui.run('state.items[0].content = ""; state.items[0].excerpt = ""');
+  assert.doesNotMatch(ui.run('focusPage()'), /class="focus-excerpt"/);
 });

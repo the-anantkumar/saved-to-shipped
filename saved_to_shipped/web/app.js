@@ -56,6 +56,7 @@ let state = { items: [], projects: [], imports: [] },
 let initialLoad = true, focusMinutes = "";
 let searchIds = new Set(), searchKey = "", searchPending = false, searchError = "", searchTimer, searchSequence = 0;
 let draggedTile = "", movingTile = false, suppressTileClick = false, pointerDrag = null;
+let notesDraft = null, modalInvoker = null;
 const labels = {
   untriaged: "Needs context",
   project: "Build",
@@ -158,6 +159,7 @@ function resetHostedState() {
   clearTimeout(toastTimer); $("#toast").textContent = ""; $("#toast").classList.remove("visible");
   if (pointerDrag) finishPointerDrag();
   state = {items: [], projects: [], imports: []};
+  notesDraft = null; modalInvoker = null;
   $("#modal").close(); $("#modal").innerHTML = "";
   $("#sidebar").innerHTML = ""; $("#main").innerHTML = '<div class="loading">Opening your workspace…</div>';
 }
@@ -261,6 +263,12 @@ async function navigate(next, project = "") {
   window.scrollTo({ top: 0 });
   $("h1")?.focus({ preventScroll: true });
 }
+async function findSavedIdea(focusSearch = true) {
+  await navigate("inbox");
+  filter = "all";
+  render(false);
+  if (focusSearch) $("#search")?.focus();
+}
 function restoreRoute() {
   const [route, query = ""] = location.hash.slice(1).split("?");
   const fallback = state.items.length ? "focus" : "inbox";
@@ -294,7 +302,7 @@ function reviewItems() {
 function sidebar() {
   const theme = window.save2shipTheme?.preference || "system";
   $("#sidebar").innerHTML =
-    `<a class="brand" href="${hosted ? "/" : "/?workspace=" + workspace}" aria-label="Save2Ship home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
+    `<a class="brand" href="${hosted ? "/" : "/?workspace=" + workspace}" aria-label="Saved to Shipped home"><span class="brand-mark">${icon("arrow")}</span><span class="brand-name">save2ship<span class="brand-period">.</span></span></a>
   <nav class="nav" aria-label="Main navigation">${[
     ...(state.items.length ? [["focus", "calendar", "Today"]] : []),
     ["inbox", "inbox", "Saves"],
@@ -315,7 +323,8 @@ function topbar() {
   return `<div class="topbar"><button class="quiet-link global-find" data-action="global-find">${icon("search")}Find a saved idea <kbd>/</kbd></button><div class="topbar-actions">${usage ? `<span class="usage-label" title="Saved content and personal notes. Internal storage limits also apply.">${esc(usageLabel)}</span>` : ""}<button class="quiet-link" data-action="export">${icon("download")}Export</button></div></div>${workspace === "demo" ? '<div class="demo-banner"><span>Sample ideas, separate from your workspace.</span><a href="/">My workspace ↗</a></div>' : ""}`;
 }
 function heading(title, description, actions) {
-  return `<div class="heading"><div><h1 tabindex="-1">${title}</h1><p>${description}</p></div>${actions ? `<div class="heading-actions">${actions}</div>` : ""}</div>`;
+  const section = {focus: "Today", inbox: "Your collection", backlog: "Projects", week: "Projects · Weekly suggestions", shipped: "Projects · Done", learning: "Learning", experiences: "Experiences"}[view] || "Your workspace";
+  return `<div class="heading"><div><span class="eyebrow heading-eyebrow">${section}</span><h1 tabindex="-1">${title}</h1><p>${description}</p></div>${actions ? `<div class="heading-actions">${actions}</div>` : ""}</div>`;
 }
 function empty(title, description, actions = "") {
   return `<div class="empty"><div class="empty-icon">${icon("leaf")}</div><h3>${title}</h3><p>${description}</p>${actions}</div>`;
@@ -337,7 +346,7 @@ function inbox() {
     (filter === "all" || (filter === "review" && reviews.some((review) => review.id === item.id)) || (filter === "context" && !item.has_context)) &&
     matchesSearch(item)
   );
-  if (!state.items.length) return heading("Good ideas deserve a next step.", "A calmer home for the things you want to build and learn.") + `<div class="welcome"><div class="welcome-mark">${icon("inbox")}</div><h2>Start with your saved posts.</h2><p>Import your LinkedIn archive. Recover the useful bits.<br>Leave with a few things worth doing.</p><button class="button primary" data-action="import">${icon("upload")}Import LinkedIn archive</button>${hosted ? '<button class="quiet-link" data-action="capture">Or add one saved link</button>' : `<a class="quiet-link" href="/?workspace=demo">Take a look around first ${icon("arrow")}</a>`}<div class="welcome-note">Your archive stays on your device.</div></div>`;
+  if (!state.items.length) return heading("Good ideas deserve a next step.", "Turn your LinkedIn saves into things you build, learn, and try.") + `<section class="welcome"><div class="welcome-copy"><span class="eyebrow">FROM SAVED TO SOMETHING USEFUL</span><h2>Start with your saved posts.</h2><p>Bring in your LinkedIn archive, choose a few ideas that matter, and give them a place to grow. Start small. Five saves is plenty.</p><div class="welcome-actions"><button class="button primary" data-action="import">${icon("upload")}Import LinkedIn archive</button>${hosted ? '<button class="quiet-link" data-action="capture">Or add one saved link</button>' : `<a class="quiet-link" href="/?workspace=demo">Take a look around first ${icon("arrow")}</a>`}</div><p class="welcome-note">Your archive brings in links and dates. Add post text yourself or retrieve it with your own paid provider account. Nothing runs on import. ${hosted ? "Your ZIP stays on this device; selected saves are stored privately." : "Saved on this computer."}</p></div><div class="welcome-spaces" aria-label="A home for each intention"><div class="welcome-space">${icon("board")}<div><h3>Projects</h3><p>Turn an idea into a small next step. Make it, then move it to Done.</p></div></div><div class="welcome-space">${icon("book")}<div><h3>Learning</h3><p>A reading list you return to. Pick up your place and keep a takeaway.</p></div></div><div class="welcome-space">${icon("leaf")}<div><h3>Experiences</h3><p>Stories, perspectives, and things to try. Keep what stays with you.</p></div></div></div></section>`;
   return heading(projectFilter ? esc(projectName(projectFilter)) : "Your saves, with somewhere to go.", projectFilter ? "Related ideas. One useful next step at a time." : `${state.items.length} saves · ${reviews.length} to review · ${waiting.length} waiting for content`, `<button class="button" data-action="capture">${icon("plus")}Add a link</button>`) +
     (projectFilter ? `<button class="quiet-link back-link" data-view="projects">← All projects</button>` : pipeline()) +
     `<div class="toolbar"><div class="tabs" aria-label="Filter saves">${[["review", "To review", reviews.length], ["all", "All saves", scope.length], ["context", "Waiting", waiting.length]].map(([key,label,count]) => `<button class="tab ${filter === key ? "selected" : ""}" data-filter="${key}" aria-pressed="${filter === key}">${label}<span>${count}</span></button>`).join("")}</div><label class="search">${icon("search")}<input id="search" maxlength="200" placeholder="Search saves" aria-label="Search saves" value="${esc(search)}"><kbd>/</kbd></label></div>` + table(items.slice(0,visibleLimit)) + `${items.length > visibleLimit ? `<button class="button load-more" data-action="more">Show ${Math.min(25,items.length-visibleLimit)} more</button>` : ""}<div class="table-foot"><span>${items.length} ${items.length === 1 ? "save" : "saves"}${projectFilter ? " in this project" : ""}</span>${waiting.length && filter !== "context" && !projectFilter ? '<button class="quiet-link" data-action="retrieve">Process more saves ↗</button>' : ""}</div>`;
@@ -402,14 +411,15 @@ function focusPage() {
     .sort((a, b) => Number(b.status === "doing") - Number(a.status === "doing"));
   const project = projects.find(item => item.status === "doing") || (minutes && projects.find(item => item.effort_hours * 60 <= minutes)) || projects[0];
   const reading = read && readingState(read);
+  const readExcerpt = read && (read.content || (read.has_content ? read.excerpt : "") || "").replace(/\s+/g, " ").trim();
   const readReason = read && (reading.status === "reading" ? `You were ${Math.round(reading.progress)}% through this read.` : reading.queued ? "You put this in Read next." : "An unread save, with your most recently saved choices first.");
   const projectReason = project && (project.status === "doing" ? "You already have this in progress. Continue with its saved next action." : "A reviewed project with a next action, following your board order.");
   const title = heading("One useful thing today.", read || project ? "Continue a read or move one project forward. The rest can wait." : "Start with a few saves you care about. The rest can wait.",
     `<label class="focus-time">I have <select id="focus-minutes" aria-label="Available time">${[["", "some time"], ["5", "5 minutes"], ["15", "15 minutes"], ["30", "30 minutes"]].map(([value, label]) => `<option value="${value}" ${focusMinutes === value ? "selected" : ""}>${label}</option>`).join("")}</select></label>`);
   if (!read && !project) return title + empty("Pick a few worth returning to.", "Choose a few relevant links from Saves. Add source text or a personal note to make a link useful. Retrieval is optional and starts only after your approval.", '<button class="button primary" data-action="choose-saves">Choose from Saves '+icon("arrow")+'</button>');
   const cards = [];
-  if (read) cards.push(`<section class="focus-card" data-focus-kind="reading" aria-label="Your next read"><span class="eyebrow">A LITTLE ROOM TO READ</span><h2>${esc(read.title || "Saved LinkedIn post")}</h2><p class="focus-reason">${esc(readReason)}</p><p class="focus-meta">About ${remainingMinutes(read)} min left${projectName(read.project_id) ? ` · ${esc(projectName(read.project_id))}` : ""}${minutes && remainingMinutes(read) > minutes ? ". Read a little and keep your place." : ""}</p><button class="button primary" data-item="${esc(read.id)}">${reading.status === "reading" ? "Continue reading" : "Start reading"}${icon("arrow")}</button></section>`);
-  if (project) cards.push(`<section class="focus-card" data-focus-kind="project" aria-label="Your next project action"><span class="eyebrow">ONE SMALL STEP FORWARD</span><p class="focus-reason">${esc(projectReason)}</p>${task(project)}<p class="focus-meta">${project.effort_hours > 0 ? `${Math.round(project.effort_hours * 60)} min estimated for the saved task.` : "Go at your own pace."}${minutes && project.effort_hours * 60 > minutes ? ` Use your ${minutes} minutes to make a start.` : ""}</p><button class="quiet-link" data-item="${esc(project.id)}">Open next action ${icon("arrow")}</button></section>`);
+  if (read) cards.push(`<section class="focus-card" data-focus-kind="reading" aria-label="Your next read"><span class="eyebrow">A LITTLE ROOM TO READ</span><h2>${esc(read.title || "Saved LinkedIn post")}</h2>${readExcerpt ? `<p class="focus-excerpt">${esc(readExcerpt.slice(0, 220))}${readExcerpt.length > 220 ? "…" : ""}</p>` : ""}<p class="focus-reason">${esc(readReason)}</p><p class="focus-meta">About ${remainingMinutes(read)} min left${projectName(read.project_id) ? ` · ${esc(projectName(read.project_id))}` : ""}${minutes && remainingMinutes(read) > minutes ? ". Read a little and keep your place." : ""}</p><button class="button primary" data-item="${esc(read.id)}">${reading.status === "reading" ? "Continue reading" : "Start reading"}${icon("arrow")}</button></section>`);
+  if (project) cards.push(`<section class="focus-card" data-focus-kind="project" aria-label="Your next project action"><span class="eyebrow">ONE SMALL STEP FORWARD</span><p class="focus-reason">${esc(projectReason)}</p><div class="focus-project-task">${task(project)}</div><p class="focus-meta">${project.effort_hours > 0 ? `${Math.round(project.effort_hours * 60)} min estimated for the saved task.` : "Go at your own pace."}${minutes && project.effort_hours * 60 > minutes ? ` Use your ${minutes} minutes to make a start.` : ""}</p><button class="quiet-link" data-item="${esc(project.id)}">Open next action ${icon("arrow")}</button></section>`);
   return title + `<div class="focus-grid${cards.length === 1 ? " single" : ""}">${cards.join("")}</div><p class="focus-stop">One useful read, takeaway or step is enough. Your other saves will be here when you want them.</p>${cards.length === 1 ? '<button class="quiet-link" data-action="choose-saves">Choose something else from Saves '+icon("arrow")+'</button>' : '<button class="quiet-link" data-action="global-find">Find something else you saved '+icon("search")+'</button>'}`;
 }
 function render(preserveScroll = true) {
@@ -441,9 +451,35 @@ function modal(
   form = false,
 ) {
   const dialog = $("#modal");
+  if (!dialog.open) {
+    const element = document.activeElement;
+    modalInvoker = element ? {element, id: element.id, dataset: {...element.dataset}, epoch: hosted?.epoch} : null;
+  }
+  notesDraft = null;
   dialog.classList.toggle("review-dialog", body.includes('class="review-layout"'));
+  dialog.classList.remove("notes-dialog");
   dialog.innerHTML = `${form ? '<form id="dialog-form">' : ""}<div class="dialog-head"><h2 id="dialog-title">${title}</h2><button type="button" class="close" data-action="close" aria-label="Close dialog">${icon("close")}</button></div><div class="dialog-body"><div id="form-error" class="error-message hidden" role="alert"></div>${body}</div><div class="dialog-footer">${footer}</div>${form ? "</form>" : ""}`;
   if (!dialog.open) dialog.showModal();
+}
+function restoreModalFocus() {
+  if (!modalInvoker || $("#modal").open || (hosted && modalInvoker.epoch !== hosted.epoch)) return;
+  const {element, id, dataset} = modalInvoker;
+  const current = element.isConnected ? element : [...document.querySelectorAll("[id], [data-action], [data-item], [data-view]")].find(candidate =>
+    id ? candidate.id === id : Object.keys(dataset).length && Object.entries(dataset).every(([key, value]) => candidate.dataset?.[key] === value));
+  (current || $("#main"))?.focus({preventScroll: true});
+}
+function notesAreDirty() {
+  return Boolean(notesDraft && $("#modal").open && $("#dialog-form") === notesDraft.form &&
+    ["note", "content"].some(key => ($(`#f-${key}`)?.value ?? notesDraft[key]) !== notesDraft[key]));
+}
+function requestDialogClose(afterDiscard = () => $("#modal").close()) {
+  if (notesDraft?.saving) { toast("Saving your changes…"); return; }
+  if (!notesAreDirty()) { afterDiscard(); return; }
+  notesDraft.afterDiscard = afterDiscard;
+  const prompt = $("#discard-prompt");
+  prompt.classList.remove("hidden");
+  prompt.scrollIntoView({block: "nearest"});
+  $('[data-action="keep-editing"]')?.focus({preventScroll: true});
 }
 function field(label, name, value = "", type = "input", attrs = "") {
   return `<div class="field"><label for="f-${name}">${label}</label>${type === "textarea" ? `<textarea id="f-${name}" name="${name}" ${attrs}>${esc(value)}</textarea>` : `<input id="f-${name}" name="${name}" value="${esc(value)}" ${attrs}>`}</div>`;
@@ -493,14 +529,21 @@ function bindForm(callback) {
     e.preventDefault();
     const form = e.currentTarget, epoch = hosted?.epoch;
     const buttons = [...form.querySelectorAll("[type=submit]")];
+    const submitted = new FormData(form);
+    const draft = notesDraft?.form === form ? notesDraft : null;
+    const fields = draft ? [...form.querySelectorAll("input, textarea, select")].map(field => [field, field.disabled]) : [];
+    if (draft) draft.saving = true;
+    fields.forEach(([field]) => field.disabled = true);
     buttons.forEach(button => button.disabled = true);
     $("#form-error").classList.add("hidden");
     try {
-      const next = await callback(new FormData(e.currentTarget), e.submitter);
+      const next = await callback(submitted, e.submitter);
       if (hosted && epoch !== hosted.epoch) return;
       if ($("#dialog-form") !== form) { await refresh(); return; }
+      notesDraft = null;
       $("#modal").close();
       await refresh();
+      restoreModalFocus();
       if (next?.nextItem) itemDialog(next.nextItem);
       if (next?.completedReview) navigate("backlog");
       if (next?.afterRefresh) next.afterRefresh();
@@ -511,6 +554,8 @@ function bindForm(callback) {
       $("#form-error").classList.remove("hidden");
       $("#form-error").scrollIntoView({ block: "nearest" });
     } finally {
+      if (draft) draft.saving = false;
+      fields.forEach(([field, disabled]) => field.disabled = disabled);
       buttons.forEach(button => button.disabled = false);
     }
   });
@@ -570,17 +615,20 @@ function contextDialog(id) {
   if (hosted && !hosted.hasDetail(id)) return hydrateItem(id).then(() => contextDialog(id)).catch(error => toast(error.message));
   const item = state.items.find(candidate => candidate.id === id);
   if (!item) return;
-  modal("A little context, on your terms.",
-    `<div class="context-header"><h3>${esc(item.title || "Saved LinkedIn post")}</h3><a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original post ${icon("external")}</a></div><p>A place for why you saved this, a question, or something you want to try.</p>${field("Your notes", "note", item.note, "textarea", 'rows="7" maxlength="20000" placeholder="What makes this interesting to you?"')}<details><summary>Post text</summary><p class="helper">Paste or correct the source text here. Your notes stay separate.</p>${field("Source text", "content", item.content, "textarea", 'rows="8" maxlength="20000" placeholder="Paste the post text…"')}</details>`,
-    `${hosted ? `<button class="quiet-link danger" type="button" data-action="hosted-delete-item" data-id="${esc(id)}">Delete save</button>` : ""}<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save context</button>`, true);
+  modal("Your notes",
+    `<div class="context-header"><h3>${esc(item.title || "Saved LinkedIn post")}</h3><a class="quiet-link" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">Original post ${icon("external")}</a></div><p>A place for why you saved this, a question, or something you want to try.</p>${field("Your notes", "note", item.note, "textarea", 'rows="7" maxlength="20000" placeholder="What makes this interesting to you?"')}<details><summary>Post text</summary><p class="helper">Paste or correct the source text here. Your notes stay separate.</p>${field("Source text", "content", item.content, "textarea", 'rows="8" maxlength="20000" placeholder="Paste the post text…"')}</details><div id="discard-prompt" class="discard-prompt hidden" role="alert"><strong>Keep your changes?</strong><p>Your notes and source edits have not been saved yet.</p><div class="discard-actions"><button class="button primary" type="button" data-action="keep-editing">Keep editing</button><button class="button" type="button" data-action="discard-notes">Discard changes</button></div></div>`,
+    `${hosted ? `<button class="quiet-link danger" type="button" data-action="hosted-delete-item" data-id="${esc(id)}">Delete save</button>` : ""}<button class="button" type="button" data-action="close">Cancel</button><button class="button primary" type="submit">Save changes</button>`, true);
   bindForm(async form => {
     const payload = {id, ...(hosted ? {expected_revision: item.revision} : {})};
     for (const key of ["note", "content"]) {
       if (form.get(key) !== (item[key] || "")) payload[key] = form.get(key);
     }
     if (["note", "content"].some(key => key in payload)) await api("/api/item", payload);
-    toast("Context saved.");
+    toast("Changes saved.");
   });
+  notesDraft = {form: $("#dialog-form"), note: item.note || "", content: item.content || "", saving: false};
+  $("#modal").classList.add("notes-dialog");
+  $("#f-note")?.focus({preventScroll: true});
 }
 function itemDialog(id) {
   if (hosted && !hosted.hasDetail(id)) return hydrateItem(id).then(() => itemDialog(id)).catch(error => toast(error.message));
@@ -690,10 +738,7 @@ document.addEventListener("click", async (e) => {
     switch (button.dataset.action) {
       case "choose-saves":
       case "global-find":
-        await navigate("inbox");
-        filter = "all";
-        render(false);
-        if (button.dataset.action === "global-find") $("#search")?.focus();
+        await findSavedIdea(button.dataset.action === "global-find");
         break;
       case "hosted-account":
         hosted?.accountDialog();
@@ -726,7 +771,7 @@ document.addEventListener("click", async (e) => {
         try { await hosted?.confirmImport(); } finally { button.disabled = false; }
         break;
       case "hosted-delete-item":
-        modal("Delete this save?", "<p>The saved text, notes and organization for this save will be permanently removed. Export a backup first if you want to keep them.</p>", `<button class="button" data-action="close">Keep save</button><button class="button danger" data-action="hosted-confirm-delete-item" data-id="${esc(button.dataset.id)}" data-revision="${esc(state.items.find(item => item.id === button.dataset.id)?.revision)}">Delete save</button>`);
+        requestDialogClose(() => modal("Delete this save?", "<p>The saved text, notes and organization for this save will be permanently removed. Export a backup first if you want to keep them.</p>", `<button class="button" data-action="close">Keep save</button><button class="button danger" data-action="hosted-confirm-delete-item" data-id="${esc(button.dataset.id)}" data-revision="${esc(state.items.find(item => item.id === button.dataset.id)?.revision)}">Delete save</button>`));
         break;
       case "hosted-confirm-delete-item":
         button.disabled = true;
@@ -816,8 +861,19 @@ document.addEventListener("click", async (e) => {
         render();
         break;
       case "close":
-        $("#modal").close();
+        requestDialogClose();
         break;
+      case "keep-editing":
+        $("#discard-prompt").classList.add("hidden");
+        if (notesDraft) notesDraft.afterDiscard = null;
+        $("#f-note")?.focus();
+        break;
+      case "discard-notes": {
+        const discard = notesDraft?.afterDiscard;
+        notesDraft = null;
+        if (discard) discard();
+        break;
+      }
       case "capture":
         captureDialog();
         break;
@@ -1107,16 +1163,27 @@ document.addEventListener("change", async (e) => {
 document.addEventListener("keydown", (e) => {
   if (
     e.key === "/" &&
-    !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName) &&
+    !e.ctrlKey && !e.metaKey && !e.altKey &&
+    !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName) &&
+    !document.activeElement?.isContentEditable &&
     !$("#modal").open
   ) {
     e.preventDefault();
-    if ($("#search")) $("#search").focus();
-    else navigate("inbox").then(() => { filter = "all"; render(false); $("#search")?.focus(); });
+    void findSavedIdea().catch(error => toast(error.message));
   }
 });
 $("#modal").addEventListener("close", () => {
   classificationCancelled = true;
+  if (!$("#modal").open) { notesDraft = null; restoreModalFocus(); }
+});
+$("#modal").addEventListener("cancel", (e) => {
+  e.preventDefault();
+  requestDialogClose();
+});
+window.addEventListener("beforeunload", (e) => {
+  if (!notesAreDirty()) return;
+  e.preventDefault();
+  e.returnValue = "";
 });
 $("#modal").addEventListener("click", (e) => {
   if (e.target === $("#modal")) {
@@ -1127,7 +1194,7 @@ $("#modal").addEventListener("click", (e) => {
       e.clientY < rect.top ||
       e.clientY > rect.bottom
     )
-      e.target.close();
+      requestDialogClose();
   }
 });
 if (hosted) {

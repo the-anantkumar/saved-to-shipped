@@ -31,7 +31,7 @@ function gate(title, message, { login = false, retry = false, deletion = false, 
   document.body.dataset.hostedGate = 'true';
   document.querySelector('#sidebar').innerHTML = '';
   document.querySelector('#main').classList.remove('board-page', 'reading-page');
-  document.querySelector('#main').innerHTML = `<section class="hosted-gate"><a class="brand" href="/">save2ship<span class="brand-period">.</span></a><span class="eyebrow">A LITTLE LESS SAVING. A LITTLE MORE DOING.</span><h1 tabindex="-1">${escape(title)}</h1><p>${escape(message)}</p>${login ? `<div class="hosted-auth-options"><button class="button ${emailView === 'closed' ? 'primary' : ''}" id="hosted-sign-in">Continue with Google</button>${emailControls()}</div>` : ''}${verification ? '<div class="hosted-auth-options"><button class="button primary" id="hosted-verify-check">I verified my email</button><button class="quiet-link" id="hosted-verify-send">Resend verification email</button></div>' : ''}${retry ? '<button class="button" id="hosted-retry">Try again</button>' : ''}${deletion ? deletionControls() : ''}<p id="hosted-auth-status" role="status" aria-live="polite"></p>${currentUser ? '<button class="quiet-link" id="hosted-sign-out">Sign out</button>' : ''}<p class="helper">${deletion ? 'Your saved data and membership remain locked until deletion completes.' : 'Your private workspace follows you between devices. Retrieval and optional AI use your own provider accounts.'}</p></section>`;
+  document.querySelector('#main').innerHTML = `<section class="hosted-gate"><a class="brand" href="/" aria-label="Saved to Shipped home">save2ship<span class="brand-period">.</span></a><span class="eyebrow">A LITTLE LESS SAVING. A LITTLE MORE DOING.</span><h1 tabindex="-1">${escape(title)}</h1><p>${escape(message)}</p>${login ? `<div class="hosted-auth-options"><button class="button ${emailView === 'closed' ? 'primary' : ''}" id="hosted-sign-in">Continue with Google</button>${emailControls()}</div>` : ''}${verification ? '<div class="hosted-auth-options"><button class="button primary" id="hosted-verify-check">I verified my email</button><button class="quiet-link" id="hosted-verify-send">Resend verification email</button></div>' : ''}${retry ? '<button class="button" id="hosted-retry">Try again</button>' : ''}${deletion ? deletionControls() : ''}<p id="hosted-auth-status" role="status" aria-live="polite"></p>${currentUser ? '<button class="quiet-link" id="hosted-sign-out">Sign out</button>' : ''}<p class="helper">${deletion ? 'Your saved data and membership remain locked until deletion completes.' : 'Free beta. Your private workspace follows you between devices. Optional retrieval and AI use your own paid provider accounts.'}</p></section>`;
   document.querySelector('#hosted-sign-in')?.addEventListener('click', loginWithGoogle);
   document.querySelector('#hosted-email-toggle')?.addEventListener('click', () => showEmail('signin'));
   for (const button of document.querySelectorAll('[data-auth-view]')) button.addEventListener('click', () => showEmail(button.dataset.authView));
@@ -178,7 +178,7 @@ function enrollmentGate(user, epoch) {
 }
 
 async function openWorkspaceOnce() {
-  if (!currentUser) return gate('Make room for what matters.', 'Sign in to keep your saves, projects and reading together.', { login: true });
+  if (!currentUser) return gate('Good ideas deserve a next step.', 'Turn your saved LinkedIn posts into projects to build, things to learn, and experiences to try. Sign in to find your next useful step.', { login: true });
   if (authentication.needsVerification?.(currentUser)) return verificationGate();
   const user = currentUser, uid = user.uid, epoch = transport.epoch;
   try {
@@ -372,7 +372,7 @@ async function reviewImport() {
 
 function restoreDialog() {
   parsedImport = null;
-  hooks.modal('Bring a backup back.', '<p>Choose a Save2Ship ZIP backup or backlog.json. Missing saves and sections are added with their notes, organization and reading progress. Existing saves stay as they are.</p><label class="dropzone" for="hosted-archive-file">Choose a ZIP backup or JSON<input id="hosted-archive-file" type="file" accept=".zip,.json"></label><p class="helper">Version-1 backups, up to 1,000 saves and 16 MiB of JSON. Provider credentials are never restored. Storage limits apply; completed chunks remain saved if capacity runs out.</p><div id="hosted-import-plan" role="status"></div>', '<button class="button" data-action="close">Cancel</button><button class="button primary" data-action="hosted-restore-review">Review backup</button>');
+  hooks.modal('Bring a backup back.', '<p>Choose a Saved to Shipped ZIP backup or backlog.json. Missing saves and sections are added with their notes, organization and reading progress. Existing saves stay as they are.</p><label class="dropzone" for="hosted-archive-file">Choose a ZIP backup or JSON<input id="hosted-archive-file" type="file" accept=".zip,.json"></label><p class="helper">Version-1 backups, up to 1,000 saves and 16 MiB of JSON. Provider credentials are never restored. Storage limits apply; completed chunks remain saved if capacity runs out.</p><div id="hosted-import-plan" role="status"></div>', '<button class="button" data-action="close">Cancel</button><button class="button primary" data-action="hosted-restore-review">Review backup</button>');
 }
 
 async function reviewRestore() {
@@ -383,7 +383,7 @@ async function reviewRestore() {
   const parsed = await parseFile(file, 'restore');
   if (!uid || currentUser?.uid !== uid) throw new Error('Account changed. Choose the file again.');
   const chunks = restoreChunks(parsed);
-  parsedImport = { ...parsed, import_id: `${parsed.import_id}-${crypto.randomUUID()}`, chunks, filename: 'Save2Ship backup', uid, mode: 'restore' };
+  parsedImport = { ...parsed, import_id: `${parsed.import_id}-${crypto.randomUUID()}`, chunks, filename: 'Saved to Shipped backup', uid, mode: 'restore' };
   const capacity = transport.summary?.usage;
   status.innerHTML = `<p><strong>${parsed.rows.length} saves and ${parsed.workspace.projects.length} sections in this backup.</strong></p><p>${capacity ? `Your workspace currently holds ${Number(capacity.items || 0)} saves. ` : ''}Only missing saves are added. If a chunk exceeds capacity or a section name conflicts, earlier chunks remain saved. You can select this same backup again to resume.</p><button class="button primary" data-action="hosted-import-confirm">Restore missing saves</button>`;
 }

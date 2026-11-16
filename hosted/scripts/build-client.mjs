@@ -8,7 +8,7 @@ const outdir = resolve(root, '.local/client-assets');
 // This fixed directory contains generated assets only. Do not carry old bundles into a release.
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
-for (const asset of ['app.js', 'onboarding.js', 'reading.js', 'theme.js', 'style.css']) {
+for (const asset of ['app.js', 'onboarding.js', 'reading.js', 'theme.js', 'style.css', 'favicon.svg']) {
   await copyFile(resolve(root, '../saved_to_shipped/web', asset), resolve(outdir, asset));
 }
 const html = (await readFile(resolve(root, '../saved_to_shipped/web/index.html'), 'utf8'))

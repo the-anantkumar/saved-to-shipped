@@ -50,7 +50,7 @@ function pipeline() {
     description = "Build something, learn something, or make room for a fresh perspective.";
     action = `data-view="${destination}"`; label = destination === "backlog" ? "Open Projects" : destination === "learning" ? "Open Learning" : "Open Experiences"; image = "check";
   }
-  return `<section class="next-step" aria-label="Your next step"><div class="next-symbol" aria-hidden="true">✳</div><div class="next-copy"><span class="eyebrow">UP NEXT</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div><button class="button primary" ${action}>${label}${icon(image)}</button></section>`;
+  return `<section class="next-step" aria-label="Your next step"><div class="next-symbol" aria-hidden="true">${icon(image)}</div><div class="next-copy"><span class="eyebrow">UP NEXT</span><h2>${esc(title)}</h2><p>${esc(description)}</p></div><button class="button primary" ${action}>${label}${icon(image)}</button></section>`;
 }
 function settingsDialog(afterSave) {
   if (workspace === "demo") {
@@ -62,8 +62,8 @@ function settingsDialog(afterSave) {
   }
   const settings = state.settings || {};
   modal(
-    "Make yourself at home.",
-    `<p>Connect your tools once. ${hosted ? "Your keys are encrypted in your private cloud workspace and are never included in exports." : "Your keys stay in a separate local settings file."}</p><div class="provider-label">Post retrieval <span>${settings.extractor_available ? "Connected" : "Not connected"}</span></div>
+    "Settings",
+    `<p>Make this space yours. Provider tools are optional; reading, notes, and local organization work without a key.</p><p class="helper">${hosted ? "Your keys are encrypted in your private cloud workspace and are never included in exports." : "Your keys stay in a separate local settings file."}</p><div class="provider-label">Post retrieval <span>${settings.extractor_available ? "Connected" : "Not connected"}</span></div>
     ${field("Apify API token", "apify_token", "", "input", `type="password" autocomplete="off" placeholder="${settings.extractor_available ? "Configured. Leave blank to keep it." : "Paste your Apify token"}"`)}
     <p class="helper"><a class="inline-link" href="https://console.apify.com/" target="_blank" rel="noopener noreferrer">Open Apify Console ↗</a> · Retrieval uses <a class="inline-link" href="https://apify.com/${esc(settings.actor || "data_minds/linkedin-post-scraper")}" target="_blank" rel="noopener noreferrer">${esc(settings.actor || "data_minds/linkedin-post-scraper")}</a>. Provider charges and plan limits apply.</p>
     <div class="provider-label">Idea organization <span>${settings.ai_available ? "Connected" : "Optional"}</span></div>
@@ -140,7 +140,7 @@ function retrievalDialog() {
   modal(
     "Find what’s worth keeping.",
     `<p><strong>${fresh} saves are waiting for content.</strong> Choose a few worth returning to. You can leave the rest for later.</p>
-    <p class="helper">Only the selected original URLs go to your Apify account. Provider fees are separate from your save2ship plan. Saving a key or importing an archive starts no provider work.</p>
+    <p class="helper">Only the selected original URLs go to your Apify account. Saved to Shipped is free. Apify charges your own provider account. Saving a key or importing an archive starts no provider work.</p>
     <div class="field-row">${select(
       "Select latest saved",
       "limit",
@@ -184,6 +184,10 @@ function scheduleRetrieval() {
 
 async function pollRetrieval(manual) {
   const epoch = hosted?.epoch;
+  // A manual check can finish after the user has closed its progress dialog and
+  // opened an editor. Its result may refresh data, but only owns its original UI.
+  const dialogContent = manual && $("#modal").open ? $("#dialog-title") : null;
+  const ownsDialog = () => dialogContent && $("#modal").open && $("#dialog-title") === dialogContent;
   if (manual) hostedPollFailures = 0;
   clearTimeout(retrievalTimer);
   retrievalTimer = null;
@@ -192,10 +196,11 @@ async function pollRetrieval(manual) {
     if (hosted && epoch !== hosted.epoch) return;
     hostedPollFailures = 0;
     await refresh();
+    if (hosted && epoch !== hosted.epoch) return;
     if (hosted) {
       const job = result.job || result;
       if (job.status === "COMPLETED") toast(job.kind === "classification" ? "Your drafts are ready to review." : "Retrieved content is ready to explore.");
-      if (manual) { if (pendingRetrieval()) hostedJobDialog(pendingRetrieval()); else $("#modal").close(); }
+      if (ownsDialog()) { if (pendingRetrieval()) hostedJobDialog(pendingRetrieval()); else $("#modal").close(); }
       return;
     }
     if (result.applied_at) {
@@ -203,12 +208,13 @@ async function pollRetrieval(manual) {
       toast(
         `${counts.extracted + counts.partial} saved items now have content. Review their classification options.`,
       );
-      if (manual) $("#modal").close();
-    } else if (manual) retrievalDialog();
+      if (ownsDialog()) $("#modal").close();
+    } else if (ownsDialog()) retrievalDialog();
   } catch (error) {
     if (hosted && epoch !== hosted.epoch) return;
     if (hosted) hostedPollFailures++;
     await refresh().catch(() => {});
+    if (hosted && epoch !== hosted.epoch) return;
     if (manual) toast(error.message);
   }
 }

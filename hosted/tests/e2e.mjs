@@ -81,7 +81,7 @@ try {
   const source = (await fullItem(learning.id)).content;
   await page.locator('.reader-actions [data-action="notes"]').click();
   await page.locator('#f-note').fill('Alice private takeaway: reproduce the SQLite experiment.');
-  await page.getByRole('button', { name: 'Save context', exact: true }).click(); await closeModal();
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click(); await closeModal();
   assert.equal((await fullItem(learning.id)).content, source);
   assert.match((await fullItem(learning.id)).note, /Alice private takeaway/);
   await action('library-back').click();
@@ -154,13 +154,15 @@ try {
   await second.locator(`[data-action="notes"][data-id="${learning.id}"]`).click();
   assert.match(await second.locator('#f-note').inputValue(), /Alice private takeaway/);
   await second.locator('#f-note').fill('Alice private takeaway: confirmed from a second browser.');
-  await second.getByRole('button', { name: 'Save context', exact: true }).click();
+  await second.getByRole('button', { name: 'Save changes', exact: true }).click();
   await second.locator('#modal').waitFor({ state: 'hidden' });
-  await page.getByRole('button', { name: 'Save context', exact: true }).click();
+  await page.getByRole('button', { name: 'Save changes', exact: true }).click();
   await page.locator('#form-error:not(.hidden)').waitFor();
   assert.equal(await page.locator('#f-note').inputValue(), 'Draft kept during a conflict.');
   assert.match(await page.locator('#form-error').innerText(), /changed in another tab/);
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
+  await page.locator('#modal').waitFor({ state: 'hidden' });
   await second.locator('#sidebar [data-view="learning"]').click();
   await second.locator('[data-action="reading-filter"][data-value="all"]').click();
   assert.equal(await second.locator('.reading-row').count(), 1);

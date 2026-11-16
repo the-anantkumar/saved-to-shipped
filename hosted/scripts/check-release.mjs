@@ -40,7 +40,7 @@ assert.deepEqual(config.migrations, [
   { tag: 'app-firebase-v1', new_sqlite_classes: ['FirebaseWorkspace', 'FirebaseRegistry'] },
 ]);
 
-const copied = ['app.js', 'onboarding.js', 'reading.js', 'theme.js', 'style.css'];
+const copied = ['app.js', 'onboarding.js', 'reading.js', 'theme.js', 'style.css', 'favicon.svg'];
 const expectedAssets = [...copied, 'index.html', 'hosted.js', 'import-worker.js'].sort();
 assert.deepEqual((await readdir(assets)).sort(), expectedAssets, 'Unexpected or missing public asset; rebuild into a clean output directory');
 for (const name of copied) assert.equal(hash(await readFile(resolve(assets, name))), hash(await readFile(resolve(repository, 'saved_to_shipped/web', name))), `Stale shared asset: ${name}`);
