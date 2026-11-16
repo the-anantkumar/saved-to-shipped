@@ -34,7 +34,7 @@ The screenshots use synthetic local/demo content. Before views retain the prior 
 | Browser identity/motion | Product tab title and HTTP 200 for the packaged favicon verified. Sampled reduced-motion styles computed to no animation and zero-second transitions. |
 | Palette spot checks | Light muted text 5.09:1 and primary 7.70:1; dark muted text 9.32:1 and primary 8.97:1. These sampled combinations do not establish compliance of every state. |
 | Independent review | Final PASS for the scoped local OSS candidate, with no actionable findings. The selected-URL and late-poll editor-replacement defects were independently reproduced and closed. |
-| Final release artifact/CI record | Pending the clean, committed candidate with final documentation/assets. Publication and hosted deployment are not established by this report. |
+| Final release artifact/CI record | Published as [v0.4.0b1](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1) from clean `a559445`, merged to main as identical-tree `1a9bd81`. Both CI workflows, strict artifacts, anonymous downloads/hashes and both downloaded clean installs passed. See [release evidence](RELEASE_0_4_0b1.md). Hosted admission remains closed. |
 
 ## Health and remaining limits
 

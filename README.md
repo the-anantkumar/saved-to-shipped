@@ -2,12 +2,15 @@
 
 **A little less saving. A little more doing.**
 
+[![Release](https://img.shields.io/badge/release-v0.4.0b1-316b4c)](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1)
 [![Tests](https://github.com/the-anantkumar/saved-to-shipped/actions/workflows/tests.yml/badge.svg)](https://github.com/the-anantkumar/saved-to-shipped/actions/workflows/tests.yml)
 [![Free beta](https://img.shields.io/badge/free_beta-no_subscription-316b4c)](docs/FREE_BETA.md)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![MIT License](https://img.shields.io/badge/license-MIT-316b4c)](LICENSE)
 
 Saved to Shipped turns your LinkedIn saved archive into things you can read, learn from and build. Import once, choose a few useful ideas, and return to one clear next step.
+
+**[Download the free v0.4.0b1 beta](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1).** The GitHub release includes the reviewed wheel, source archive and checksums; no PyPI setup is needed.
 
 ![Saved to Shipped Today in dark mode, showing a saved read and an active project step](docs/assets/workspace-dark.png)
 
@@ -39,7 +42,7 @@ python -m pip install .
 saved-to-shipped
 ```
 
-`python -m saved_to_shipped` also launches the app. See [release instructions](docs/RELEASING.md) for reviewed wheel/source artifacts.
+`python -m saved_to_shipped` also launches the app. To install the published wheel instead, download it from [v0.4.0b1](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1), then run `python -m pip install ./saved_to_shipped-0.4.0b1-py3-none-any.whl` in your environment.
 
 </details>
 
@@ -90,7 +93,8 @@ Use sample data and dummy keys in that fixture. [Free-beta scope](docs/FREE_BETA
 
 - [Documentation index](docs/README.md): usage, architecture, development and deployment.
 - [Release checklist](docs/RELEASE_CHECKLIST.md): what is done and what is still open.
-- [Launch handoff](docs/LAUNCH_HANDOFF.md): final local release commands and hosted configuration.
+- [Launch handoff](docs/LAUNCH_HANDOFF.md): remaining owner feedback and optional hosted setup.
+- [Published release evidence](docs/evidence/RELEASE_0_4_0b1.md): exact source, checks and artifact hashes.
 - [Contributing](CONTRIBUTING.md): test fixtures, supported tooling and contribution flow.
 - [Changelog](CHANGELOG.md) and [known source limits](docs/LIVE_CHECK.md).
 - [Report a bug](https://github.com/the-anantkumar/saved-to-shipped/issues/new?template=bug_report.yml) using synthetic examples; report vulnerabilities privately through [SECURITY.md](SECURITY.md).

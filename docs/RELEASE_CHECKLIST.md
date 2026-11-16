@@ -1,6 +1,6 @@
 # Free beta release checklist
 
-Release target: **Saved to Shipped v0.4.0b1**, the free local MIT application. The optional Firebase/Cloudflare service has separate gates below. This is the working checklist for the requested release; unchecked rows are not completed merely because their configuration files exist.
+Published: **[Saved to Shipped v0.4.0b1](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1)**, the free local MIT application. [Release evidence](evidence/RELEASE_0_4_0b1.md) records the exact source, CI and verified downloads. The optional Firebase/Cloudflare service has separate gates below. This is the working checklist for the requested release; unchecked rows are not completed merely because their configuration files exist.
 
 ## Product foundation
 
@@ -15,7 +15,7 @@ Release target: **Saved to Shipped v0.4.0b1**, the free local MIT application. T
 - [x] Owner reviewed the synthetic preview and requested the free release.
 - [ ] Complete the representative five-save and next-day owner trial in [UAT](UAT.md); the accepted sample preview is not that full trial.
 
-The separated implementation at `7505833` passed CI and independent review. Its [evidence](evidence/FREE_BETA.md) does not replace checks on the final versioned release candidate.
+The earlier separation evidence at `7505833` is historical. The published candidate is clean `a559445`, merged to main as `1a9bd81` with an identical tree; its [release record](evidence/RELEASE_0_4_0b1.md) contains the final verification.
 
 ## Repository cleanup and presentation
 
@@ -23,11 +23,11 @@ The separated implementation at `7505833` passed CI and independent review. Its 
 - [x] Preserve detailed configuration, troubleshooting and provider contracts in [Usage](USAGE.md).
 - [x] Add a [documentation index](README.md) and inspect the initial synthetic desktop/mobile screenshots.
 - [x] Refresh and inspect the final synthetic public screenshot set, including the README hero/mobile; the 37-view layout pass is recorded in [product polish evidence](evidence/PRODUCT_POLISH.md).
-- [ ] Finish tracked-file and reachable-history privacy review, including example data and credentials.
-- [ ] Verify ignore rules and package boundaries exclude archives, personal data, secrets, generated output and authenticated state.
-- [ ] Check issue templates, contribution guidance and license metadata.
+- [x] Finish tracked-file and reachable-history privacy review, including example data and credentials.
+- [x] Verify ignore rules and package boundaries exclude archives, personal data, secrets, generated output and authenticated state.
+- [x] Check issue templates, contribution guidance and license metadata.
 - [x] Correct the private-reporting sequence: review privacy before visibility, then enable and verify reporting before announcement.
-- [ ] Validate all changed local links, asset paths, metadata and whitespace on the final candidate.
+- [x] Validate all changed local links, asset paths, metadata and whitespace on the final candidate.
 
 Screenshots are actual rendered synthetic fixtures, not personal workspaces or invented product mockups.
 
@@ -35,20 +35,20 @@ Screenshots are actual rendered synthetic fixtures, not personal workspaces or i
 
 - [x] Set runtime version `0.4.0b1` and prepare its changelog/release-note source.
 - [x] Run the scoped product regressions: 91 Python, 36 shared JavaScript, five local/shared interaction checks, and product/reader/E2E/auth/MFA/UAT browser groups. See [product polish evidence](evidence/PRODUCT_POLISH.md).
-- [ ] Record final clean-candidate artifact hashes and CI after the last code/documentation/assets commit.
-- [ ] Build a fresh source archive and wheel from the source archive.
-- [ ] Pass strict package metadata/content checks and install each artifact in a clean environment.
-- [ ] Confirm launch, synthetic/manual organization, reading, private export and restart recovery from installed artifacts.
+- [x] Record final clean-candidate artifact hashes and CI after the last code/documentation/assets commit.
+- [x] Build a fresh source archive and wheel from the source archive.
+- [x] Pass strict package metadata/content checks and install each artifact in a clean environment.
+- [x] Confirm launch, synthetic/manual organization, reading, private export and restart recovery from installed artifacts.
 - [x] Complete the scoped local OSS product review; selected-source retrieval and late-poll draft-loss findings are independently closed.
-- [ ] Finish final artifact/publication review on the committed candidate.
-- [ ] Merge the reviewed candidate to the intended main, retaining explicit treatment of inherited hosted/Firebase foundations.
-- [ ] Record the exact commit, clean-tree status, CI URLs, artifact names and SHA-256 hashes.
-- [ ] After the final privacy review, make the repository public.
-- [ ] Enable private vulnerability reporting and verify the reporting route before announcement.
-- [ ] Publish the GitHub beta release with reviewed artifacts and known limitations.
-- [ ] Verify the public release page, download, installation instructions and asset links without relying on an authenticated session.
+- [x] Finish final artifact/publication review on the committed candidate.
+- [x] Merge the reviewed candidate to the intended main, retaining explicit treatment of inherited hosted/Firebase foundations.
+- [x] Record the exact commit, clean-tree status, CI URLs, artifact names and SHA-256 hashes.
+- [x] After the final privacy review, make the repository public.
+- [x] Enable private vulnerability reporting and verify the reporting route before announcement.
+- [x] Publish the GitHub beta release with reviewed artifacts and known limitations.
+- [x] Verify the public release page, download, installation instructions and asset links without relying on an authenticated session.
 
-The [launch handoff](LAUNCH_HANDOFF.md) keeps the remaining commands and hosted configuration in one place. PyPI publication is a separate optional distribution step. It needs verified package ownership and an appropriate publishing identity; it must not be implied by a GitHub release or a local wheel build.
+The published wheel and source archive were downloaded anonymously, hash-checked and installed in separate clean environments with restart checks. Public README, desktop/mobile screenshots and tagged usage-guide links returned HTTP 200. The [launch handoff](LAUNCH_HANDOFF.md) now contains only remaining feedback and hosted setup. PyPI publication is a separate optional distribution step. It needs verified package ownership and an appropriate publishing identity; it must not be implied by a GitHub release or a local wheel build.
 
 ## Optional hosted beta deployment
 
@@ -56,7 +56,7 @@ The [launch handoff](LAUNCH_HANDOFF.md) keeps the remaining commands and hosted 
 - [x] Keep Firebase identity/Firestore access, tenant isolation, encrypted provider credentials and deletion recovery in the hosted implementation.
 - [ ] Verify current Cloudflare Free and Firebase Spark settings without enabling overage billing.
 - [ ] Prepare exact origin/domain, scoped secrets, namespace bindings and Firestore-compatible rollback artifacts.
-- [ ] Pass the final closed Worker/assets dry run and production dependency-boundary checks.
+- [x] Pass the final closed Worker/assets dry run and production dependency-boundary checks.
 - [ ] Calibrate daily work reservations against actual platform use; the current fleet-wide limits can bind well before storage fills.
 - [ ] Measure retained storage, indexes, cold cache reconstruction, reads/writes, egress and cleanup on the deployed backend.
 - [ ] Add or verify usable capacity warnings and admission/ingestion pause behavior before exhaustion.
@@ -71,4 +71,4 @@ Hosted setup is not required to run the local release. [Shipping](SHIP_PLAN.md) 
 - [ ] Collect first-session and next-day friction reports with synthetic or privately handled examples.
 - [ ] Improve Read next ordering/capping, skip/replace controls and the completed-session stopping point.
 - [ ] Review source fidelity and attachment/unavailable outcomes through explicitly bounded provider checks.
-- [ ] Keep subscription work deferred unless its scope is reopened.
+- [x] Keep subscription work deferred unless its scope is reopened.

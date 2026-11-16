@@ -1,6 +1,6 @@
 # Documentation
 
-Start with [the project README](../README.md) for the one-command local app. The local MIT workflow and the optional hosted deployment have separate setup and release boundaries.
+The free local [v0.4.0b1 beta is published](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1). Start with [the project README](../README.md) for the one-command local app. The local MIT workflow and the optional hosted deployment have separate setup and release boundaries.
 
 ## Use the app
 
@@ -22,7 +22,9 @@ Start with [the project README](../README.md) for the one-command local app. The
 
 ## Prepare a release or hosted deployment
 
-- [Release checklist](RELEASE_CHECKLIST.md): completed work, release gates and follow-ups.
+- [Release checklist](RELEASE_CHECKLIST.md): completed publication and remaining follow-ups.
+- [Release evidence](evidence/RELEASE_0_4_0b1.md): reviewed source, CI, artifact hashes and public download/install checks.
+- [Launch handoff](LAUNCH_HANDOFF.md): only the remaining owner-feedback and hosted setup steps.
 - [Releasing](RELEASING.md): build, metadata/content checks and clean installs.
 - [Shipping plan](SHIP_PLAN.md): local OSS publication and optional hosted rollout.
 - [Firebase setup](FIREBASE_SETUP.md): real Google/email/TOTP identity and Firestore configuration.
