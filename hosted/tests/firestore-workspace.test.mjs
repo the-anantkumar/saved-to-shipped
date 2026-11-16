@@ -91,6 +91,57 @@ integration('Firestore authority preserves annotations, grouping, reading and pr
   assert.equal((await rt.invoke('detail', { id: item.id }, { ...rt.access, generation: randomUUID() })).code, 'NOT_FOUND');
 });
 
+integration('Firestore cold hydration fits Free subrequests and bounds a concurrent checkpoint retry', async t => {
+  const rt = await runtime(); t.after(async () => { await rt.dispose(); await cleanup(rt.access); });
+  await rt.call('provision');
+  const saved = await rt.mutate('capture', { ...row(3000), note: 'Keep this takeaway through a cold load.' });
+  const organized = await rt.mutate('item', { id: saved.id, expected_revision: saved.revision, kind: 'learning' });
+  await rt.mutate('reading', { id: saved.id, expected_revision: organized.item.revision, progress: 65 });
+  for (let sequence = 0; sequence < 32; sequence++) await rt.mutate('import', {
+    import_id: 'synthetic-cold-load', sequence,
+    rows: Array.from({ length: 25 }, (_, offset) => row(4000 + sequence * 25 + offset)),
+  });
+  const before = await rt.call('detail', { id: saved.id });
+  // Fill the adapter's maximum record envelope with synthetic retained receipts.
+  // Direct seeding exercises its recovery bound independently of UI retention.
+  const client = new FirestoreClient(env), path = pathFor(rt.access), authority = await client.read(path);
+  assert.ok(authority.data.recordCount > 1600);
+  const workspacePath = `${path}/records/${Buffer.from('workspace\0' + '1').toString('base64url')}`;
+  const workspace = await client.read(workspacePath), oldRow = JSON.parse(workspace.data.row);
+  let addedBytes = 0, logicalBytes = 0;
+  const padding = Array.from({ length: 2400 - authority.data.recordCount }, (_, index) => {
+    const key = `synthetic-retained-${index}`, data = JSON.stringify({ hash: 'synthetic', result: {}, at: '2026-01-02T00:00:00Z' });
+    const record = { table: 'receipts', key, row: JSON.stringify({ _rowid: 10000 + index, id: key, data, bytes: Buffer.byteLength(data) }) };
+    const recordPath = `${path}/records/${Buffer.from(`receipts\0${key}`).toString('base64url')}`;
+    addedBytes += recordSize(recordPath, record); logicalBytes += Buffer.byteLength(data);
+    return { path: recordPath, data: record, currentDocument: { exists: false } };
+  });
+  for (let offset = 0; offset < padding.length; offset += 400) await client.commit(padding.slice(offset, offset + 400));
+  const updatedWorkspace = { ...workspace.data, row: JSON.stringify({ ...oldRow, logical_bytes: oldRow.logical_bytes + logicalBytes }) };
+  await client.commit([
+    { path: workspacePath, data: updatedWorkspace, currentDocument: { updateTime: workspace.updateTime } },
+    { path, data: { ...authority.data, checkpoint: authority.data.checkpoint + 1, commitId: randomUUID(), recordCount: 2400,
+      storedBytes: authority.data.storedBytes + addedBytes + recordSize(workspacePath, updatedWorkspace) - recordSize(workspacePath, workspace.data) },
+      currentDocument: { updateTime: authority.updateTime } },
+  ]);
+
+  await rt.call('test.wipe');
+  await rt.call('test.budget', { limit: 50 });
+  assert.equal((await rt.call('state')).usage.items, 801);
+  assert.ok(await rt.call('test.requests') < 50);
+  assert.deepEqual(await rt.call('detail', { id: saved.id }), before);
+
+  await rt.call('test.wipe');
+  await rt.call('test.budget', { limit: 50, changeCheckpoint: true });
+  const raced = await rt.invoke('state');
+  assert.equal(raced.code, 'FIRESTORE_CONFLICT');
+  assert.ok(await rt.call('test.requests') < 50);
+  assert.equal((await rt.call('test.inspect')).local, undefined, 'incomplete pages never become a readable cache');
+  await rt.call('test.budget', { limit: 50 });
+  assert.equal((await rt.call('state')).usage.items, 801);
+  assert.deepEqual(await rt.call('detail', { id: saved.id }), before);
+});
+
 integration('Firestore failed and conflicted commits never expose speculative notes or quota counters', async t => {
   const rt = await runtime(); t.after(async () => { await rt.dispose(); await cleanup(rt.access); });
   await rt.call('provision'); const item = await rt.mutate('capture', row(2));
