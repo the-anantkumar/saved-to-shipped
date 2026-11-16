@@ -1,8 +1,8 @@
 # Product refinement evidence
 
-**Free-beta update:** the active candidate is now `feat/free-beta-oss`. Useful reader/organization/return-flow changes remain, while subscription code and payment checks are deferred to the preserved `da7652b` branch. This document retains the historical audit/refinement record; use [free-beta evidence](FREE_BETA.md) for checks on the separated candidate.
+**Historical record:** reader, organization and return-flow changes were retained in the free beta; subscription code was removed in `259f251`. The paid prototype remains at tag `checkpoint/paid-subscriptions-2026-11-15` (`da7652b`). See [free-beta evidence](FREE_BETA.md) for separation checks and the [release record](RELEASE_0_4_0b1.md) for the published OSS build.
 
-The implementation follows the [product audit](PRODUCT_AUDIT.md) and [subscription plan](../MONETIZATION_PLAN.md). Hosted and subscription work depends on the unmerged Firebase foundation in MR 9. Only completed checks are recorded below.
+The implementation followed the [product audit](PRODUCT_AUDIT.md) and [original subscription plan](https://github.com/the-anantkumar/saved-to-shipped/blob/da7652bc0919b4d7cc1a04a2c627cb01bc6b926e/docs/MONETIZATION_PLAN.md). The Firebase foundation was still under review at that point and was later integrated through MR 10. Only completed checks are recorded below.
 
 Implementation checkpoints:
 
@@ -45,7 +45,7 @@ Razorpay checkout retains the intent before the external call and does not retry
 
 Cancellation uses fresh verified identity without requiring a workspace capability, so suspension and hosted maintenance do not trap an existing subscriber. The cancellation-only UI reveals no workspace or billing record. Google/password confirmation supports TOTP and ignores results after account changes, closed/replaced dialogs or cancelled challenges. Account deletion remains frozen while cancellation is unconfirmed; its billing recovery message does not suggest unrelated Apify key repair.
 
-Unknown checkout recovery is limited to an allowlisted, recently authenticated operator and exact retained intent/merchant proof. The endpoint cannot create an intent, substitute sale terms or rebind another member's subscription. Terminal and frozen-account recovery keeps the known binding available for cancellation. See [billing setup](../BILLING_SETUP.md) for the operator contract and external acceptance steps.
+Unknown checkout recovery is limited to an allowlisted, recently authenticated operator and exact retained intent/merchant proof. The endpoint cannot create an intent, substitute sale terms or rebind another member's subscription. Terminal and frozen-account recovery keeps the known binding available for cancellation. See the [original billing setup](https://github.com/the-anantkumar/saved-to-shipped/blob/da7652bc0919b4d7cc1a04a2c627cb01bc6b926e/docs/BILLING_SETUP.md) for that prototype's operator contract and external acceptance steps.
 
 A minimal closed subscription mapping survives outside a deleted workspace to reject late events: verified UID/generation, subscription/plan IDs, amount/currency and closed state. It contains no card data or raw provider payloads. No billing/payment projection is exported. The cumulative storage cost and retention policy for these mappings remain release gates.
 

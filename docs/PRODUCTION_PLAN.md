@@ -1,18 +1,18 @@
-# Free beta execution plan
+# Hosted beta plan and implementation history
 
 **Authentication update, 2026-11-15:** Email/password sessions now require verified email and Firebase TOTP proof before workspace admission or data access. Identity Platform and TOTP are enabled on Spark with billing disabled and SMS disabled. Google-only sign-in is unchanged. See the F3 [evidence](evidence/FIREBASE.md) and [setup/recovery](FIREBASE_SETUP.md). This does not resolve the public capacity gates below.
 
 **Firebase backend update, 2026-11-07:** the requested backend now uses Firebase Authentication (Google and verified Email/password) and Firestore Enterprise Native as the authoritative database, with a trusted Cloudflare API and disposable SQL projection. See [setup and recovery](FIREBASE_SETUP.md) and [phase evidence](evidence/FIREBASE.md). The original SQL-only plan and measurements below are historical design evidence. Firestore Spark has 1 GiB total storage, so the 500-member allocation cannot be carried over; admission stays closed until a revised cohort and actual read/write/storage accounting pass review. Hard-free limits remain mandatory.
 
-Status: P0 complete; P1 has reviewed local experiments and a bounded synthetic probe exercised and retired on Cloudflare Free. P2-P5 private storage, identity, browser integration and durable jobs are implemented and reviewed with synthetic end-to-end checks. P6 local/package checks and the P7 shipping plan are prepared. Physical-storage accounting and production budgets remain unresolved, so the hosted application stays closed and undeployed. Last reviewed: 2026-11-15. See [P0 evidence](evidence/P0.md), [local P1 evidence](evidence/P1.md), [cloud P1 evidence](evidence/P1-CLOUD.md), [P2 evidence](evidence/P2.md), [backend evidence](evidence/P3-P5.md) and [browser evidence](evidence/P4.md).
+**Current status, 2026-11-17:** the free local [v0.4.0b1 release](evidence/RELEASE_0_4_0b1.md) is published and integrated into `main`, including the hosted/Firebase foundation. P0 is complete; P1 has reviewed local experiments and a bounded synthetic probe exercised and retired on Cloudflare Free. P2-P5 private storage, identity, browser integration and durable jobs are implemented with synthetic end-to-end checks. P6 local/package checks passed. Hosted deployment and admission remain closed pending live identity, recovery and capacity measurements. See [P0](evidence/P0.md), [local P1](evidence/P1.md), [cloud P1](evidence/P1-CLOUD.md), [P2](evidence/P2.md), [backend](evidence/P3-P5.md) and [browser](evidence/P4.md) evidence.
 
-**Free-beta scope update, 2026-11-15:** `feat/free-beta-oss` separates the paid implementation preserved on `feat/firebase-backend` at `da7652b`. The beta retains [product refinements](evidence/PRODUCT_REFINEMENTS.md), Firebase identity/storage and bounded BYOK jobs, with no checkout, paid tiers, monthly organization points or expiry countdown. Merchant setup and pricing are outside this release. [Free-beta scope](FREE_BETA.md) owns the focused acceptance path; [new phase evidence](evidence/FREE_BETA.md) distinguishes its validation from historical paid-branch checks. The branch still depends on the unmerged hosted/Firebase foundation in MRs 7, 8 and 9; this split does not merge that foundation into main.
+`main` is the OSS branch. `payment` is for future monetization work; the earlier prototype remains at tag `checkpoint/paid-subscriptions-2026-11-15` (`da7652b`). The beta has no checkout, paid tiers, monthly organization points or expiry countdown. [Free-beta scope](FREE_BETA.md) describes the user journey; [separation evidence](evidence/FREE_BETA.md) records the removal of the paid runtime.
 
 Build a useful, private hosted workspace for a bounded cohort while retaining the account-free local application. The user has chosen **hard free limits with no overage billing**. A paid plan with alerts does not meet that requirement.
 
-This plan is the implementation source of truth. [ARCHITECTURE.md](../ARCHITECTURE.md) describes the application that exists today; [RELEASING.md](RELEASING.md) covers its local package release. Proposed paths below are deliverables, not existing components or working commands.
+The phase contracts below retain the original design and acceptance criteria. The SQL-only architecture and 500-seat model are historical proposals, superseded by the Firebase update above. Use [ARCHITECTURE.md](../ARCHITECTURE.md) for current behavior and [shipping gates](SHIP_PLAN.md) for remaining deployment work. Proposed paths in the original phases are not necessarily current filenames or runnable commands.
 
-## Product and capacity contract
+## Original capacity targets
 
 | Setting | Target | Enforcement |
 | --- | ---: | --- |
@@ -32,7 +32,7 @@ The current documented Durable Objects Free allowances are 5 GB storage, 100,000
 
 The ordinary API Worker has separate request and CPU limits. Reserve capacity for authentication, retries, export, deletion, monitoring and any other workloads in the account. An idle reading page must not keep a backend object active. [Workers limits](https://developers.cloudflare.com/workers/platform/limits/)
 
-## Target implementation
+## Original SQL-only design
 
 Use a TypeScript adapter under `hosted/` for Cloudflare Workers Free and SQLite-backed Durable Objects. Keep its dependencies and build separate from the dependency-free Python package. Reuse the existing browser interface through an explicit transport adapter. Capture Python behaviour in synthetic contract fixtures before porting business rules.
 
@@ -71,7 +71,7 @@ Release gate order: **P0 -> P1 -> P2 -> P3 -> P4 -> P5 -> P6 -> P7**. On 2026-11
 | P4 | Eight synthetic browser flows passed; real login pending | beta_product | P2 contracts; P3 for integration | Import, organisation, reading and deletion recovery; [evidence](evidence/P4.md) |
 | P5 | Implemented and reviewed with mocked providers; live check pending | beta_platform | P2-P4 | Durable retrieval and optional classification; [evidence](evidence/P3-P5.md) |
 | P6 | Local isolation, package and final-schema capacity checks passed; cloud gates open | beta_reviewer + beta_release | P3-P5 | [Verification](evidence/P6.md), [capacity](evidence/P6-LOCAL-CAPACITY.md) and [operations](HOSTED_OPERATIONS.md) |
-| P7 | Shipping plan prepared; nothing published or deployed | beta_release | P6 | [Shipping plan](SHIP_PLAN.md) for separate local and hosted releases |
+| P7 | Local v0.4.0b1 published; hosted deployment/admission pending | beta_release | P6 | [Release record](evidence/RELEASE_0_4_0b1.md) and remaining [shipping gates](SHIP_PLAN.md) |
 
 ### P0: Establish the execution contract
 
@@ -197,7 +197,7 @@ Do not redirect APIs to HTML login pages. No endpoint trusts a client-supplied U
 
 ## Inputs needed before external rollout
 
-Local experiments and contract fixtures do not need these inputs. P1's remote accounting/performance gates and later live integration do; use [account preparation](HOSTED_SETUP.md) when they are available:
+Local experiments and contract fixtures do not need these inputs. Remote accounting and live integration do; use [Firebase setup](FIREBASE_SETUP.md) and [hosted operations](HOSTED_OPERATIONS.md):
 
 - A Cloudflare account confirmed on Free, with measured allowance available and narrowly scoped deployment access.
 - A Firebase project confirmed on Spark, Google sign-in configuration, authorised origins and public web configuration. No Gmail mailbox scopes are needed.

@@ -1,8 +1,8 @@
-# Preparing the first open-source release
+# Releasing the local app
 
-The current free local prerelease candidate is **v0.4.0b1**, with runtime version `0.4.0b1` declared only in `saved_to_shipped/_version.py`. Its active branch is `feat/free-beta-oss`, including the unmerged hosted/Firebase foundation from MRs 7 and 8. Subscription work remains preserved separately at `da7652b` on `feat/firebase-backend` and `checkpoint/paid-subscriptions-2026-11-15`. Review the final candidate diff against main before integrating those foundations.
+The latest published free beta is **[v0.4.0b1](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1)**. Its [release record](evidence/RELEASE_0_4_0b1.md) contains the reviewed commit, CI and artifact hashes. Build future OSS releases from `main`; payment development has its own branch and is not part of this package. The runtime version is declared only in `saved_to_shipped/_version.py`.
 
-The approved organizing checkpoint remains `checkpoint/organizing-ux-2026-11-07` at `5f84ee3`, merged through [PR #5](https://github.com/the-anantkumar/saved-to-shipped/pull/5). Version `0.3.0` was an unpublished development version. This guide prepares the reviewed local package and publication procedure; the [release checklist](RELEASE_CHECKLIST.md) and actual GitHub release establish what has been published.
+Use this guide for the next release. Never move a published tag or replace its artifacts with a different build. The [release checklist](RELEASE_CHECKLIST.md) records completed publication and remaining work.
 
 The release scope is a free local MIT workbench plus an optional, capacity-limited hosted beta. There is no application card requirement, trial expiry, paid tier or organization-point system. Provider keys are optional for the local demo/manual flow; extraction and AI fees remain on each user's provider accounts. Merchant onboarding and pricing are not release gates. See [free-beta scope](FREE_BETA.md) and [owner UAT](UAT.md).
 
@@ -21,9 +21,9 @@ Use a development virtual environment with Python 3.10+; release tools are optio
 python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 node --test tests/*_behavior.mjs
-python -m build --outdir dist/v0.4.0b1
-python -m twine check --strict dist/v0.4.0b1/*
-python scripts/check_distribution.py --dist dist/v0.4.0b1 --install
+python -m build --outdir dist/candidate
+python -m twine check --strict dist/candidate/*
+python scripts/check_distribution.py --dist dist/candidate --install
 ```
 
 Choose a fresh output directory for each candidate. The distribution check requires exactly one wheel and one source archive with matching versions. It verifies required code, browser assets, console commands, license metadata, and source-development helpers, and rejects known private/generated paths and unexpected wheel content. This is an archive boundary check, not a replacement for reviewing files for secrets.
@@ -38,10 +38,10 @@ CI retains only the verified wheel and source archive for seven days. It uses pi
 
 Maintainers own repository visibility, merge/tag decisions, release creation and any package-index upload. Complete the concrete candidate checks before publication, and record the verified destination and artifacts.
 
-1. Identify the exact candidate commit, ensure its working tree is clean, and review its source/history and artifacts for private content before changing repository visibility. After making the repository public, enable and verify private vulnerability reporting before announcing the release. The package-content checker does not replace that review; [Security](../SECURITY.md) and the [launch handoff](LAUNCH_HANDOFF.md) give the sequence.
+1. Identify the exact candidate commit, ensure its working tree is clean, and review its source/history and artifacts for private content. The repository is already public with private vulnerability reporting enabled; verify that route before announcing another release. The package-content checker does not replace a privacy review. See [Security](../SECURITY.md).
 2. Build a fresh wheel and source archive from that commit. Record both names, version, SHA-256 hashes, interpreter/OS and the successful strict metadata/content/clean-install results. CI must identify the same candidate code. Do not reuse an archive built before the final README or screenshots changed.
-3. Confirm that main contains the reviewed release foundation or make the release's source dependency explicit. Create `v0.4.0b1` only at the chosen reviewed commit, without moving an existing published tag.
-4. Create a **prerelease** using [the release-note source](releases/v0.4.0b1.md). Attach the verified `.whl`, `.tar.gz` and a `SHA256SUMS` file. Never attach the entire `.local/` folder, personal archives, raw provider responses, credentials or authenticated browser state.
+3. Confirm that `main` contains the reviewed candidate. Create a new version tag at that exact commit; `v0.4.0b1` is already published and must not be reused.
+4. Write release notes for the new version under `docs/releases/` and create a **prerelease**. The [v0.4.0b1 notes](releases/v0.4.0b1.md) are a previous example. Attach the verified `.whl`, `.tar.gz` and a `SHA256SUMS` file. Never attach the entire `.local/` folder, personal archives, raw provider responses, credentials or authenticated browser state.
 5. Verify the resulting public release URL and downloads anonymously, compare downloaded hashes, and install the downloaded wheel in an isolated environment. Update the release/checklist with those observed results rather than a planned URL.
 6. PyPI is a separate destination. Verify name ownership, publishing identity and a short-lived trusted-publishing setup before uploading. Until an actual upload is verified, advertise the GitHub wheel/source route rather than an unverified `pip install saved-to-shipped` command.
 
@@ -60,11 +60,11 @@ A hosted rollback uses only Firestore-compatible code, its reviewed namespaces a
 | Boundary | Publication record or remaining evidence |
 | --- | --- |
 | Local first use | User accepted the sample UX; a fresh-developer personal five-save trial and next-day usefulness remain separate owner UAT. |
-| Package contents | Fresh v0.4.0b1 wheel/source metadata, contents, screenshots and clean-install/restart results must be recorded on the final candidate. |
+| Package contents | The published v0.4.0b1 checks and hashes are in its [release record](evidence/RELEASE_0_4_0b1.md). Repeat them for each new candidate. |
 | Automated checks | Python/shared UI/packaging CI and the applicable hosted regression checks identify their exact commit. |
 | Optional retrieval/AI | Synthetic failures and earlier small live checks are documented; broad fidelity, inaccessible outcomes, actor reliability and actual charges remain limited. |
 | Privacy/security | Review tracked source/history and exact uploaded artifacts; verify the private vulnerability-reporting route. |
-| Public source/release | Record actual repository visibility, tag, release URL and anonymously verified asset hashes after publication. |
+| Public source/release | Repository and v0.4.0b1 downloads are public and verified. Record each future release's tag, URL and anonymously verified hashes. |
 | Package index | Ownership and short-lived publishing identity are required before an actual PyPI upload. |
 | Hosted service | Daily reservation calibration, deployed identity/recovery, metered storage/operations, a restricted cohort and rollback remain [shipping gates](SHIP_PLAN.md). |
 

@@ -1,57 +1,27 @@
 # Roadmap
 
-The goal is a useful first result with little setup, followed by a small piece of work actually shipped.
+Saved to Shipped should help you use something you saved, then give you a reason to return. The next work is about making that loop easier.
 
-## Implemented
+## Available now
 
-- [x] LinkedIn ZIP/CSV import, including a verified real export format
-- [x] Deduplication and annotation/status preservation
-- [x] Namespaced installable package, console commands, browser launch, and doctor command
-- [x] MIT license and contributor documentation
-- [x] Private local settings with optional environment overrides
-- [x] Hosted Apify retrieval adapter with explicit run size and charge cap
-- [x] Persisted run references, resume, stop, explicit retry, and uncertain-submission handling
-- [x] Source matching, cached post text, author, links, document transcripts when supplied, and coverage status
-- [x] Import/retrieve/classify guidance and paginated inbox rendering
-- [x] Optional model key, generic goals, batch classification, local rules, and copy/paste route
-- [x] Project review, backlog, weekly plan, and private exports
-- [x] Synthetic provider/HTTP tests and installed-package smoke test
-- [x] Separate project board, Learning and Experiences libraries, reading progress, and takeaways
-- [x] Inline creation of projects, learning topics, and experience sections
-- [x] Persistent light/dark/system appearance and board drag selection fixes
-- [x] Wheel/source-archive content checks, modern license metadata, single-source version, and clean-install/restart checks
-- [x] CI configuration for Linux, macOS, and Windows with pinned actions and reviewable build artifacts
+The [v0.4.0b1 local beta](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1) is published under MIT. It includes LinkedIn ZIP/CSV import, Projects, Learning and Experiences, reading progress, notes, Today, dark mode and private exports. Optional retrieval and AI organization use your own provider accounts. The app runs without an account or runtime dependencies.
 
-The organizing experience is checkpointed at `checkpoint/organizing-ux-2026-11-07`. Release hardening continues on `feat/oss-release-readiness`; [RELEASING.md](docs/RELEASING.md) records the sequence and remaining evidence.
+The separate hosted implementation includes Google and verified email/password sign-in, required authenticator verification for password accounts, private Firestore storage and technical usage limits. Public admission is still closed. See the [remaining deployment checks](docs/SHIP_PLAN.md).
 
-## Capped hosted beta
+## Next
 
-The [production execution plan](docs/PRODUCTION_PLAN.md) defines the next implementation phases. The hosted target is 500 members with 1,000 saves and 5 MB of user data each, on hard-free infrastructure. Hosting and these limits are not implemented yet; admission depends on real runtime and capacity evidence. Local use remains account-free.
+- Collect feedback from a five-save first session and a next-day return. Can someone find and finish one useful thing without instructions?
+- Make Read next a manageable shortlist, with clearer ordering and skip/replace controls.
+- Give completed reading sessions a useful stopping point.
+- Check retrieved text, attachments and unavailable posts against a wider set of originals. Keep source coverage and provider costs visible.
+- Measure the hosted service's actual free-tier storage, operations and recovery costs before admitting a small cohort.
 
-The P1 local Worker/SQLite prototype now measures synthetic storage, transaction rollback and search costs. Its [evidence](docs/evidence/P1.md) leaves the physical-storage and cloud metering gates open; the public data API remains closed. Full-text indexing is deferred from the proposed default because varied text leaves insufficient editing headroom.
+The [release checklist](docs/RELEASE_CHECKLIST.md) tracks these open checks. Deployment capacity is not established by the local tests or the original 500-member planning target.
 
-- [ ] P1: Prove the Worker and per-user SQLite runtime and capacity model
-- [ ] P2: Implement storage contracts, ownership boundaries and quotas
-- [ ] P3: Add Google sessions, atomic membership and account deletion
-- [ ] P4: Integrate hosted imports, organisation and reading
-- [ ] P5: Add bounded durable retrieval and optional classification
-- [ ] P6: Verify isolation, usage limits, restore and rollback
-- [ ] P7: Publish reviewed artifacts and admit measured cohorts
+## Later
 
-## Before calling hosted retrieval release-ready
+Additional source adapters, better attachment/linked-article coverage and semantic grouping need evidence that they improve the core workflow. LinkedIn remains the supported web import source; Reddit and Instagram are not part of this beta.
 
-- [x] Check a ten-post live dataset from the default actor against real saved links
-- [ ] Inspect recovered text and attachment coverage against the originals
-- [ ] Confirm inaccessible results, account limits, and actual charges
-- [x] Make live optional model requests and review small-batch groups and tasks
-- [ ] Verify new-submission reliability and grouping across larger, varied batches
-- [ ] Run a fresh-developer setup trial from the version intended for publication
+Monetization work belongs on `payment`. It will share product fixes from `main`, while the OSS app remains free and usable without a subscription. The [branch guide](CONTRIBUTING.md#branches-and-pull-requests) explains the split and where to find the archived billing prototype.
 
-## Next useful improvements
-
-- [ ] Additional extractor adapters backed by tested schemas and real samples
-- [ ] Better attachment and linked-article coverage with explicit limits
-- [ ] Semantic clustering across saves before selecting project tasks
-- [ ] Import/export of enrichment datasets for developers who already have extracted content
-- [ ] Release tags and package publication after the live checks
-- [ ] Native Reddit/Instagram archive adapters once a real fixture is available
+For completed changes, use the [changelog](CHANGELOG.md). For architecture and earlier capacity experiments, use the [documentation index](docs/README.md).

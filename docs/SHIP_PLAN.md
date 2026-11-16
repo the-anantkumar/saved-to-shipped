@@ -1,74 +1,38 @@
-# Shipping save2ship
+# Hosted rollout gates
 
-The Firebase backend branch supersedes the SQL-only hosting target below. Read [Firebase setup](FIREBASE_SETUP.md) and its [evidence](evidence/FIREBASE.md) before rollout. Both sign-in providers, Firestore rules/IAM, cloud recovery, Enterprise usage units and the reduced 1 GiB storage envelope must pass the revised gates. Use only Firestore-compatible rollback artifacts and the separate Firebase Durable Object namespaces; the earlier 500-seat progression is not approved for this backend.
+The local [v0.4.0b1 beta is published](evidence/RELEASE_0_4_0b1.md). This page covers the remaining hosted rollout. Package publication follows [Releasing](RELEASING.md); configuration and deployment commands are in [Hosted operations](HOSTED_OPERATIONS.md).
 
-The current candidate is the [free beta](FREE_BETA.md) on `feat/free-beta-oss`, with two destinations: the account-free local open-source package and a restricted hosted beta. Neither requires a save2ship subscription, card, organization credits or an expiry countdown. Optional Apify/OpenAI usage stays on user-owned accounts. The destinations have separate release gates. Finishing local development and passing mocked end-to-end tests does not establish live Google/provider behavior or a 500-member capacity guarantee.
+`main` contains the free app and its optional hosted implementation. Public admission remains disabled with a zero-member cap. The `payment` branch is separate development work and is not needed for this rollout.
 
-This plan starts from `feat/hosted-workbench`, based on the P1 runtime checkpoint `34e2395`. Phase checkpoints are P2 storage `983d798`, provider adapters/encryption `5424f55`, authenticated backend/jobs `09589f9` and browser integration `3acc003`. The runtime and Firebase dependencies are ahead of main in MRs 7, 8 and 9 and must be reviewed and integrated explicitly. Paid work stays preserved at `da7652b` on `feat/firebase-backend`; it is not a dependency of the free-beta user journey. The final release record must replace development references with the actual free-beta candidate commit, CI run and artifact hashes.
+## Prepare the current backend
 
-## 1. Freeze a reviewed candidate
+Use the Firebase/Firestore implementation, its separate Durable Object namespaces and Firestore-compatible rollback artifacts. The earlier SQL-only experiments are historical. Read [Firebase setup](FIREBASE_SETUP.md) and its [verification record](evidence/FIREBASE.md) before choosing a deployment configuration. The reduced 1 GiB storage envelope and Enterprise usage units need actual measurement; the earlier 500-member plan is not an approved capacity claim.
 
-Finish independent reviews of authentication, membership, jobs, import/restore and browser behavior. Resolve all tenant-isolation, data-loss, duplicate-charge and quota-bypass findings. Commit phases separately, without em dashes in commit messages. Review the final diff and build from a clean checkout of the chosen commit.
+Build from a clean commit after relevant tests and independent review pass. Run the Python/UI/package checks in [Releasing](RELEASING.md), plus hosted types, tests, browser E2E and `npm run release:check`. Keep the report from `.local/release-check/report.json`: it identifies the commit, tree status, configuration/lockfile hashes, schema and bundle/assets. A dirty-tree report is development evidence, not a release artifact record.
 
-Run the Python/UI/package checks in [RELEASING.md](RELEASING.md), plus hosted types, tests, browser E2E, application dry run and `node scripts/check-release.mjs` as described in [HOSTED_OPERATIONS.md](HOSTED_OPERATIONS.md). CI uses generated identities, synthetic saved posts and mocked providers. Record failed, passed and unrun checks distinctly.
+## Before opening admission
 
-The hosted report in `.local/release-check/report.json` records the exact commit, dirty-tree status, lockfile/configuration hashes, schema and bundle/asset hashes. A report with `dirty: true` is development evidence; rebuild the final candidate from a clean checkout. The synthetic browser screenshots/report and CI artifacts remain private development evidence until explicitly reviewed for publication.
-
-## 2. Release the local project
-
-The local package can ship independently of hosted capacity once its own gates pass:
-
-- A fresh developer completes installation, sample import, organisation across all three spaces, reading/notes, export and restart recovery without an account or provider key.
-- Wheel and source archive pass clean installation on the supported CI matrix. Choose the release version, rebuild fresh artifacts and record their SHA-256 hashes.
-- Review tracked content and Git history for secrets and personal data, then verify the private vulnerability-reporting route. An archive filename check is insufficient.
-- Review the README, changelog, privacy wording and source/provider limitations. Confirm package-index ownership and the intended repository destination.
-
-Repository visibility, creating a public release and publishing the package are separate external actions. The current CI does none of them. Prepare those concrete results first; perform each only within the user's release authorization. Do not make the local install depend on Firebase, Cloudflare or hosted availability.
-
-## 3. Validate a restricted hosted preview
-
-The committed manifest remains disabled with a zero-member cap. Before a real preview, complete these gates:
-
-| Gate | Required evidence |
+| Gate | Required check |
 | --- | --- |
-| Free accounts | Current Cloudflare Workers Free and Firebase Spark settings, with no billing upgrade or linked Cloud Billing account |
-| Identity configuration | Google and Email/password enabled, mandatory TOTP for password sessions, Identity Platform on Spark with billing and SMS disabled, exact authorized origin, public app configuration and verified operator UIDs |
-| Restricted preview | `ADMISSION_UIDS` names only designated test identities; allowed/unlisted identity checks pass before opening a small cap |
-| Secrets and artifacts | Platform-only signing/encryption secrets, recovery custody, reviewed deployment configuration and exact artifact hashes |
-| Live authentication | Real Google login, refresh, sign-out, account switch, two-browser resume, expiry/revocation and immediate app suspension |
-| Storage and recovery | Final-schema allocated-storage/cloud-meter evidence, cumulative deleted-workspace/reclamation policy, rejected-write behavior, export/restore, frozen-deletion recovery and compatible deployed rollback |
-| External providers | Separately authorized small live retrieval/classification checks, source fidelity and unavailable outcomes, actual charges and uncertain-submission reconciliation |
-| Product acceptance | Recheck reader content, visible empty sections and persisted weekly preferences, then complete the [five-save and next-day owner UAT](UAT.md) without payment setup. Record new free-beta checks separately from historical product-audit evidence. |
+| Free accounts | Confirm Cloudflare Workers Free and Firebase Spark, without a billing upgrade or linked Cloud Billing account. |
+| Identity | Configure Google and Email/password, required TOTP for password sessions, Identity Platform on Spark with billing/SMS disabled, the exact authorized origin and verified operator UIDs. |
+| Restricted access | Set `ADMISSION_UIDS` to designated test identities. Check allowed and unlisted accounts before opening a cap. |
+| Secrets and artifacts | Store signing/encryption secrets on the platform, establish recovery custody and record reviewed configuration/artifact hashes. |
+| Real sessions | Check Google login, email/TOTP, refresh, sign-out, account switching, two-browser resume, expiry/revocation and immediate app suspension. |
+| Storage and recovery | Measure retained storage and operations on the final schema. Check rejected writes, export/restore, frozen-deletion recovery, cleanup/reclamation and compatible rollback. |
+| Providers | With a separately approved budget, check a small live retrieval/classification batch, source coverage, unavailable results, charges and uncertain-submission reconciliation. |
+| Product | Complete the [five-save and next-day trial](UAT.md), including reading, notes, empty sections and persisted weekly preferences. No payment setup is needed. |
 
-The P1 probe verified a small synthetic cloud path and was retired. Its physical-storage accounting and some metering results remain unresolved. The [final-schema local experiment](evidence/P6-LOCAL-CAPACITY.md) accepted 1,000 typical saves but hit limits at 931 Unicode, 847 richer and 163 long-note saves. Every complete backup restored to a fresh workspace; Unicode churn exposed reduced reinsertion headroom in the original. A typical 1,000-save source retained about 10.7 MB across local database/WAL/shared-memory files, and the pre-UAT close implementation retained allocation. The [UAT fix](evidence/UAT.md) now purges deleted workspaces to an unchanged empty local baseline; cloud-meter evidence remains open. The 7 MB used-page guard does not prove an 8 MB physical bound. Require actual cloud metering/reclamation and a cumulative deleted-workspace policy before admitting members or growing seats; revise the storage design, allocation or cap if the evidence requires it.
+Do not deploy the synthetic authentication harness or expose the single-user Python server through a public proxy. Keep screenshots and reports free of personal content and credentials.
 
-Follow [HOSTED_OPERATIONS.md](HOSTED_OPERATIONS.md) for the exact preparation, secret, deployment and rollback procedure. Do not run the Python single-user server behind a public proxy. Do not deploy the test authentication harness.
+## Capacity evidence still needed
 
-## 4. Admit only the measured cohort
+The retired P1 probe and [local final-schema experiment](evidence/P6-LOCAL-CAPACITY.md) do not establish Firestore capacity. The local experiment reached 1,000 typical saves but lower counts for richer text and long notes. Its physical allocation exceeded the proposed 8 MB workspace budget in some cases. The [deletion fix](evidence/UAT.md) returned local workspaces to an empty baseline, but cloud reclamation and cumulative deleted-workspace costs still need measurement.
 
-After the restricted preview and all gates pass, the first proposed real cohort is **10 members**. This is a proposal, not current admission or a capacity claim. Subsequent ceilings are 50, 100, 250 and 500, each requiring a separate evidence review.
+Measure ordinary reading, imports, failed authentication, retries, rejected writes, exports, deletion and provider completion. Preserve completion and recovery capacity: the 10,000-unit cleanup pool is reserved, and the full 100,000-unit daily model must be calibrated against actual platform work. Hold or reduce admission if the measurements do not fit the free tier.
 
-Observe at least a complete UTC quota window and a representative import/retrieval cycle before increasing admission. Measure total retained workspaces, including closed objects, separately from concurrent usage. Include authentication failures, retries, rejected writes, ordinary reading, exports, deletion, provider completion and other account workloads. The application's 10,000-unit cleanup pool is reserved, not spare unallocated capacity; measure its sufficiency and the full 100,000-unit model against actual platform work. Preserve completion and recovery capacity. Reduce or hold admission if measurements do not support the next cohort; never upgrade billing to meet the target.
+## Open a small cohort
 
-At each stage, record the admitted cap, active users, retained items/bytes, platform requests/read/write/duration/CPU metrics, failures, provider behavior, artifact/version IDs and rollback outcome. The 500-member, 1,000-save and 5 MB logical/8 MB physical policy remains a planning target until the evidence supports it. Advertise only the verified cohort and limits.
+After the checks above pass, start with the proposed **10-member canary**. Observe a complete UTC quota window and a representative import/retrieval cycle before considering more members. The original targets of 500 members, 1,000 saves per member, 5 MB logical data and an 8 MB physical workspace remain planning limits until supported by the deployed backend.
 
-## Release decision record
-
-The coordinator completes this record after the relevant checks; blank fields are gates, not implied success:
-
-```text
-Candidate commit and clean working tree:
-Independent review findings resolved:
-CI runs and test results:
-Local package version, wheel/sdist hashes and fresh-developer trial:
-Repository/package destination and publication authorization:
-Hosted bundle/assets/configuration/lockfile hashes:
-Cloudflare account/Free verification and Firebase project/Spark verification:
-Origin, Worker version, namespace/schema and admitted cap:
-Live identity and bounded provider evidence:
-Final-schema storage/CPU/request/read/write/duration measurements:
-Export, deletion, recovery point and compatible rollback evidence:
-Remaining limitations and decision:
-```
-
-No publication, application deployment or nonzero cohort is authorized merely by completing this document.
+For each increase, record the admitted cap, active users, retained items/bytes, platform requests, reads/writes, duration/CPU, failures, provider behavior, deployed version and rollback outcome. Review the evidence before changing admission. Never enable overage billing to meet a target.

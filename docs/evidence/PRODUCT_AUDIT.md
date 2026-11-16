@@ -1,6 +1,6 @@
 # save2ship product audit
 
-**Free-beta update:** the active candidate is now `feat/free-beta-oss`. Useful reader/organization/return-flow changes remain, while subscription code and payment checks are deferred to the preserved `da7652b` branch. This document retains the historical audit/refinement record; use [free-beta evidence](FREE_BETA.md) for checks on the separated candidate.
+**Historical record:** useful reader, organization and return-flow changes were retained in the free beta; subscription code was removed in `259f251`. The prototype remains at tag `checkpoint/paid-subscriptions-2026-11-15` (`da7652b`). See [free-beta evidence](FREE_BETA.md) for separation checks and the [release record](RELEASE_0_4_0b1.md) for the published OSS build.
 
 Date: 2026-11-15. Baseline: `7df4342` workspace flows; auth is being changed concurrently and was deliberately excluded from this review. Scope: the hosted workbench as used by a developer who has hundreds of LinkedIn bookmarks, short available sessions, and trouble returning to previously saved ideas.
 
