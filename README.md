@@ -1,5 +1,7 @@
 # Saved to Shipped
 
+This is the `payment` development branch. The current runtime is still the free app; see [payment development](docs/PAYMENT_DEVELOPMENT.md) for the preserved prototype and next steps. Use [`main`](https://github.com/the-anantkumar/saved-to-shipped/tree/main) for the OSS release.
+
 **A little less saving. A little more doing.**
 
 [![Release](https://img.shields.io/badge/release-v0.4.0b1-316b4c)](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1)
