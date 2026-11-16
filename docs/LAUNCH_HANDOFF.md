@@ -4,37 +4,19 @@
 
 ## Owner feedback
 
-Use the published local app for the [five-save and next-day trial](UAT.md). Record confusing steps and whether one saved idea becomes useful without clearing the archive. The sample preview was accepted; this personal usefulness feedback remains open and does not require cloud setup or a subscription.
+Google sign-in reached authenticated workspace initialization on the [restricted hosted preview](https://save2ship-beta.save2ship-hosted.workers.dev), but opening the workspace failed with “Storage is temporarily unavailable.” Resolve that blocker and repeat the opening check before testing whether a manual save and note survive reload, and whether export and sign-out work. Archive imports and provider processing are paused. The [deployment record](evidence/HOSTED_PREVIEW.md) lists the live settings and completed checks.
 
-## Optional hosted beta
+Use the published local app for the full [five-save and next-day trial](UAT.md), including archive import. Record confusing steps and whether one saved idea becomes useful without clearing the archive. This usefulness feedback remains open and needs no subscription.
 
-Public hosted admission remains closed. The existing Firebase development path is in [Firebase setup](FIREBASE_SETUP.md). From `hosted/`, use Node 24 and the pinned dependencies:
+## Before wider hosted access
 
-```sh
-npm ci
-npm run typecheck
-npm run release:check
-```
+1. Finish real session checks on the deployed origin: verified Email/password with TOTP, refresh, sign-out, account switching and two-browser resume. Check an unlisted identity as well as the existing member.
+2. Measure Firestore storage and operations, Cloudflare requests/CPU/duration, and the daily-work reservations against the actual free allowances.
+3. Exercise cloud recovery, export/restore, deletion/reclamation and compatible rollback with synthetic workspaces. Retain protected recovery copies of the server keys.
+4. Validate provider retrieval/classification only with a separately approved account, selected inputs and charge cap before enabling processing.
+5. Review the evidence and [rollout gates](SHIP_PLAN.md) before opening a small cohort. The proposed 10-member canary is not yet authorized by capacity measurements.
 
-The last command validates a closed production bundle and does not deploy. Prepare the ignored `hosted/.local/deploy.jsonc` as described in [Hosted operations](HOSTED_OPERATIONS.md#prepare-a-real-preview):
-
-| Setting | Required configuration |
-| --- | --- |
-| Entry/assets | `main: ../src/app.ts`; assets directory `./client-assets`; preserve Firebase namespace bindings and both migration tags. |
-| API/admission | Keep `HOSTED_ENABLED=false`, `ADMISSION_OPEN=false`, `PROCESSING_OPEN=false`, `BETA_CAP=0` for the first closed deployment. |
-| Identity/origin | Exact HTTPS `APP_ORIGIN`; matching `FIREBASE_PROJECT_ID`/public configuration; authorized Firebase domain; explicit operator/test UIDs. |
-| Storage/accounts | Existing Enterprise Native database `save2ship`; scoped service account; Cloudflare Free and Firebase Spark without overage billing. |
-| Server secrets | `SESSION_SIGNING_KEY`, `CREDENTIAL_KEYS`, `FIRESTORE_SERVICE_ACCOUNT`, supplied through the platform prompt/store; no values in source, shell arguments or chat. |
-
-After reviewing the exact account, origin and configuration, the closed-config dry run is:
-
-```sh
-npx wrangler deploy --config .local/deploy.jsonc --dry-run --outdir .local/reviewed-deploy
-```
-
-Before deployment/admission, finish the existing [shipping checks](SHIP_PLAN.md): current free-plan verification, daily-work reservation calibration, measured storage/operations/egress, cold recovery, real-account acceptance and compatible rollback. [Hosted operations](HOSTED_OPERATIONS.md) contains the deployment and secret commands. Start the proposed 10-member canary only after those checks pass, then review actual usage before increasing the cohort.
-
-Do not deploy the synthetic UAT entrypoint or publicly proxy the single-user Python server. The local OSS release remains usable independently.
+Cloudflare Workers Free, Firebase Spark without linked billing, platform secrets and the authorized Firebase domain are configured. [Hosted operations](HOSTED_OPERATIONS.md) contains the reusable deployment and rollback commands; [Firebase setup](FIREBASE_SETUP.md) covers backend configuration. Recheck the free plans before future rollouts. Keep public admission closed until the remaining gates pass.
 
 ## Optional distribution and future product work
 

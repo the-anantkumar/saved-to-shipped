@@ -1,6 +1,6 @@
 # Documentation
 
-Start with the [README](../README.md) to run the local app. The free [v0.4.0b1 beta](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1) is available now; public hosted access is still closed.
+Start with the [README](../README.md) to run the local app. The free [v0.4.0b1 beta](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1) is available now. A [restricted hosted preview](evidence/HOSTED_PREVIEW.md) is deployed; public admission is still closed.
 
 ## Use the app
 
@@ -27,6 +27,7 @@ Start with the [README](../README.md) to run the local app. The free [v0.4.0b1 b
 - [Releasing](RELEASING.md): package builds, checks and publication.
 - [Release checklist](RELEASE_CHECKLIST.md) and [published release record](evidence/RELEASE_0_4_0b1.md).
 - [Launch handoff](LAUNCH_HANDOFF.md): remaining feedback and setup commands.
+- [Hosted deployment record](evidence/HOSTED_PREVIEW.md): live restrictions, verified checks and rollback version.
 - [Hosted rollout gates](SHIP_PLAN.md): what must pass before admission opens.
 - [Firebase setup](FIREBASE_SETUP.md) and [hosted operations](HOSTED_OPERATIONS.md): account configuration, deployment and recovery.
 
