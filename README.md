@@ -74,9 +74,11 @@ LinkedIn's saved archive contains links and dates, not other people's post bodie
 
 Local work stays on your computer. Keys are stored separately and excluded from exports. Only explicitly selected URLs or classification context go to the configured provider. [Privacy and provider details](docs/USAGE.md#data-privacy-and-costs) · [Security](SECURITY.md)
 
-## Optional hosted development
+## Hosted preview and development
 
-The separate hosted implementation adds persistent Google or verified Email/password sign-in, authenticator 2FA for password accounts, and private Firestore storage. **Public hosted admission remains closed** while free-tier capacity and deployment are measured. The local app above works independently.
+The separate hosted implementation adds persistent Google or verified Email/password sign-in, authenticator 2FA for password accounts, and private Firestore storage. A [restricted preview](https://save2ship-beta.save2ship-hosted.workers.dev) is deployed on Cloudflare Free for the existing test member. **Public admission is closed**, and archive imports and provider processing are paused during acceptance testing. The local app above is available to everyone.
+
+The existing member has confirmed Google sign-in and workspace loading. See the [deployment record](docs/evidence/HOSTED_PREVIEW.md) for completed checks and the gates before wider access.
 
 To explore the hosted UX with synthetic identities and mocked providers, use Node 24 in a checkout:
 

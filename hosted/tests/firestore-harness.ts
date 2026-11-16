@@ -1,20 +1,44 @@
 // Synthetic integration harness only. This entrypoint must never be deployed.
 import { FirestoreWorkspace, workspaceDocumentPath, type FirestoreWorkspaceEnv } from '../src/firestore/workspace';
 import { FirestoreCommitUncertain, type FirestorePort } from '../src/firestore/client';
-import { Fault, type Access, type Input, type StoredJob } from '../src/contracts';
+import { Fault, type Access, type Input, type StoredJob, type Result } from '../src/contracts';
 interface Env extends FirestoreWorkspaceEnv { WORKSPACES: DurableObjectNamespace<Workspace> }
 export class Workspace extends FirestoreWorkspace<Env> {
   private wrapped?: FirestorePort;
   private mode = '';
   private countdown = 0;
   private blockReads = 0;
+  private requestBudget = Infinity;
+  private requests = 0;
+  private checkpointChanged = false;
+  private changeCheckpoint = false;
+  private countRequest(): void {
+    if (++this.requests > this.requestBudget) throw new Fault(503, 'SYNTHETIC_SUBREQUEST_LIMIT', 'Synthetic subrequest limit exceeded');
+  }
+  override async invoke(access: Access, operation: string, input: Input = {}): Promise<Result> {
+    this.requests = 1; // Reserve an OAuth exchange even when the emulator skips it.
+    this.checkpointChanged = false;
+    return super.invoke(access, operation, input);
+  }
   protected override firestore(): FirestorePort {
     if (this.wrapped) return this.wrapped;
     const client = super.firestore();
     this.wrapped = {
-      read: async (...args) => { if (this.blockReads-- > 0) throw new Fault(503, 'SYNTHETIC_READ_FAILURE', 'Synthetic read failure'); return client.read(...args); },
-      list: (...args) => client.list(...args), query: (...args) => client.query(...args),
+      read: async (...args) => { this.countRequest(); if (this.blockReads-- > 0) throw new Fault(503, 'SYNTHETIC_READ_FAILURE', 'Synthetic read failure'); return client.read(...args); },
+      list: async (...args) => {
+        this.countRequest();
+        const page = await client.list(...args);
+        if (this.changeCheckpoint && !this.checkpointChanged) {
+          this.checkpointChanged = true;
+          const path = args[0].slice(0, -'/records'.length), current = await client.read(path);
+          if (!current) throw new Error('Synthetic checkpoint change requires existing state');
+          await client.commit([{ path, data: { ...current.data, checkpoint: Number(current.data.checkpoint) + 1, commitId: crypto.randomUUID() }, currentDocument: { updateTime: current.updateTime } }]);
+        }
+        return page;
+      },
+      query: (...args) => { this.countRequest(); return client.query(...args); },
       commit: async writes => {
+        this.countRequest();
         if (this.countdown > 0 && --this.countdown === 0) {
           const mode = this.mode; this.mode = '';
           if (mode === 'before') throw new FirestoreCommitUncertain();
@@ -53,6 +77,8 @@ export class Workspace extends FirestoreWorkspace<Env> {
     return true;
   }
   async fault(mode: string, count = 1) { this.mode = mode; this.countdown = count; }
+  async budget(limit: number, changeCheckpoint: boolean) { this.requestBudget = limit; this.changeCheckpoint = changeCheckpoint; }
+  async requestCount() { return this.requests; }
   async inspect(access: Access) {
     const path = await workspaceDocumentPath(access), client = super.firestore();
     return { authority: await client.read(path), local: this.control(), alarm: await this.ctx.storage.getAlarm(),
@@ -71,6 +97,8 @@ export default {
     const { access, name, operation, input = {} } = await request.json() as { access: Access; name: string; operation: string; input: Input };
     const store = env.WORKSPACES.get(env.WORKSPACES.idFromName(name));
     if (operation === 'test.fault') { await store.fault(String(input.mode), Number(input.count ?? 1)); return Response.json({ ok: true, data: {} }); }
+    if (operation === 'test.budget') { await store.budget(Number(input.limit), input.changeCheckpoint === true); return Response.json({ ok: true, data: {} }); }
+    if (operation === 'test.requests') return Response.json({ ok: true, data: await store.requestCount() });
     if (operation === 'test.inspect') return Response.json({ ok: true, data: await store.inspect(access) });
     if (operation === 'test.wipe') { await store.wipeCache(); return Response.json({ ok: true, data: {} }); }
     if (operation === 'test.lose-access') { await store.loseSchedulerIdentity(); return Response.json({ ok: true, data: {} }); }

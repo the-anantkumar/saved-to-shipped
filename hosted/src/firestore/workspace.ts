@@ -17,7 +17,10 @@ export interface WorkspaceCheckpoint extends Input {
 const TERMINAL = new Set(['COMPLETE', 'COMPLETED', 'DISMISSED', 'CANCELLED', 'DELETED', 'FAILED']);
 const MAX_RECORDS = 2400;
 const CONTROL_RESERVE = 2048;
-const HYDRATION_PAGE = 10;
+const HYDRATION_PAGE = 100;
+// Leave Free-plan subrequest headroom for OAuth, control fences and the operation
+// after hydration. A changing checkpoint must not spend another full load blindly.
+const HYDRATION_PAGE_BUDGET = 32;
 const encoder = new TextEncoder();
 
 export async function workspaceDocumentPath(access: Access): Promise<string> {
@@ -169,12 +172,16 @@ export class FirestoreWorkspace<Env extends FirestoreWorkspaceEnv = FirestoreWor
     }
     // Core document listing is used to reconstruct a consistent local projection,
     // not to query/filter the user's library. Enterprise pipelines are unnecessary.
+    let fetchedPages = 0;
     for (let attempt = 0; attempt < 2; attempt++) {
       const records: ProjectionRecord[] = []; let pageToken: string | undefined; let pages = 0;
       do {
         if (++pages > Math.ceil(MAX_RECORDS / HYDRATION_PAGE) + 1) invalid();
-        // Nested JSON text can expand on the REST wire. Ten maximum-size job
-        // records remain below the client's bounded response allocation.
+        if (++fetchedPages > HYDRATION_PAGE_BUDGET)
+          throw new Fault(409, 'FIRESTORE_CONFLICT', 'Your workspace changed while loading. Please refresh it.');
+        // The 8 MB workspace estimate already includes escaped row JSON. A
+        // 100-record page stays within the 16 MiB response bound, while even a
+        // full 2,400-record cache rebuild fits the Free-plan subrequest limit.
         const page = await this.firestore().list(`${this.path}/records`, { pageSize: HYDRATION_PAGE, ...(pageToken ? { pageToken } : {}) });
         records.push(...page.documents.map(record => this.parseRecord(record)));
         if (records.length > MAX_RECORDS) invalid();
