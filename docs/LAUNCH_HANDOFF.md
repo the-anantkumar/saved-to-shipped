@@ -4,7 +4,7 @@
 
 ## Owner feedback
 
-Google sign-in reached authenticated workspace initialization on the [restricted hosted preview](https://save2ship-beta.save2ship-hosted.workers.dev), but opening the workspace failed with “Storage is temporarily unavailable.” Resolve that blocker and repeat the opening check before testing whether a manual save and note survive reload, and whether export and sign-out work. Archive imports and provider processing are paused. The [deployment record](evidence/HOSTED_PREVIEW.md) lists the live settings and completed checks.
+The existing member confirmed that the workspace opens after the loading fix on the [restricted hosted preview](https://save2ship-beta.save2ship-hosted.workers.dev). Next, check that a manual save and note survive reload, and that export and sign-out work. Archive imports and provider processing are paused. The [deployment record](evidence/HOSTED_PREVIEW.md) lists the live settings and completed checks.
 
 Use the published local app for the full [five-save and next-day trial](UAT.md), including archive import. Record confusing steps and whether one saved idea becomes useful without clearing the archive. This usefulness feedback remains open and needs no subscription.
 
