@@ -1,6 +1,6 @@
 # save2ship acceptance testing
 
-Use this pass to decide whether a few saved ideas become useful with little effort. The [free beta](FREE_BETA.md) needs no application card, subscription or expiry countdown. Automated checks are separate from owner sign-off.
+Use this pass to decide whether a few saved ideas become useful with little effort. The [free beta](FREE_BETA.md) needs no application card, subscription or expiry countdown. The owner accepted the synthetic preview before requesting release. The real five-save and next-day trial below remains a separate acceptance record; automated checks do not fill in those outcomes. Track the complete release in the [release checklist](RELEASE_CHECKLIST.md).
 
 ## Owner trial with no cloud setup
 

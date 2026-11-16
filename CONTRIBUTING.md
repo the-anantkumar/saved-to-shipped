@@ -40,6 +40,8 @@ CI runs source tests and an installed-app smoke test on Linux, macOS, and Window
 
 Hosted development requires a Git checkout, Node 24 and its own dependency install. From `hosted/`, run `npm ci`, `npm run typecheck` and `npm test`. Install the pinned Chromium with `PLAYWRIGHT_BROWSERS_PATH=.local/playwright npx playwright install chromium`, then run `PLAYWRIGHT_BROWSERS_PATH=.local/playwright npm run test:e2e`. `npm run uat` starts a disposable acceptance-test workspace with visible account controls, sample content and mocked providers. Follow [the UAT checklist](docs/UAT.md); `npm run test:uat` checks those controls automatically. `npm run test:product` covers the return flow, selected retrieval and absence of paid controls in the free beta. `npm run release:check` builds the closed application and verifies artifact boundaries without deploying. See the [hosted README](hosted/README.md) for capacity experiments and their limits. No cloud account or real provider key is needed for these checks.
 
+From `hosted/`, `node tests/polish-interactions.mjs` checks global keyboard search, dirty-note recovery, failed saves, focus return and delayed retrieval responses in an isolated local workspace. It needs Python 3.10+ as `python3`; set `SAVE2SHIP_TEST_PYTHON` to another interpreter path when needed. The test uses synthetic data and no provider calls.
+
 For browser QA without an account or charge:
 
 ```bash

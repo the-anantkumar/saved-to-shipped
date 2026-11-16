@@ -1,6 +1,6 @@
 # Free beta scope
 
-The current work is `feat/free-beta-oss`, based on the reviewed product/Firebase checkpoint `da7652b`. Paid implementation stays on `feat/firebase-backend` and `checkpoint/paid-subscriptions-2026-11-15`. This split preserves the unmerged hosted/Firebase foundation; it does not silently merge MRs 7, 8 or 9 into main.
+The free local release target is `v0.4.0b1`. Its active work is `feat/free-beta-oss`, based on the reviewed product/Firebase checkpoint `da7652b`. Track publication separately in the [release checklist](RELEASE_CHECKLIST.md). Paid implementation stays on `feat/firebase-backend` and `checkpoint/paid-subscriptions-2026-11-15`. This split preserves the unmerged hosted/Firebase foundation; it does not silently merge MRs 7, 8 or 9 into main.
 
 ## What users get
 
@@ -33,7 +33,7 @@ To inspect authenticated flows with synthetic accounts and mocked providers, run
 
 Merchant onboarding, pricing, subscriptions, invoices, payment webhooks and refund policy are deferred with the paid branch. Historical payment evidence is not free-beta validation. A retained payment-bearing workspace cannot be silently moved to a build that cannot finish its financial lifecycle. Incompatible background alarms stop locally and bounded repair reports quarantine without changing remote records; use the supported branch to finish recovery and export a v1 backup before moving user content to a clean beta workspace.
 
-The separated runtime and package checks have passed; the release still needs owner acceptance, final candidate CI and privacy/security preparation. Public hosting additionally needs actual identity/provider checks, measured Firestore/platform budgets, a restricted cohort and rollback evidence. Follow [shipping gates](SHIP_PLAN.md); preparing this candidate does not publish a package, change repository visibility or deploy a service.
+The separated runtime and package checks have passed. The owner accepted the synthetic preview; the representative first-session/next-day trial, final versioned candidate checks and privacy/security preparation remain separately tracked. Public hosting additionally needs actual identity/provider checks, measured Firestore/platform budgets, a restricted cohort and rollback evidence. Follow [shipping gates](SHIP_PLAN.md); preparing this candidate does not publish a package, change repository visibility or deploy a service.
 
 ## UX acceptance focus
 
