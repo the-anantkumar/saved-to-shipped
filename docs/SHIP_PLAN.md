@@ -2,7 +2,7 @@
 
 The local [v0.4.0b1 beta is published](evidence/RELEASE_0_4_0b1.md). This page covers the remaining hosted rollout. Package publication follows [Releasing](RELEASING.md); configuration and deployment commands are in [Hosted operations](HOSTED_OPERATIONS.md).
 
-`main` contains the free app and its optional hosted implementation. Public admission remains disabled with a zero-member cap. The `payment` branch is separate development work and is not needed for this rollout.
+`main` contains the free app and its optional hosted implementation. A [restricted preview is deployed](evidence/HOSTED_PREVIEW.md) for the existing test member. Public admission remains disabled with `BETA_CAP=0`; that setting blocks new seats without evicting existing members. Archive imports and provider processing are paused. The `payment` branch is separate development work and is not needed for this rollout.
 
 ## Prepare the current backend
 
@@ -11,6 +11,8 @@ Use the Firebase/Firestore implementation, its separate Durable Object namespace
 Build from a clean commit after relevant tests and independent review pass. Run the Python/UI/package checks in [Releasing](RELEASING.md), plus hosted types, tests, browser E2E and `npm run release:check`. Keep the report from `.local/release-check/report.json`: it identifies the commit, tree status, configuration/lockfile hashes, schema and bundle/assets. A dirty-tree report is development evidence, not a release artifact record.
 
 ## Before opening admission
+
+The initial deployment, platform secret installation, exact Firebase domain and current free-plan checks are complete. Real-account acceptance, capacity and recovery gates remain open. The [deployment record](evidence/HOSTED_PREVIEW.md) separates those outcomes from the full cohort requirements below.
 
 | Gate | Required check |
 | --- | --- |

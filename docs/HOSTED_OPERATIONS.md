@@ -1,6 +1,6 @@
 # Hosted beta operations
 
-This runbook describes the closed hosted implementation. No application deployment or admitted cohort is established by these instructions. The retired P1 probe is a separate resource, and its measurements do not certify the final schema. See the [shipping plan](SHIP_PLAN.md), [production plan](PRODUCTION_PLAN.md) and [P1 cloud evidence](evidence/P1-CLOUD.md).
+This runbook covers the hosted implementation and its closed deployment defaults. A [restricted preview is deployed](evidence/HOSTED_PREVIEW.md) for the existing test member, with public admission and processing closed. The retired P1 probe is a separate resource, and its measurements do not certify the final schema. See the [shipping plan](SHIP_PLAN.md), [production plan](PRODUCTION_PLAN.md) and [P1 cloud evidence](evidence/P1-CLOUD.md).
 
 ## Deployment record and defaults
 
@@ -13,7 +13,7 @@ Before an authorized rollout, record the exact Git commit, CI run, lockfile hash
 | `HOSTED_ENABLED` | `false` | Public workspace APIs remain unavailable |
 | `ADMISSION_OPEN` | `false` | No new memberships; existing active members can return when the API is enabled |
 | `PROCESSING_OPEN` | `false` | Reject new ingestion/completion reservations, including imports and new provider jobs |
-| `BETA_CAP` | `0` | Zero admitted members by default; any nonzero cohort needs measured approval |
+| `BETA_CAP` | `0` | No new seats; existing active members are not evicted. A larger cohort needs measured approval |
 | `ADMISSION_UIDS` | `[]` | No new UID is allowed; a closed preview explicitly names its test identities |
 | `OPERATOR_UIDS` | `[]` | No operator API access until stable Firebase UIDs are configured |
 | `workers_dev`, `preview_urls` | `false` | No public provider-subdomain route is enabled by the template |
@@ -74,7 +74,7 @@ npx wrangler deployments list --config .local/deploy.jsonc
 
 The first deployment must remain disabled. Secret updates can create and deploy another version, so record the final version after all changes, not just the first upload. [Cloudflare secret management](https://developers.cloudflare.com/workers/configuration/secrets/)
 
-Only after the restricted preview is ready should its reviewed configuration enable the APIs for synthetic test identities. Confirm real Google login, renewal, two-browser persistence, account switching, isolation, export/restore and deletion. No import or credential save may initiate a paid call. A live provider test requires its separately agreed account, selected synthetic inputs and charge cap.
+Only after the restricted preview is ready should its reviewed configuration enable the APIs for designated test identities. Confirm real Google login, renewal, two-browser persistence, account switching, isolation, export/restore and deletion. No import or credential save may initiate a paid call. A live provider test requires its separately agreed account, selected synthetic inputs and charge cap.
 
 ## Routine controls and failure handling
 
@@ -122,4 +122,4 @@ npx wrangler rollback <reviewed-version-id> --config .local/deploy.jsonc --messa
 
 A rollback restores configuration as well as code; confirm the resulting admission and processing settings remain closed, deploying the compatible build with closed settings if necessary. Do not roll back across incompatible Durable Object class changes. [Cloudflare rollback limitations](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/)
 
-Before reopening, repeat synthetic login, existing-member access, export, deletion and known-job reconciliation on the deployed version. Data restoration is a separate operation requiring a specific recovery point and verified key/membership consistency. There is no deployed rollback version for the current undeployed application yet.
+Before reopening, repeat synthetic login, existing-member access, export, deletion and known-job reconciliation on the deployed version. Data restoration is a separate operation requiring a specific recovery point and verified key/membership consistency. The [preview record](evidence/HOSTED_PREVIEW.md#versions-and-rollback) identifies the current version and its compatible disabled rollback target. A live rollback and whole-service recovery exercise remain outstanding.

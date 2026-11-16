@@ -98,6 +98,27 @@ test('Firestore requests reject operation and byte excess before network access'
   await assert.rejects(excessiveResponse.read('s2sTest/large'), { code: 'STORAGE_UNAVAILABLE' });
 });
 
+test('Firestore full hydration pages retain escaped rows within the response byte limit', async () => {
+  const collection = `s2sWorkspaces/${'a'.repeat(64)}/records`;
+  const escaped = '"\\\n\u0000🙂'.repeat(3200);
+  const documents = Array.from({ length: 100 }, (_, index) => {
+    const key = `synthetic-${index}`, path = `${collection}/${Buffer.from(`bodies\0${key}`).toString('base64url')}`;
+    const data = { table: 'bodies', key, row: JSON.stringify({ _rowid: index + 1, id: key, text: escaped }) };
+    return { path, data, wire: doc(path, Object.fromEntries(Object.entries(data).map(([name, value]) => [name, { stringValue: value }]))) };
+  });
+  const storedBytes = 2048 + documents.reduce((total, entry) => total + Buffer.byteLength(entry.path) + Buffer.byteLength(JSON.stringify(entry.data)) + 256, 0);
+  assert.ok(storedBytes > 6_000_000 && storedBytes < 8_000_000, 'exercise a nearly full workspace of escaped row JSON');
+  const wire = JSON.stringify({ documents: documents.map(entry => entry.wire) }, null, 2);
+  assert.ok(Buffer.byteLength(wire) < 16 * 1024 * 1024);
+  const client = new FirestoreClient(env, async url => {
+    assert.equal(new URL(url).searchParams.get('pageSize'), '100');
+    return new Response(wire, { headers: { 'Content-Type': 'application/json' } });
+  });
+  const page = await client.list(collection, { pageSize: 100 });
+  assert.equal(page.documents.length, 100);
+  assert.deepEqual(page.documents.map(entry => entry.data), documents.map(entry => entry.data));
+});
+
 test('Firestore service account exchange is scoped, fixed-origin and cached without secret error messages', async () => {
   const { privateKey, publicKey } = await generateKeyPair('RS256', { extractable: true });
   const account = { type: 'service_account', project_id: env.FIREBASE_PROJECT_ID,
