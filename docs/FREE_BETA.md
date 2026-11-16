@@ -1,42 +1,40 @@
-# Free beta scope
+# Free beta
 
-The free local release target is `v0.4.0b1`. Its active work is `feat/free-beta-oss`, based on the reviewed product/Firebase checkpoint `da7652b`. Track publication separately in the [release checklist](RELEASE_CHECKLIST.md). Paid implementation stays on `feat/firebase-backend` and `checkpoint/paid-subscriptions-2026-11-15`. This split preserves the unmerged hosted/Firebase foundation; it does not silently merge MRs 7, 8 or 9 into main.
+[Saved to Shipped v0.4.0b1](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1) is the published local MIT app. `main` contains the OSS version. Future monetization work is separate on `payment`; see the [branch guide](../CONTRIBUTING.md#branches-and-pull-requests).
 
-## What users get
+## What is included
 
-The beta is free to try, with no application subscription, card requirement, expiry countdown or organization-point system. The local MIT application remains account-free and runs with Python 3.10+ without third-party runtime dependencies. Hosted sign-in/storage is optional and has its own infrastructure and admission gates.
+The app runs with Python 3.10+ and no third-party runtime dependencies. It has no account requirement, subscription, card requirement, organization credits or expiry date.
 
-- Import an official LinkedIn Saved Items archive once and leave most saves dormant.
-- Choose a few original saved URLs for explicitly approved retrieval, or supply source text manually.
-- Keep Projects, Learning and Experiences separate, including empty named sections.
-- Return through Today to continue a read or active build step; when imported links have no continuation yet, Choose from Saves gives one clear starting action. Use global Find when the idea's category is forgotten.
-- Keep reading progress and personal notes separate from source text, then export and resume after restart.
-- Use dark mode, narrow screens and keyboard controls throughout the flow.
+- Import an official LinkedIn Saved Items ZIP or CSV.
+- Choose a few saved URLs for approved retrieval, or paste source text yourself.
+- Organize Projects, Learning and Experiences, including empty named sections.
+- Return through Today to continue a read or project step. Use global Find when you forget where an idea belongs.
+- Keep reading progress and personal notes separate from source text. Export and resume after restart.
+- Use light/dark/system appearance, narrow layouts and keyboard controls.
 
-Apify extraction and optional OpenAI classification use each user's own provider accounts and may incur their fees. Importing an archive, saving a key, reading or taking notes never initiates those requests. The synthetic demo and manual/local-rules workflow need no provider keys.
+Apify retrieval and optional OpenAI classification use your own provider accounts and may incur their fees. Importing, saving a key, reading and taking notes never starts those requests. Manual text, local rules and the sample workspace need no provider keys.
 
-The optional hosted beta keeps its hard storage, item, section, batch and daily-work limits. Current technical ceilings include 1,000 saves and 5,000,000 logical bytes per workspace; longer content can exhaust bytes or internal storage first. Retrieval is bounded to 25 links per hosted run and AI classification to 20 saves per batch. These are implementation ceilings, not a certified user cohort or a promise of free third-party usage. Free-platform exhaustion can interrupt availability. It is not resolved by paying for an upgrade.
+## Try it
 
-## Try the experience first
-
-From a checkout, run:
+From a checkout:
 
 ```sh
 python3 server.py
 ```
 
-Open the separate [synthetic local demo](http://127.0.0.1:8010/?workspace=demo). No Firebase project, provider key or merchant account is required. For a personal trial, use the normal local workspace, choose five saves from your archive, and follow [owner UAT](UAT.md). Keep real content and acceptance notes private.
+Open the [sample workspace](http://127.0.0.1:8010/?workspace=demo), or choose five saves from your own archive and follow the [acceptance checklist](UAT.md). Keep personal content and feedback examples private.
 
-To inspect authenticated flows with synthetic accounts and mocked providers, run `npm ci` once and `npm run uat` from `hosted/` using Node 24. For optional real Firebase sign-in and cross-device storage, follow [Firebase setup](FIREBASE_SETUP.md) after the local UX is useful. Do not use synthetic identities as a deployment entrypoint.
+The release passed package, browser and clean-install checks, recorded in the [release evidence](evidence/RELEASE_0_4_0b1.md). The personal five-save and next-day usefulness trial is still open. A smaller Read next shortlist, skip/replace controls and a session summary are future work; the beta does not promise reminders or whole-archive automatic processing.
 
-## What this release does not depend on
+## Optional hosted version
 
-Merchant onboarding, pricing, subscriptions, invoices, payment webhooks and refund policy are deferred with the paid branch. Historical payment evidence is not free-beta validation. A retained payment-bearing workspace cannot be silently moved to a build that cannot finish its financial lifecycle. Incompatible background alarms stop locally and bounded repair reports quarantine without changing remote records; use the supported branch to finish recovery and export a v1 backup before moving user content to a clean beta workspace.
+The hosted implementation adds Google and verified email/password sign-in, authenticator verification for password accounts, and private Firestore storage. **Public admission is closed.** Local use does not depend on hosted availability.
 
-The separated runtime and package checks have passed. The owner accepted the synthetic preview; the representative first-session/next-day trial, final versioned candidate checks and privacy/security preparation remain separately tracked. Public hosting additionally needs actual identity/provider checks, measured Firestore/platform budgets, a restricted cohort and rollback evidence. Follow [shipping gates](SHIP_PLAN.md); preparing this candidate does not publish a package, change repository visibility or deploy a service.
+To try hosted screens with synthetic accounts and mocked providers, use Node 24 and run `npm ci`, then `npm run uat` from `hosted/`. For real account configuration, follow [Firebase setup](FIREBASE_SETUP.md). The test entrypoint is not a deployment target.
 
-## UX acceptance focus
+Implemented technical ceilings include 1,000 saves and 5,000,000 logical bytes per workspace, 25 links per retrieval run and 20 saves per AI batch. Long content can exhaust storage before the save count. These limits do not certify a user cohort or include free provider usage. Opening admission still requires the [hosted rollout checks](SHIP_PLAN.md); free-tier exhaustion may interrupt availability.
 
-Start with five handpicked saves and finish one useful read or project action. Return the next day without instructions and see whether continuing feels easier than reopening LinkedIn Saved Items. Record friction rather than trying to clear the archive.
+## Earlier payment workspaces
 
-A capped/ordered Read next shortlist, skip/replace controls and a completed-session summary remain follow-up work until implemented and accepted. The beta should not claim reminders, semantic recommendations or whole-archive automatic processing. [Free-beta evidence](evidence/FREE_BETA.md) records the actual candidate checks separately from [historical product refinements](evidence/PRODUCT_REFINEMENTS.md).
+The OSS app cannot finish the archived prototype's financial lifecycle. Do not point it at a payment-bearing workspace. Use a compatible version to finish recovery and export a version-1 backup before moving user content into a clean free-beta workspace. Incompatible background alarms stop locally, and bounded repair quarantines the workspace without changing remote records. The [archived prototype](https://github.com/the-anantkumar/saved-to-shipped/tree/da7652bc0919b4d7cc1a04a2c627cb01bc6b926e) is retained for recovery and future payment development.

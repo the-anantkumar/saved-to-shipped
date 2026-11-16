@@ -1,6 +1,6 @@
-# Hosted implementation handoff
+# Hosted API and storage contracts
 
-Base: reviewed P1 checkpoint `34e2395`, ahead of main. This branch depends on that checkpoint. The user authorized finishing development, end-to-end validation and a shipping plan. Production admission defaults to zero; P1 physical allocation, live identity and capacity evidence remain release gates. Implementing later phases does not close those gates.
+These are the internal operations and browser transport used by the hosted workbench. Firestore is authoritative; SQLite is a disposable projection. See the [architecture](../ARCHITECTURE.md#closed-hosted-workbench) for persistence and recovery details, and [operations](../docs/HOSTED_OPERATIONS.md) for deployment. Public admission remains closed.
 
 ## Internal storage boundary
 
@@ -22,7 +22,7 @@ Operations:
 - `job.update`: `{id,expected_job_revision,patch}` applies bounded internal lifecycle changes; unknown submission stays uncertain.
 - `job.apply`: `{id,expected_job_revision,candidates,cursor,terminal?}` atomically merges at most 25 source-matched retrieval or revision-checked classification candidates, advances cursor and updates job. Candidate `{id,patch,expected_revision?}`; retrieval preserves existing source text and all annotations, classification skips stale revisions. Terminal missing results are finalized only after the final provider page.
 
-All persisted collections and operational data are bounded. A 7 MB used-page guard is a provisional implementation check, not a physical allocation guarantee. No FTS in this schema. Keep P1 prototype unchanged.
+All persisted collections and operational data are bounded. A 7 MB used-page guard is a provisional implementation check, not a physical allocation guarantee. This schema has no FTS index; the separate P1 prototype retains the search experiments.
 
 ## Public HTTP and browser boundary
 
@@ -32,4 +32,4 @@ UI endpoints retain local names for mutations but hosted state is paged metadata
 
 Hosted ZIP extraction happens in a bounded browser worker; only the selected Saved Items CSV rows go to the API in 25-item chunks. Original archives and unrelated files are never uploaded. Free-beta capacities and provider costs are separate product concepts.
 
-Provider modules accept injected fetch, return normalized data and fixed redacted errors, and never mutate storage. Root owns job orchestration, registry, auth, API routes, shared contracts and integration. Phase owners must coordinate changes to this contract with root before editing it.
+Provider modules accept injected fetch, return normalized data and fixed redacted errors, and never mutate storage. Changes to these contracts need matching transport, storage and test updates.

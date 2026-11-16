@@ -37,5 +37,6 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(Path("/tmp/example-saves/items.json"), default_state_path())
         prompt = triage_prompt({"items": [], "goals": "Learn Rust by building small tools"}, 20)
         self.assertIn("Learn Rust", prompt)
-        self.assertNotIn("Anant", prompt)
-        self.assertNotIn("TRLR", prompt)
+        default_prompt = triage_prompt({"items": []}, 20)
+        self.assertIn("My goals: Build useful small projects and learn through practical experiments.", default_prompt)
+        self.assertNotIn("Learn Rust", default_prompt)

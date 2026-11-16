@@ -1,6 +1,6 @@
 # Free-beta separation evidence
 
-Scope date: 2026-11-15. Branch: `feat/free-beta-oss`, starting from `da7652b`. Implementation checkpoint: `259f251`. The subscription prototype is preserved on `feat/firebase-backend` and `checkpoint/paid-subscriptions-2026-11-15`; no merchant service was activated.
+Scope date: 2026-11-15. Original branch: `feat/free-beta-oss`, starting from `da7652b`. Implementation checkpoint: `259f251`, now in `main`. The subscription prototype is preserved at tag `checkpoint/paid-subscriptions-2026-11-15`; no merchant service was activated.
 
 ## Candidate boundary
 
