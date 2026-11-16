@@ -1,16 +1,17 @@
 # Saved to Shipped
 
+This is the `payment` development branch. The current runtime is still the free app; see [payment development](docs/PAYMENT_DEVELOPMENT.md) for the preserved prototype and next steps. Use [`main`](https://github.com/the-anantkumar/saved-to-shipped/tree/main) for the OSS release.
+
 **A little less saving. A little more doing.**
 
 [![Release](https://img.shields.io/badge/release-v0.4.0b1-316b4c)](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1)
 [![Tests](https://github.com/the-anantkumar/saved-to-shipped/actions/workflows/tests.yml/badge.svg)](https://github.com/the-anantkumar/saved-to-shipped/actions/workflows/tests.yml)
-[![Free beta](https://img.shields.io/badge/free_beta-no_subscription-316b4c)](docs/FREE_BETA.md)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![MIT License](https://img.shields.io/badge/license-MIT-316b4c)](LICENSE)
 
 Saved to Shipped turns your LinkedIn saved archive into things you can read, learn from and build. Import once, choose a few useful ideas, and return to one clear next step.
 
-**[Download the free v0.4.0b1 beta](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1).** The GitHub release includes the reviewed wheel, source archive and checksums; no PyPI setup is needed.
+[Download v0.4.0b1](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1) or run it from source below.
 
 ![Saved to Shipped Today in dark mode, showing a saved read and an active project step](docs/assets/workspace-dark.png)
 
@@ -54,7 +55,7 @@ saved-to-shipped
 4. Organize them into **Projects**, **Learning** or **Experiences**. Local rules need no key; AI suggestions are optional.
 5. Finish one read, takeaway or project step. Export, then return through **Today** tomorrow.
 
-Re-imports preserve your notes, organization and progress. Source text and personal notes stay separate. [Full usage guide →](docs/USAGE.md)
+Re-imports preserve your notes, organization and progress. Source text and personal notes stay separate. [Full usage guide](docs/USAGE.md).
 
 ## A home for each intention
 
@@ -89,14 +90,13 @@ npm run uat
 
 Use sample data and dummy keys in that fixture. [Free-beta scope](docs/FREE_BETA.md) · [Firebase setup](docs/FIREBASE_SETUP.md) · [Hosted guide](hosted/README.md)
 
-## Contribute and follow the release
+## Contributing
 
-- [Documentation index](docs/README.md): usage, architecture, development and deployment.
-- [Release checklist](docs/RELEASE_CHECKLIST.md): what is done and what is still open.
-- [Launch handoff](docs/LAUNCH_HANDOFF.md): remaining owner feedback and optional hosted setup.
-- [Published release evidence](docs/evidence/RELEASE_0_4_0b1.md): exact source, checks and artifact hashes.
-- [Contributing](CONTRIBUTING.md): test fixtures, supported tooling and contribution flow.
-- [Changelog](CHANGELOG.md) and [known source limits](docs/LIVE_CHECK.md).
-- [Report a bug](https://github.com/the-anantkumar/saved-to-shipped/issues/new?template=bug_report.yml) using synthetic examples; report vulnerabilities privately through [SECURITY.md](SECURITY.md).
+`main` is the free, open-source app. `payment` is the development branch for future monetization work; it starts from the current OSS release with billing disabled. See [Contributing](CONTRIBUTING.md#branches-and-pull-requests) for branch and pull request guidelines.
 
-LinkedIn is the supported web import source for this beta. Reddit and Instagram support remain future work. Paid features are deferred outside this release.
+- [Documentation](docs/README.md) and [roadmap](ROADMAP.md)
+- [Changelog](CHANGELOG.md) and [release checks](docs/evidence/RELEASE_0_4_0b1.md)
+- [Report a bug](https://github.com/the-anantkumar/saved-to-shipped/issues/new?template=bug_report.yml) with a synthetic example
+- [Report a security issue privately](SECURITY.md)
+
+LinkedIn is the supported web import source for this beta. Reddit and Instagram support remain future work.

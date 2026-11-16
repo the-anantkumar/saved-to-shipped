@@ -1,6 +1,6 @@
 # Development completion and local UAT
 
-Date: 2026-11-07. Scope: the local synthetic hosted application on `feat/hosted-workbench`, continuing from `61e716b`. Its dependency on the unmerged runtime branch remains explicit in [the shipping plan](../SHIP_PLAN.md). This is agent-run acceptance evidence; the product owner's [UAT checklist](../UAT.md) remains pending.
+Date: 2026-11-07. Scope: the local synthetic hosted application on the former `feat/hosted-workbench` branch, continuing from `61e716b`. The runtime foundation was subsequently integrated into `main` through MR 10. This is agent-run acceptance evidence; the product owner's [UAT checklist](../UAT.md) remains separate.
 
 Phase checkpoints:
 

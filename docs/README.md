@@ -1,40 +1,37 @@
 # Documentation
 
-The free local [v0.4.0b1 beta is published](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1). Start with [the project README](../README.md) for the one-command local app. The local MIT workflow and the optional hosted deployment have separate setup and release boundaries.
+Start with the [README](../README.md) to run the local app. The free [v0.4.0b1 beta](https://github.com/the-anantkumar/saved-to-shipped/releases/tag/v0.4.0b1) is available now; public hosted access is still closed.
 
 ## Use the app
 
 | Guide | Read it for |
 | --- | --- |
 | [Usage](USAGE.md) | Import, reading, projects, optional providers, configuration, exports and troubleshooting. |
-| [Demo](DEMO.md) | Synthetic sample content without accounts or provider keys. |
-| [Free beta](FREE_BETA.md) | What is included, provider costs and current limits. |
+| [Demo](DEMO.md) | Sample content without accounts or provider keys. |
+| [Free beta](FREE_BETA.md) | Included features, provider costs and current limits. |
 | [Acceptance testing](UAT.md) | A five-save first session, restart recovery and a next-day return. |
-| [Source fidelity](LIVE_CHECK.md) | What retrieval has been checked against and where coverage remains incomplete. |
+| [Source fidelity](LIVE_CHECK.md) | Checked retrieval behavior and incomplete coverage. |
 
-## Build and contribute
+## Develop
 
-- [Contributing](../CONTRIBUTING.md): tooling, synthetic fixtures and test commands.
-- [Architecture](../ARCHITECTURE.md): local package and hosted boundaries.
-- [Product specification](../PRODUCT_SPEC.md) and [roadmap](../ROADMAP.md).
+- [Contributing](../CONTRIBUTING.md): branches, test fixtures and verification commands.
+- [Architecture](../ARCHITECTURE.md), [product specification](../PRODUCT_SPEC.md) and [roadmap](../ROADMAP.md).
 - [Security](../SECURITY.md): private reporting and the local/hosted trust boundary.
-- [Agent workflow](AGENT_WORKFLOW.md): project automation roles and scoped skills.
+- [Hosted guide](../hosted/README.md): Node tooling and mocked acceptance tests.
+- [Agent workflow](AGENT_WORKFLOW.md): optional project automation.
 
-## Prepare a release or hosted deployment
+`main` is the OSS branch. Future monetization work belongs on `payment`; the [branch guide](../CONTRIBUTING.md#branches-and-pull-requests) links the archived prototype.
 
-- [Release checklist](RELEASE_CHECKLIST.md): completed publication and remaining follow-ups.
-- [Release evidence](evidence/RELEASE_0_4_0b1.md): reviewed source, CI, artifact hashes and public download/install checks.
-- [Launch handoff](LAUNCH_HANDOFF.md): only the remaining owner-feedback and hosted setup steps.
-- [Releasing](RELEASING.md): build, metadata/content checks and clean installs.
-- [Shipping plan](SHIP_PLAN.md): local OSS publication and optional hosted rollout.
-- [Firebase setup](FIREBASE_SETUP.md): real Google/email/TOTP identity and Firestore configuration.
-- [Hosted operations](HOSTED_OPERATIONS.md) and [account setup](HOSTED_SETUP.md).
-- [Hosted implementation guide](../hosted/README.md): Node tooling, mocked UAT and closed deployment assets.
+## Release and deploy
 
-The hosted manifest defaults closed. A prepared configuration or successful local test does not establish a public service or measured user capacity.
+- [Releasing](RELEASING.md): package builds, checks and publication.
+- [Release checklist](RELEASE_CHECKLIST.md) and [published release record](evidence/RELEASE_0_4_0b1.md).
+- [Launch handoff](LAUNCH_HANDOFF.md): remaining feedback and setup commands.
+- [Hosted rollout gates](SHIP_PLAN.md): what must pass before admission opens.
+- [Firebase setup](FIREBASE_SETUP.md) and [hosted operations](HOSTED_OPERATIONS.md): account configuration, deployment and recovery.
 
-## Evidence and historical design
+## Design and verification records
 
-[Free-beta evidence](evidence/FREE_BETA.md) records the separated runtime checks. [Firebase evidence](evidence/FIREBASE.md) records identity/storage work. The [product audit](evidence/PRODUCT_AUDIT.md) and [refinement record](evidence/PRODUCT_REFINEMENTS.md) distinguish original findings from later fixes.
+The [production plan](PRODUCTION_PLAN.md) contains the implementation history and quota policy. Earlier SQLite experiments and later Firebase work have different storage limits; measurements in one do not establish capacity in the other.
 
-The [production plan](PRODUCTION_PLAN.md) includes earlier SQL-only measurements and later Firebase updates. Capacity figures are planning or measurement results with explicit limits, not admission promises. Paid implementation is deferred; [the monetization pointer](MONETIZATION_PLAN.md) identifies its preserved checkpoint and is not part of free-beta setup.
+[Free-beta checks](evidence/FREE_BETA.md), [Firebase checks](evidence/FIREBASE.md), [product audit](evidence/PRODUCT_AUDIT.md), [refinements](evidence/PRODUCT_REFINEMENTS.md) and [visual polish](evidence/PRODUCT_POLISH.md) record what was tested and what remained open at each stage.

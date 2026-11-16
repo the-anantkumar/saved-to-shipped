@@ -2,7 +2,7 @@
 
 This directory contains the separate Cloudflare API and Firebase backend: Google and verified Email/password plus TOTP sessions, authoritative Firestore workspaces with disposable SQLite projections, browser-side archive import, encrypted BYOK credentials and durable provider jobs. The application is **not deployed or accepting members**. Production configuration defaults to disabled APIs, zero seats and empty admission/operator allowlists. Python local use stays dependency-free and account-free.
 
-This branch prepares a free beta without subscription checkout, paid tiers, organization credits or trial expiry. Existing storage, membership, batch and daily-work guards still apply. Provider usage stays on each member's own accounts. Follow the [free-beta guide](../docs/FREE_BETA.md) for scope and owner acceptance; no merchant setup is needed.
+The OSS runtime has no subscription checkout, paid tiers, organization credits or trial expiry. Existing storage, membership, batch and daily-work guards still apply. Provider usage stays on each member's own accounts. Follow the [free-beta guide](../docs/FREE_BETA.md) for scope and the [API/storage contracts](CONTRACTS.md) when changing hosted behavior.
 
 Try the complete synthetic flow with Node 24 and npm 10 or 11:
 
@@ -28,7 +28,7 @@ npm run capacity:workspace
 
 The browser test covers import, explicit processing, all three spaces, notes/reading, keyboard and pointer movement, mobile/dark layout, another browser, conflicts, backup restore, account switching and deletion recovery. The artifact check rejects test entrypoints, stale assets and non-closed deployment defaults. `capacity:workspace` measures the final application schema; [local evidence](../docs/evidence/P6-LOCAL-CAPACITY.md) records count/byte limits, churn and complete backup recovery. Real Google login, provider fidelity/charges and cloud capacity remain unverified; see [backend evidence](../docs/evidence/P3-P5.md), [operations](../docs/HOSTED_OPERATIONS.md) and the [shipping plan](../docs/SHIP_PLAN.md).
 
-`npm test` uses generated identities and synthetic provider responses. Firestore emulator checks require a loopback emulator and verify authoritative storage, recovery and isolation. The free-beta acceptance checks must be rerun after separating paid code; earlier payment-branch test results are historical evidence.
+`npm test` uses generated identities and synthetic provider responses. Firestore emulator checks require a loopback emulator and verify authoritative storage, recovery and isolation. The [published release record](../docs/evidence/RELEASE_0_4_0b1.md) links the latest release checks; earlier payment-prototype results describe that historical code only.
 
 `wrangler.app.jsonc` is the application template. `npm run app:dev` starts its disabled production configuration locally; use the synthetic preview above for an immediate working demo. Never deploy the synthetic test entrypoints.
 

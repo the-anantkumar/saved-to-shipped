@@ -1,8 +1,21 @@
 # Contributing
 
-Help a developer get from an export to a useful next step with less work.
+Small fixes to importing, reading and returning to saved ideas are welcome. Start with the [roadmap](ROADMAP.md) or open an issue describing the problem you want to solve.
 
-For agent-assisted development, use a Git checkout and start with its root `AGENTS.md` and the [agent workflow](docs/AGENT_WORKFLOW.md). Project-scoped roles and skills live in `.codex/agents/` and `.agents/skills/`; they inherit your model and permissions. Hosted work follows the acceptance criteria in [the production plan](docs/PRODUCTION_PLAN.md). These development tools do not add application runtime dependencies and are not included in package archives.
+## Branches and pull requests
+
+| Branch | Purpose |
+| --- | --- |
+| `main` | The free, open-source app and its optional hosted implementation. No subscription checkout or paid-only limits. |
+| `payment` | Future monetization work, based on the current OSS release. Billing is not enabled yet. |
+
+Create a short-lived branch from the relevant base and open a pull request back to that branch. Include the problem, the resulting behavior and the checks you ran. Keep commits small and use descriptive messages without em dashes.
+
+Put shared product fixes on `main` first, then bring those commits into `payment`. Keep billing changes on `payment`; do not merge that branch wholesale into `main`. Delete a short-lived branch once its pull request is merged or superseded and its useful work is preserved.
+
+The previous payment prototype is archived at the [`checkpoint/paid-subscriptions-2026-11-15` tag](https://github.com/the-anantkumar/saved-to-shipped/tree/refs/tags/checkpoint/paid-subscriptions-2026-11-15) (`da7652b`). Restore any of it through a focused payment pull request, with current tests. The checkpoint predates the OSS polish and data-loss fixes, so it is not a replacement for the current app.
+
+For agent-assisted work, read [AGENTS.md](AGENTS.md) and the [agent workflow](docs/AGENT_WORKFLOW.md). The repository's agent configuration is optional development tooling, excluded from application packages.
 
 ## Run locally
 
@@ -50,7 +63,7 @@ python3 -m tests.ui_fixture
 
 Open http://127.0.0.1:8011/. This server uses temporary synthetic saves and mocked Apify responses. Any nonempty test token works in its Settings. It makes no provider calls. Stop it with Ctrl+C; its temporary workspace is removed.
 
-The current release scope is the [free beta](docs/FREE_BETA.md). Paid features remain on their preserved development branch and are not prerequisites for local contributors or owner UAT.
+The [free beta](docs/FREE_BETA.md) needs no payment setup. Hosted changes must preserve the storage, identity and quota requirements in the [production plan](docs/PRODUCTION_PLAN.md).
 
 ## Fixtures and provider adapters
 
